@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -14,7 +21,7 @@ object ClassfileConstants {
   final val JAVA_MAJOR_VERSION = 45
   final val JAVA_MINOR_VERSION = 3
 
-  /** (see http://docs.oracle.com/javase/specs/jvms/se8/html/jvms-4.html#jvms-4.1)
+  /** (see https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-4.html#jvms-4.1)
    *
    *  If the `ACC_INTERFACE` flag is set, the `ACC_ABSTRACT` flag must also
    *  be set (ch. 2.13.1).
@@ -75,6 +82,8 @@ object ClassfileConstants {
   final val CONSTANT_METHODHANDLE  = 15
   final val CONSTANT_METHODTYPE    = 16
   final val CONSTANT_INVOKEDYNAMIC = 18
+  final val CONSTANT_MODULE        = 19
+  final val CONSTANT_PACKAGE       = 20
 
   // tags describing the type of a literal in attribute values
   final val BYTE_TAG   = 'B'
@@ -342,8 +351,8 @@ object ClassfileConstants {
       case JAVA_ACC_FINAL      => FINAL
       case JAVA_ACC_SYNTHETIC  => SYNTHETIC | ARTIFACT  // maybe should be just artifact?
       case JAVA_ACC_STATIC     => STATIC
-      case JAVA_ACC_ABSTRACT   => if (isAnnotation) 0L else if (isClass) ABSTRACT else DEFERRED
-      case JAVA_ACC_INTERFACE  => if (isAnnotation) 0L else TRAIT | INTERFACE | ABSTRACT
+      case JAVA_ACC_ABSTRACT   => if (isClass) ABSTRACT else DEFERRED
+      case JAVA_ACC_INTERFACE  => TRAIT | INTERFACE | ABSTRACT
       case JAVA_ACC_ENUM       => JAVA_ENUM
       case JAVA_ACC_ANNOTATION => JAVA_ANNOTATION
       case _                   => 0L

@@ -1,13 +1,15 @@
+// scalac: -Ydelambdafy:method -opt:l:inline -opt-inline-from:**
+//
 import scala.tools.partest.BytecodeTest
-import scala.tools.partest.ASMConverters.instructionsFromMethod
+import scala.tools.testkit.ASMConverters.instructionsFromMethod
 import scala.tools.asm
 import scala.tools.asm.util._
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 object Test extends BytecodeTest {
   val nullChecks = Set(asm.Opcodes.NEW)
 
-  def show: Unit = {
+  def show(): Unit = {
     def test(methodName: String): Unit = {
       val classNode = loadClassNode("Foo")
       val methodNode = getMethod(classNode, "b")

@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -48,7 +52,7 @@ package scala
  *
  * It's important to note that user-defined value classes are limited, and in some circumstances,
  * still must allocate a value class instance at runtime. These limitations and circumstances are
- * explained in greater detail in the [[http://docs.scala-lang.org/overviews/core/value-classes.html Value Classes and Universal Traits]].
+ * explained in greater detail in the [[https://docs.scala-lang.org/overviews/core/value-classes.html Value Classes and Universal Traits]].
  */
 abstract class AnyVal extends Any {
   def getClass(): Class[_ <: AnyVal] = null

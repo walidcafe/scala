@@ -1,8 +1,14 @@
-/* NSC -- new Scala compiler
- * Copyright 2006-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
-
 
 package scala.tools.nsc
 package util
@@ -13,7 +19,7 @@ import java.net.URL
 import java.util.regex.PatternSyntaxException
 
 import File.pathSeparator
-import Jar.isJarOrZip
+import scala.tools.nsc.classpath.{ClassPathEntries, PackageEntry, PackageName}
 
 /**
   * A representation of the compiler's class- or sourcepath.
@@ -21,6 +27,12 @@ import Jar.isJarOrZip
 trait ClassPath {
   import scala.tools.nsc.classpath._
   def asURLs: Seq[URL]
+
+  final def hasPackage(pkg: String): Boolean = hasPackage(PackageName(pkg))
+  final def packages(inPackage: String): Seq[PackageEntry] = packages(PackageName(inPackage))
+  final def classes(inPackage: String): Seq[ClassFileEntry] = classes(PackageName(inPackage))
+  final def sources(inPackage: String): Seq[SourceFileEntry] = sources(PackageName(inPackage))
+  final def list(inPackage: String): ClassPathEntries = list(PackageName(inPackage))
 
   /*
    * These methods are mostly used in the ClassPath implementation to implement the `list` and
@@ -32,11 +44,10 @@ trait ClassPath {
    *
    * The `inPackage` string is a full package name, e.g. "" or "scala.collection".
    */
-
-  private[nsc] def hasPackage(pkg: String): Boolean
-  private[nsc] def packages(inPackage: String): Seq[PackageEntry]
-  private[nsc] def classes(inPackage: String): Seq[ClassFileEntry]
-  private[nsc] def sources(inPackage: String): Seq[SourceFileEntry]
+  private[nsc] def hasPackage(pkg: PackageName): Boolean
+  private[nsc] def packages(inPackage: PackageName): Seq[PackageEntry]
+  private[nsc] def classes(inPackage: PackageName): Seq[ClassFileEntry]
+  private[nsc] def sources(inPackage: PackageName): Seq[SourceFileEntry]
 
   /**
    * Returns packages and classes (source or classfile) that are members of `inPackage` (not
@@ -45,7 +56,7 @@ trait ClassPath {
    * This is the main method uses to find classes, see class `PackageLoader`. The
    * `rootMirror.rootLoader` is created with `inPackage = ""`.
    */
-  private[nsc] def list(inPackage: String): ClassPathEntries
+  private[nsc] def list(inPackage: PackageName): ClassPathEntries
 
   /**
    * Returns the class file and / or source file for a given external name, e.g., "java.lang.String".
@@ -64,8 +75,9 @@ trait ClassPath {
     // solution for a given type of ClassPath
     val (pkg, simpleClassName) = PackageNameUtils.separatePkgAndClassNames(className)
 
-    val foundClassFromClassFiles = classes(pkg).find(_.name == simpleClassName)
-    def findClassInSources = sources(pkg).find(_.name == simpleClassName)
+    val packageName = PackageName(pkg)
+    val foundClassFromClassFiles = classes(packageName).find(_.name == simpleClassName)
+    def findClassInSources = sources(packageName).find(_.name == simpleClassName)
 
     foundClassFromClassFiles orElse findClassInSources
   }
@@ -95,6 +107,21 @@ trait ClassPath {
   def asSourcePathString: String
 }
 
+trait EfficientClassPath extends ClassPath {
+  private[nsc] def list(inPackage: PackageName, onPackageEntry: PackageEntry => Unit, onClassesAndSources: ClassRepresentation => Unit): Unit
+  override private[nsc] def list(inPackage: PackageName): ClassPathEntries = {
+    val packageBuf = collection.mutable.ArrayBuffer.empty[PackageEntry]
+    val classRepBuf = collection.mutable.ArrayBuffer.empty[ClassRepresentation]
+    list(inPackage, packageBuf += _, classRepBuf += _)
+    if (packageBuf.isEmpty && classRepBuf.isEmpty) ClassPathEntries.empty
+    else ClassPathEntries(packageBuf, classRepBuf)
+  }
+}
+trait EfficientClassPathCallBack {
+  def packageEntry(entry: PackageEntry): Unit
+  def classesAndSources(entry: ClassRepresentation): Unit
+}
+
 object ClassPath {
   val RootPackage = ""
 
@@ -104,13 +131,13 @@ object ClassPath {
 
     /* Get all subdirectories, jars, zips out of a directory. */
     def lsDir(dir: Directory, filt: String => Boolean = _ => true) =
-      dir.list.filter(x => filt(x.name) && (x.isDirectory || isJarOrZip(x))).map(_.path).toList
+      dir.list.filter(x => filt(x.name) && (x.isDirectory || Jar.isJarOrZip(x))).map(_.path).toList
 
     if (pattern == "*") lsDir(Directory("."))
     else if (pattern endsWith wildSuffix) lsDir(Directory(pattern dropRight 2))
     else if (pattern contains '*') {
       try {
-        val regexp = ("^" + pattern.replaceAllLiterally("""\*""", """.*""") + "$").r
+        val regexp = s"^${pattern.replace(raw"\*", ".*")}$$".r
         lsDir(Directory(pattern).parent, regexp.findFirstIn(_).isDefined)
       }
       catch { case _: PatternSyntaxException => List(pattern) }
@@ -122,7 +149,10 @@ object ClassPath {
   def split(path: String): List[String] = (path split pathSeparator).toList.filterNot(_ == "").distinct
 
   /** Join classpath using platform-dependent path separator */
-  def join(paths: String*): String  = paths filterNot (_ == "") mkString pathSeparator
+  def join(paths: String*): String  = paths.toList.filterNot(_ == "") match {
+    case only :: Nil => only // optimize for a common case when called by PathSetting.value
+    case xs => xs.mkString(pathSeparator)
+  }
 
   /** Split the classpath, apply a transformation function, and reassemble it. */
   def map(cp: String, f: String => String): String = join(split(cp) map f: _*)
@@ -158,7 +188,7 @@ object ClassPath {
     catch { case _: MalformedURLException => None }
 
   def manifests: List[java.net.URL] = {
-    import scala.collection.JavaConverters._
+    import scala.jdk.CollectionConverters._
     val resources = Thread.currentThread().getContextClassLoader().getResources("META-INF/MANIFEST.MF")
     resources.asScala.filter(_.getProtocol == "jar").toList
   }
@@ -171,6 +201,7 @@ object ClassPath {
 }
 
 trait ClassRepresentation {
+  def fileName: String
   def name: String
   def binary: Option[AbstractFile]
   def source: Option[AbstractFile]

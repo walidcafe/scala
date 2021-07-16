@@ -1,6 +1,6 @@
-virtpatmat_reach_null.scala:13: warning: unreachable code
+virtpatmat_reach_null.scala:15: warning: unreachable code
       case _                              =>  // unreachable
                                           ^
-error: No warnings can be incurred under -Xfatal-warnings.
-one warning found
-one error found
+error: No warnings can be incurred under -Werror.
+1 warning
+1 error

@@ -1,19 +1,26 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package collection.mutable
 
 import scala.annotation.tailrec
-import collection.AbstractIterator
-import collection.Iterator
-
+import collection.{AbstractIterator, Iterator}
 import java.lang.String
 
 /**
  * An object containing the red-black tree implementation used by mutable `TreeMaps`.
  *
  * The trees implemented in this object are *not* thread safe.
- *
- * @author Rui Gonçalves
- * @since 2.12
  */
 private[collection] object RedBlackTree {
 
@@ -24,11 +31,11 @@ private[collection] object RedBlackTree {
   // Therefore, while obtaining the size of the whole tree is O(1), knowing the number of entries inside a range is O(n)
   // on the size of the range.
 
-  final class Tree[A, B](var root: Node[A, B], var size: Int)
+  final class Tree[A, B](var root: Node[A, B], var size: Int) {
+    def treeCopy(): Tree[A, B] = new Tree(copyTree(root), size)
+  }
 
-  final class Node[A, B](var key: A, var value: B, var red: Boolean,
-                         var left: Node[A, B], var right: Node[A, B], var parent: Node[A, B]) {
-
+  final class Node[A, B](var key: A, var value: B, var red: Boolean, var left: Node[A, B], var right: Node[A, B], var parent: Node[A, B]) {
     override def toString: String = "Node(" + key + ", " + value + ", " + red + ", " + left + ", " + right + ")"
   }
 
@@ -67,12 +74,6 @@ private[collection] object RedBlackTree {
     case node => Some(node.value)
   }
 
-  def getKey[A : Ordering](tree: Tree[A, _], key: A): Option[A] =
-    getNode(tree.root, key) match {
-      case null => None
-      case node => Some(node.key)
-    }
-
   @tailrec private[this] def getNode[A, B](node: Node[A, B], key: A)(implicit ord: Ordering[A]): Node[A, B] =
     if (node eq null) null
     else {
@@ -82,7 +83,7 @@ private[collection] object RedBlackTree {
       else node
     }
 
-  def contains[A: Ordering](tree: Tree[A, _], key: A) = getNode(tree.root, key) ne null
+  def contains[A: Ordering](tree: Tree[A, _], key: A): Boolean = getNode(tree.root, key) ne null
 
   def min[A, B](tree: Tree[A, B]): Option[(A, B)] = minNode(tree.root) match {
     case null => None
@@ -440,15 +441,28 @@ private[collection] object RedBlackTree {
     if (node.right ne null) foreachNodeNonNull(node.right, f)
   }
 
-  def foreachKey[A, U](tree: Tree[A, _], f: A => U): Unit = foreachNodeKey(tree.root, f)
+  def foreachKey[A, U](tree: Tree[A, _], f: A => U): Unit = {
+    def g(node: Node[A, _]): Unit = {
+      val l = node.left
+      if(l ne null) g(l)
+      f(node.key)
+      val r = node.right
+      if(r ne null) g(r)
+    }
+    val r = tree.root
+    if(r ne null) g(r)
+  }
 
-  private[this] def foreachNodeKey[A, U](node: Node[A, _], f: A => U): Unit =
-    if (node ne null) foreachNodeKeyNonNull(node, f)
-
-  private[this] def foreachNodeKeyNonNull[A, U](node: Node[A, _], f: A => U): Unit = {
-    if (node.left ne null) foreachNodeKeyNonNull(node.left, f)
-    f(node.key)
-    if (node.right ne null) foreachNodeKeyNonNull(node.right, f)
+  def foreachEntry[A, B, U](tree: Tree[A, B], f: (A, B) => U): Unit = {
+    def g(node: Node[A, B]): Unit = {
+      val l = node.left
+      if(l ne null) g(l)
+      f(node.key, node.value)
+      val r = node.right
+      if(r ne null) g(r)
+    }
+    val r = tree.root
+    if(r ne null) g(r)
   }
 
   def transform[A, B](tree: Tree[A, B], f: (A, B) => B): Unit = transformNode(tree.root, f)
@@ -585,4 +599,54 @@ private[collection] object RedBlackTree {
 
     isBlack(tree.root) && noRedAfterRed(tree.root) && blackHeight(tree.root) >= 0
   }
+
+  // building
+
+  /** Build a Tree suitable for a TreeSet from an ordered sequence of keys */
+  def fromOrderedKeys[A](xs: Iterator[A], size: Int): Tree[A, Null] = {
+    val maxUsedDepth = 32 - Integer.numberOfLeadingZeros(size) // maximum depth of non-leaf nodes
+    def f(level: Int, size: Int): Node[A, Null] = size match {
+      case 0 => null
+      case 1 => new Node(xs.next(), null, level == maxUsedDepth && level != 1, null, null, null)
+      case n =>
+        val leftSize = (size-1)/2
+        val left = f(level+1, leftSize)
+        val x = xs.next()
+        val right = f(level+1, size-1-leftSize)
+        val n = new Node(x, null, false, left, right, null)
+        if(left ne null) left.parent = n
+        right.parent = n
+        n
+    }
+    new Tree(f(1, size), size)
+  }
+
+  /** Build a Tree suitable for a TreeMap from an ordered sequence of key/value pairs */
+  def fromOrderedEntries[A, B](xs: Iterator[(A, B)], size: Int): Tree[A, B] = {
+    val maxUsedDepth = 32 - Integer.numberOfLeadingZeros(size) // maximum depth of non-leaf nodes
+    def f(level: Int, size: Int): Node[A, B] = size match {
+      case 0 => null
+      case 1 =>
+        val (k, v) = xs.next()
+        new Node(k, v, level == maxUsedDepth && level != 1, null, null, null)
+      case n =>
+        val leftSize = (size-1)/2
+        val left = f(level+1, leftSize)
+        val (k, v) = xs.next()
+        val right = f(level+1, size-1-leftSize)
+        val n = new Node(k, v, false, left, right, null)
+        if(left ne null) left.parent = n
+        right.parent = n
+        n
+    }
+    new Tree(f(1, size), size)
+  }
+
+  def copyTree[A, B](n: Node[A, B]): Node[A, B] =
+    if(n eq null) null else {
+      val c = new Node(n.key, n.value, n.red, copyTree(n.left), copyTree(n.right), null)
+      if(c.left != null) c.left.parent = c
+      if(c.right != null) c.right.parent = c
+      c
+    }
 }

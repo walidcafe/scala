@@ -1,15 +1,14 @@
-
 package scala.lang.stringinterpol
 
 import java.text.DecimalFormat
 
-import org.junit.Assert._
+import org.junit.Assert.{ assertThrows => _, _ }
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
 import scala.language.implicitConversions
-import scala.tools.testing.AssertUtil._
+import scala.tools.testkit.AssertUtil._
 
 object StringContextTestUtils {
   private val decimalSeparator: Char = new DecimalFormat().getDecimalFormatSymbols().getDecimalSeparator()
@@ -63,16 +62,27 @@ class StringContextTest {
     val res = processEscapes(s)
     assertEquals("Scala", res)
   }
+  @Test def t5856(): Unit = {
+    class X {
+      override def toString = "Test"
+
+      def thistle(): Unit = {
+        assertEquals("Test", s"$this")
+        assertEquals("TestTest", s"$this$this")
+        assertEquals("Test$", s"$this$$")
+        assertEquals("Test.##", s"$this.##")
+        assertEquals("Test.toString", s"$this.toString")
+        assertEquals("Test=THIS", s"$this=THIS")
+      }
+    }
+    new X().thistle()   // this'll be good
+  }
 
   @Test def t6631_baseline() = assertEquals("\f\r\n\t", s"""\f\r\n\t""")
 
-  @Test def t6631_badEscape() = assertThrows[InvalidEscapeException] {
-    s"""\x"""
-  }
-
   // verifying that the standard interpolators can be supplanted
   @Test def antiHijack_?() = {
-    object AllYourStringsAreBelongToMe { case class StringContext(args: Any*) { def s(args: Any) = "!!!!" } }
+    object AllYourStringsAreBelongToMe { case class StringContext(args: Any*) { def s(args: Any*) = "!!!!" } }
     import AllYourStringsAreBelongToMe._
     //assertEquals("????", s"????")
     assertEquals("!!!!", s"????") // OK to hijack core interpolator ids
@@ -98,9 +108,13 @@ class StringContextTest {
 
   @Test def `f interpolator baseline`(): Unit = {
 
-    implicit def stringToBoolean(s: String): Boolean = java.lang.Boolean.parseBoolean(s)
-    implicit def stringToChar(s: String): Char = s(0)
-    implicit def str2fmt(s: String): java.util.Formattable = new java.util.Formattable {
+    // ignore spurious warning scala/bug#11946
+    type ignore = annotation.unused
+    @ignore def ignore: ignore = ???  // ignore that ignore looks unused
+
+    @ignore implicit def stringToBoolean(s: String): Boolean = java.lang.Boolean.parseBoolean(s)
+    @ignore implicit def stringToChar(s: String): Char = s(0)
+    @ignore implicit def str2fmt(s: String): java.util.Formattable = new java.util.Formattable {
       def formatTo(f: java.util.Formatter, g: Int, w: Int, p: Int) = f.format("%s", s)
     }
 
@@ -120,7 +134,7 @@ class StringContextTest {
     import java.util.{Calendar, Locale}
     val c = Calendar.getInstance(Locale.US)
     c.set(2012, Calendar.MAY, 26)
-    implicit def strToDate(x: String): Calendar = c
+    @ignore implicit def strToDate(x: String): Calendar = c
 
     val ss = List[(String, String)] (
       // 'b' / 'B' (category: general)
@@ -132,14 +146,14 @@ class StringContextTest {
       f"${false}%b" -> "false",
       f"${true}%b"  -> "true",
       f"${true && false}%b"                 -> "false",
-      f"${new java.lang.Boolean(false)}%b"  -> "false",
-      f"${new java.lang.Boolean(true)}%b"   -> "true",
+      f"${java.lang.Boolean.valueOf(false)}%b"  -> "false",
+      f"${java.lang.Boolean.valueOf(true)}%b"   -> "true",
 
       f"${null}%B"  -> "FALSE",
       f"${false}%B" -> "FALSE",
       f"${true}%B"  -> "TRUE",
-      f"${new java.lang.Boolean(false)}%B"  -> "FALSE",
-      f"${new java.lang.Boolean(true)}%B"   -> "TRUE",
+      f"${java.lang.Boolean.valueOf(false)}%B"  -> "FALSE",
+      f"${java.lang.Boolean.valueOf(true)}%B"   -> "TRUE",
 
       f"${"true"}%b" -> "true",
       f"${"false"}%b"-> "false",
@@ -162,7 +176,7 @@ class StringContextTest {
       f"${s}%S"     -> "SCALA",
       f"${5}"       -> "5",
       f"${i}"       -> "42",
-      f"${'foo}"    -> "'foo",
+      f"${Symbol("foo")}"    -> "Symbol(foo)",
 
       f"${Thread.State.NEW}" -> "NEW",
 
@@ -172,10 +186,10 @@ class StringContextTest {
       f"${120:Byte}%c"   -> "x",
       f"${120:Short}%c"  -> "x",
       f"${120:Int}%c"    -> "x",
-      f"${new java.lang.Character('x')}%c"   -> "x",
-      f"${new java.lang.Byte(120:Byte)}%c"   -> "x",
-      f"${new java.lang.Short(120:Short)}%c" -> "x",
-      f"${new java.lang.Integer(120)}%c"     -> "x",
+      f"${java.lang.Character.valueOf('x')}%c"   -> "x",
+      f"${java.lang.Byte.valueOf(120:Byte)}%c"   -> "x",
+      f"${java.lang.Short.valueOf(120:Short)}%c" -> "x",
+      f"${java.lang.Integer.valueOf(120)}%c"     -> "x",
 
       f"${'x' : java.lang.Character}%c"     -> "x",
       f"${(120:Byte) : java.lang.Byte}%c"   -> "x",
@@ -191,10 +205,10 @@ class StringContextTest {
       f"${120:Int}%d"     -> "120",
       f"${120:Long}%d"    -> "120",
       f"${60 * 2}%d"      -> "120",
-      f"${new java.lang.Byte(120:Byte)}%d"   -> "120",
-      f"${new java.lang.Short(120:Short)}%d" -> "120",
-      f"${new java.lang.Integer(120)}%d"     -> "120",
-      f"${new java.lang.Long(120)}%d"        -> "120",
+      f"${java.lang.Byte.valueOf(120:Byte)}%d"   -> "120",
+      f"${java.lang.Short.valueOf(120:Short)}%d" -> "120",
+      f"${java.lang.Integer.valueOf(120)}%d"     -> "120",
+      f"${java.lang.Long.valueOf(120)}%d"        -> "120",
       f"${120 : java.lang.Integer}%d"        -> "120",
       f"${120 : java.lang.Long}%d"           -> "120",
       f"${BigInt(120)}%d"                    -> "120",
@@ -207,8 +221,8 @@ class StringContextTest {
 
       f"Just want to say ${"hello, world"}%#s..." -> "Just want to say hello, world...",
 
-      { implicit val strToShort = (s: String) => java.lang.Short.parseShort(s) ; f"${"120"}%d" } -> "120",
-      { implicit val strToInt = (s: String) => 42 ; f"${"120"}%d" } -> "42",
+      { @ignore implicit val strToShort = (s: String) => java.lang.Short.parseShort(s) ; f"${"120"}%d" } -> "120",
+      { @ignore implicit val strToInt = (s: String) => 42 ; f"${"120"}%d" } -> "42",
 
       // 'e' | 'E' | 'g' | 'G' | 'f' | 'a' | 'A' (category: floating point)
       // ------------------------------------------------------------------
@@ -236,7 +250,7 @@ class StringContextTest {
       f" mind%n------%nmatter" ->
        """| mind
           |------
-          |matter""".stripMargin.lines.mkString(compat.Platform.EOL),
+          |matter""".stripMargin.linesIterator.mkString(System.lineSeparator),
       f"${i}%d %<d ${9}%d"   -> "42 42 9",
       f"${7}%d %<d ${9}%d"   -> "7 7 9",
       f"${7}%d %2$$d ${9}%d" -> "7 9 9",
@@ -251,5 +265,105 @@ class StringContextTest {
     )
 
     for ((f, s) <- ss) assertEquals(s, f)
+  }
+
+  @Test
+  def globTests(): Unit = {
+    val cases = Seq(
+      // Empty literal
+      StringContext.glob(Seq(""), "")    -> Some(Nil),
+      StringContext.glob(Seq(""), "a")   -> None,
+      StringContext.glob(Seq(""), "b")   -> None,
+      StringContext.glob(Seq(""), "aa")  -> None,
+      StringContext.glob(Seq(""), "ab")  -> None,
+      StringContext.glob(Seq(""), "ba")  -> None,
+  
+      // Trivial literal
+      StringContext.glob(Seq("a"), "a")  -> Some(Nil),
+      StringContext.glob(Seq("a"), "b")  -> None,
+      StringContext.glob(Seq("a"), "aa") -> None,
+      StringContext.glob(Seq("a"), "ab") -> None,
+      StringContext.glob(Seq("a"), "ba") -> None,
+  
+      // Non-trivial literal
+      StringContext.glob(Seq("abc"), "abc")  -> Some(Nil),
+      StringContext.glob(Seq("abc"), "babc") -> None,
+      StringContext.glob(Seq("abc"), "aabc") -> None,
+      StringContext.glob(Seq("abc"), "abcb") -> None,
+      StringContext.glob(Seq("abc"), "cba")  -> None,
+      StringContext.glob(Seq("abc"), "abbc") -> None,
+  
+      // Single wildcard
+      StringContext.glob(Seq("a", "b"), "ab")      -> Some(Seq("")),
+      StringContext.glob(Seq("a", "b"), "a b")     -> Some(Seq(" ")),
+      StringContext.glob(Seq("a", "b"), "a    b")  -> Some(Seq("    ")),
+      StringContext.glob(Seq("a", "b"), "a***b")   -> Some(Seq("***")),
+      StringContext.glob(Seq("a", "b"), "a")       -> None,
+      StringContext.glob(Seq("a", "b"), "b")       -> None,
+      StringContext.glob(Seq("a", "b"), "abc")     -> None,
+      StringContext.glob(Seq("a", "b"), "cab")     -> None,
+      StringContext.glob(Seq("a", "b"), " ab ")    -> None,
+  
+      // Leading wildcard
+      StringContext.glob(Seq("", "b"), "ab")     -> Some(Seq("a")),
+      StringContext.glob(Seq("", "b"), "a b")    -> Some(Seq("a ")),
+      StringContext.glob(Seq("", "b"), "a    b") -> Some(Seq("a    ")),
+      StringContext.glob(Seq("", "b"), "a***b")  -> Some(Seq("a***")),
+      StringContext.glob(Seq("", "b"), "a")      -> None,
+      StringContext.glob(Seq("", "b"), "b")      -> Some(Seq("")),
+      StringContext.glob(Seq("", "b"), "abc")    -> None,
+      StringContext.glob(Seq("", "b"), "cab")    -> Some(Seq("ca")),
+      StringContext.glob(Seq("", "b"), " ab ")   -> None,
+  
+      // Trailing wildcard
+      StringContext.glob(Seq("a", ""), "ab")     -> Some(Seq("b")),
+      StringContext.glob(Seq("a", ""), "a b")    -> Some(Seq(" b")),
+      StringContext.glob(Seq("a", ""), "a    b") -> Some(Seq("    b")),
+      StringContext.glob(Seq("a", ""), "a***b")  -> Some(Seq("***b")),
+      StringContext.glob(Seq("a", ""), "a")      -> Some(Seq("")),
+      StringContext.glob(Seq("a", ""), "b")      -> None,
+      StringContext.glob(Seq("a", ""), "abc")    -> Some(Seq("bc")),
+      StringContext.glob(Seq("a", ""), "cab")    -> None,
+      StringContext.glob(Seq("a", ""), " ab ")   -> None,
+  
+      // Lonely wildcard
+      StringContext.glob(Seq("", ""), "ab")      -> Some(Seq("ab")),
+      StringContext.glob(Seq("", ""), "a b")     -> Some(Seq("a b")),
+      StringContext.glob(Seq("", ""), "a    b")  -> Some(Seq("a    b")),
+      StringContext.glob(Seq("", ""), "a***b")   -> Some(Seq("a***b")),
+      StringContext.glob(Seq("", ""), "a")       -> Some(Seq("a")),
+      StringContext.glob(Seq("", ""), "b")       -> Some(Seq("b")),
+      StringContext.glob(Seq("", ""), "abc")     -> Some(Seq("abc")),
+      StringContext.glob(Seq("", ""), "cab")     -> Some(Seq("cab")),
+      StringContext.glob(Seq("", ""), " ab ")    -> Some(Seq(" ab ")),
+  
+      // Ambiguous lonely wildcard
+      StringContext.glob(Seq("", "", ""), "ab")      -> Some(Seq("", "ab")),
+      StringContext.glob(Seq("", "", ""), "a b")     -> Some(Seq("", "a b")),
+      StringContext.glob(Seq("", "", ""), "a    b")  -> Some(Seq("", "a    b")),
+      StringContext.glob(Seq("", "", ""), "a***b")   -> Some(Seq("", "a***b")),
+      StringContext.glob(Seq("", "", ""), "a")       -> Some(Seq("", "a")),
+      StringContext.glob(Seq("", "", ""), "b")       -> Some(Seq("", "b")),
+      StringContext.glob(Seq("", "", ""), "abc")     -> Some(Seq("", "abc")),
+      StringContext.glob(Seq("", "", ""), "cab")     -> Some(Seq("", "cab")),
+      StringContext.glob(Seq("", "", ""), " ab ")    -> Some(Seq("", " ab ")),
+  
+      // Multiple wildcards
+      StringContext.glob(Seq("a", "bb", "c"), "a__bb___c") -> Some(Seq("__", "___")),
+      StringContext.glob(Seq("a", "bb", "c"), "abbc")      -> Some(Seq("", "")),
+      StringContext.glob(Seq("a", "bb", "c"), "aabbbc")    -> Some(Seq("a", "b")),
+      // Kind ambiguous
+      StringContext.glob(Seq("a", "bb", "c"), "abbbc")     -> Some(Seq("", "b")),
+      // Failures
+      StringContext.glob(Seq("a", "bb", "c"), "a")         -> None,
+      StringContext.glob(Seq("a", "bb", "c"), "abc")       -> None,
+      StringContext.glob(Seq("a", "bb", "c"), "abb")       -> None,
+      StringContext.glob(Seq("a", "bb", "c"), "bbc")       -> None,
+      StringContext.glob(Seq("a", "bb", "c"), "bbaaac")    -> None,
+  
+      // Many many ambiguous wildcards
+      StringContext.glob(Seq.fill(100)("a"), "a" * 200) -> Some(Seq.fill(98)("") :+ "a" * 100)
+    )
+    for((lhs, rhs) <- cases) assertEquals(rhs, lhs)
   }
 }

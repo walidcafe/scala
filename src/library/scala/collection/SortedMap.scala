@@ -1,54 +1,66 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package collection
 
-import scala.collection.immutable.TreeMap
-import scala.collection.mutable.Builder
-import scala.language.higherKinds
-import scala.annotation.unchecked.uncheckedVariance
-import scala.collection.generic.DefaultSerializationProxy
+import scala.annotation.{implicitNotFound, nowarn}
 
-/** Base type of sorted sets */
+/** A Map whose keys are sorted according to a [[scala.math.Ordering]]*/
 trait SortedMap[K, +V]
   extends Map[K, V]
-    with SortedMapOps[K, V, SortedMap, SortedMap[K, V]] {
+    with SortedMapOps[K, V, SortedMap, SortedMap[K, V]]
+    with SortedMapFactoryDefaults[K, V, SortedMap, Iterable, Map]{
 
   def unsorted: Map[K, V] = this
 
-  override protected def fromSpecificIterable(coll: Iterable[(K, V)] @uncheckedVariance): SortedMapCC[K, V] @uncheckedVariance = sortedMapFactory.from(coll)
-  override protected def newSpecificBuilder: mutable.Builder[(K, V), SortedMapCC[K, V]] @uncheckedVariance = sortedMapFactory.newBuilder[K, V]
+  def sortedMapFactory: SortedMapFactory[SortedMap] = SortedMap
 
-  /**
-    * @note This operation '''has''' to be overridden by concrete collection classes to effectively
-    *       return a `SortedMapFactory[SortedMapCC]`. The implementation in `SortedMap` only returns
-    *       a `SortedMapFactory[SortedMap]`, but the compiler will '''not''' throw an error if the
-    *       effective `SortedMapCC` type constructor is more specific than `SortedMap`.
-    *
-    * @return The factory of this collection.
-    */
-  def sortedMapFactory: SortedMapFactory[SortedMapCC] = SortedMap
+  @nowarn("""cat=deprecation&origin=scala\.collection\.Iterable\.stringPrefix""")
+  override protected[this] def stringPrefix: String = "SortedMap"
 
-  override def empty: SortedMapCC[K, V] @uncheckedVariance = sortedMapFactory.empty
-
-  override protected[this] def writeReplace(): AnyRef = new DefaultSerializationProxy(sortedMapFactory.sortedMapFactory[K, V], this)
+  override def equals(that: Any): Boolean = that match {
+    case _ if this eq that.asInstanceOf[AnyRef] => true
+    case sm: SortedMap[K, _] if sm.ordering == this.ordering =>
+      (sm canEqual this) &&
+        (this.size == sm.size) && {
+        val i1 = this.iterator
+        val i2 = sm.iterator
+        var allEqual = true
+        while (allEqual && i1.hasNext) {
+          val kv1 = i1.next()
+          val kv2 = i2.next()
+          allEqual = ordering.equiv(kv1._1, kv2._1) && kv1._2 == kv2._2
+        }
+        allEqual
+      }
+    case _ => super.equals(that)
+  }
 }
 
 trait SortedMapOps[K, +V, +CC[X, Y] <: Map[X, Y] with SortedMapOps[X, Y, CC, _], +C <: SortedMapOps[K, V, CC, C]]
   extends MapOps[K, V, Map, C]
      with SortedOps[K, C] {
 
-  /**
-    * Type alias to `CC`. It is used to provide a default implementation of the `fromSpecificIterable`
-    * and `newSpecificBuilder` operations.
+  /** The companion object of this sorted map, providing various factory methods.
     *
-    * Due to the `@uncheckedVariance` annotation, usage of this type member can be unsound and is
-    * therefore not recommended.
+    * @note When implementing a custom collection type and refining `CC` to the new type, this
+    *       method needs to be overridden to return a factory for the new type (the compiler will
+    *       issue an error otherwise).
     */
-  protected type SortedMapCC[K, V] = CC[K, V] @uncheckedVariance
-
-  def sortedMapFactory: SortedMapFactory[SortedMapCC]
+  def sortedMapFactory: SortedMapFactory[CC]
 
   /** Similar to `mapFromIterable`, but returns a SortedMap collection type.
-    * Note that the return type is now `CC[K2, V2]` aka `SortedMapCC[K2, V2]` rather than `MapCC[(K2, V2)]`.
+    * Note that the return type is now `CC[K2, V2]`.
     */
   @`inline` protected final def sortedMapFromIterable[K2, V2](it: Iterable[(K2, V2)])(implicit ordering: Ordering[K2]): CC[K2, V2] = sortedMapFactory.from(it)
 
@@ -120,7 +132,7 @@ trait SortedMapOps[K, +V, +CC[X, Y] <: Map[X, Y] with SortedMapOps[X, Y, CC, _],
 
   /** The implementation class of the set returned by `keySet` */
   protected class KeySortedSet extends SortedSet[K] with GenKeySet with GenKeySortedSet {
-    def diff(that: Set[K]): SortedSet[K] = fromSpecificIterable(view.filterNot(that))
+    def diff(that: Set[K]): SortedSet[K] = fromSpecific(view.filterNot(that))
     def rangeImpl(from: Option[K], until: Option[K]): SortedSet[K] = {
       val map = SortedMapOps.this.rangeImpl(from, until)
       new map.KeySortedSet
@@ -133,8 +145,6 @@ trait SortedMapOps[K, +V, +CC[X, Y] <: Map[X, Y] with SortedMapOps[X, Y, CC, _],
     def iteratorFrom(start: K): Iterator[K] = SortedMapOps.this.keysIteratorFrom(start)
   }
 
-  override def withFilter(p: ((K, V)) => Boolean): SortedMapOps.WithFilter[K, V, IterableCC, MapCC, CC] = new SortedMapOps.WithFilter(this, p)
-
   // And finally, we add new overloads taking an ordering
   /** Builds a new sorted map by applying a function to all elements of this $coll.
     *
@@ -142,7 +152,7 @@ trait SortedMapOps[K, +V, +CC[X, Y] <: Map[X, Y] with SortedMapOps[X, Y, CC, _],
     *  @return       a new $coll resulting from applying the given function
     *                `f` to each element of this $coll and collecting the results.
     */
-  def map[K2, V2](f: ((K, V)) => (K2, V2))(implicit ordering: Ordering[K2]): CC[K2, V2] =
+  def map[K2, V2](f: ((K, V)) => (K2, V2))(implicit @implicitNotFound(SortedMapOps.ordMsg) ordering: Ordering[K2]): CC[K2, V2] =
     sortedMapFactory.from(new View.Map[(K, V), (K2, V2)](toIterable, f))
 
   /** Builds a new sorted map by applying a function to all elements of this $coll
@@ -152,7 +162,7 @@ trait SortedMapOps[K, +V, +CC[X, Y] <: Map[X, Y] with SortedMapOps[X, Y, CC, _],
     *  @return       a new $coll resulting from applying the given collection-valued function
     *                `f` to each element of this $coll and concatenating the results.
     */
-  def flatMap[K2, V2](f: ((K, V)) => IterableOnce[(K2, V2)])(implicit ordering: Ordering[K2]): CC[K2, V2] =
+  def flatMap[K2, V2](f: ((K, V)) => IterableOnce[(K2, V2)])(implicit @implicitNotFound(SortedMapOps.ordMsg) ordering: Ordering[K2]): CC[K2, V2] =
     sortedMapFactory.from(new View.FlatMap(toIterable, f))
 
   /** Builds a new sorted map by applying a partial function to all elements of this $coll
@@ -163,38 +173,27 @@ trait SortedMapOps[K, +V, +CC[X, Y] <: Map[X, Y] with SortedMapOps[X, Y, CC, _],
     *                `pf` to each element on which it is defined and collecting the results.
     *                The order of the elements is preserved.
     */
-  def collect[K2, V2](pf: PartialFunction[(K, V), (K2, V2)])(implicit ordering: Ordering[K2]): CC[K2, V2] =
-    flatMap { kv =>
-      if (pf.isDefinedAt(kv)) new View.Single(pf(kv))
-      else View.Empty
-    }
+  def collect[K2, V2](pf: PartialFunction[(K, V), (K2, V2)])(implicit @implicitNotFound(SortedMapOps.ordMsg) ordering: Ordering[K2]): CC[K2, V2] =
+    sortedMapFactory.from(new View.Collect(toIterable, pf))
 
-  /** Returns a new $coll containing the elements from the left hand operand followed by the elements from the
-    *  right hand operand. The element type of the $coll is the most specific superclass encompassing
-    *  the element types of the two operands.
-    *
-    *  @param xs   the traversable to append.
-    *  @tparam K2  the type of the keys of the returned $coll.
-    *  @tparam V2  the type of the values of the returned $coll.
-    *  @return     a new collection of type `CC[K2, V2]` which contains all elements
-    *              of this $coll followed by all elements of `xs`.
-    */
-  def concat[K2 >: K, V2 >: V](xs: Iterable[(K2, V2)])(implicit ordering: Ordering[K2]): CC[K2, V2] = sortedMapFactory.from(new View.Concat(toIterable, xs))
+  override def concat[V2 >: V](suffix: IterableOnce[(K, V2)]): CC[K, V2] = sortedMapFactory.from(suffix match {
+    case it: Iterable[(K, V2)] => new View.Concat(toIterable, it)
+    case _ => iterator.concat(suffix.iterator)
+  })(ordering)
 
   /** Alias for `concat` */
-  @`inline` final def ++ [K2 >: K, V2 >: V](xs: Iterable[(K2, V2)])(implicit ordering: Ordering[K2]): CC[K2, V2] = concat(xs)
+  @`inline` override final def ++ [V2 >: V](xs: IterableOnce[(K, V2)]): CC[K, V2] = concat(xs)
 
-  @deprecated("Consider requiring an immutable SortedMap or fall back to SortedMap.concat ", "2.13.0")
-  override def + [V1 >: V](kv: (K, V1)): CC[K, V1] = sortedMapFactory.from(new View.Appended(toIterable, kv))
+  @deprecated("Consider requiring an immutable Map or fall back to Map.concat", "2.13.0")
+  override def + [V1 >: V](kv: (K, V1)): CC[K, V1] = sortedMapFactory.from(new View.Appended(toIterable, kv))(ordering)
 
-  // We override these methods to fix their return type (which would be `Map` otherwise)
-  override def concat[V2 >: V](xs: collection.Iterable[(K, V2)]): CC[K, V2] = sortedMapFactory.from(new View.Concat(toIterable, xs))
-  override def ++ [V2 >: V](xs: collection.Iterable[(K, V2)]): CC[K, V2] = concat(xs)
-  // TODO Also override mapValues
-
+  @deprecated("Use ++ with an explicit collection argument instead of + with varargs", "2.13.0")
+  override def + [V1 >: V](elem1: (K, V1), elem2: (K, V1), elems: (K, V1)*): CC[K, V1] = sortedMapFactory.from(new View.Concat(new View.Appended(new View.Appended(toIterable, elem1), elem2), elems))(ordering)
 }
 
 object SortedMapOps {
+  private[collection] final val ordMsg = "No implicit Ordering[${K2}] found to build a SortedMap[${K2}, ${V2}]. You may want to upcast to a Map[${K}, ${V}] first by calling `unsorted`."
+
   /** Specializes `MapWithFilter` for sorted Map collections
     *
     * @define coll sorted map collection
@@ -218,4 +217,4 @@ object SortedMapOps {
 }
 
 @SerialVersionUID(3L)
-object SortedMap extends SortedMapFactory.Delegate[SortedMap](TreeMap)
+object SortedMap extends SortedMapFactory.Delegate[SortedMap](immutable.SortedMap)

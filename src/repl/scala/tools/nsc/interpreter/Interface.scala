@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 // Copyright 2002-2017 LAMP/EPFL and Lightbend, Inc.
 
 package scala.tools.nsc.interpreter
@@ -5,11 +17,11 @@ import java.io.PrintWriter
 import java.net.URL
 
 import scala.reflect.ClassTag
-import scala.reflect.internal.util.{AbstractFileClassLoader, SourceFile}
-import scala.reflect.internal.util.Position
+import scala.reflect.io.AbstractFile
+import scala.reflect.internal.util.{AbstractFileClassLoader, Position, SourceFile}
 import scala.tools.nsc.Settings
 import scala.tools.nsc.interpreter.Results.Result
-import scala.tools.nsc.reporters.Reporter
+import scala.tools.nsc.reporters.FilteringReporter
 
 
 /** The subset of the Repl used by sbt.
@@ -21,7 +33,7 @@ trait ReplCore {
     * and evaluation results, are printed via the supplied compiler's
     *  reporter. Values defined are available for future interpreted strings.
     *
-    * The return value is whether the line was interpreter successfully,
+    * The return value is whether the line was interpreted successfully,
     *  e.g. that there were no parse errors.
     */
   def interpret(line: String): Result
@@ -46,10 +58,8 @@ trait ReplCore {
     */
   def bindValue(name: String, value: Any): Result = bind(name, value.asInstanceOf[AnyRef].getClass.getName, value)
 
-  /** Set the current Java "context" class loader to this interpreter's class loader
-    *
-    */
-  def setContextClassLoader(): Unit
+  @deprecated("The thread context classloader is now set and restored around execution of REPL line, this method is now a no-op.", since = "2.12.0")
+  final def setContextClassLoader() = () // Called from sbt-interface/0.12.4/src/ConsoleInterface.scala:39
 }
 
 /**
@@ -68,7 +78,6 @@ trait ReplCore {
 trait Repl extends ReplCore {
   val settings: Settings
   type Setting = settings.Setting
-  type SettingSet = scala.collection.Set[Setting]
 
   def reporter: ReplReporter
 
@@ -77,9 +86,9 @@ trait Repl extends ReplCore {
   // Apply a temporary label for compilation (for example, script name)
   def withLabel[A](temp: String)(body: => A): A
 
-  def visibleSettings: SettingSet
+  def visibleSettings: List[Setting]
 
-  def userSetSettings: SettingSet
+  def userSetSettings: List[Setting]
 
   def updateSettings(arguments: List[String]): Boolean
 
@@ -124,6 +133,14 @@ trait Repl extends ReplCore {
   def compileString(code: String): Boolean
 
   def interpret(line: String, synthetic: Boolean): Result
+
+  def tokenize(line: String): List[TokenData]
+
+  /** TODO resolve scan, parse, compile, interpret, which just indicate how much work to do. */
+  def parseString(line: String): Result
+
+  // Error on incomplete input
+  def interpretFinally(line: String): Result
 
   final def beQuietDuring(body: => Unit): Unit = reporter.withoutPrintingResults(body)
 
@@ -181,6 +198,14 @@ trait Repl extends ReplCore {
 
   // Used in a test case.
   def valueOfTerm(id: String): Option[Any]
+
+  // like beQuietDuring, but also turn off noisy settings.
+  // this requires access to both settings and the global compiler
+  def withSuppressedSettings(body: => Unit): Unit
+
+  def compilerClasspath: Seq[URL]
+
+  def outputDir: AbstractFile
 }
 
 /**
@@ -201,7 +226,7 @@ trait ScriptedRepl extends Repl {
   def addBackReferences(req: Request): Either[String, Request]
 }
 
-trait ReplReporter extends Reporter {
+trait ReplReporter extends FilteringReporter with ReplStrings {
   def out: PrintWriter
 
   /**
@@ -220,9 +245,12 @@ trait ReplReporter extends Reporter {
     */
   def withoutTruncating[T](body: => T): T
 
-  /** Do not remove interpreter wrappers ($iw etc) from all output during the execution of `body`.
+  /** Do not remove interpreter wrappers (\$iw etc) from all output during the execution of `body`.
     */
   def withoutUnwrapping(body: => Unit): Unit
+
+  /** Change indentation due to prompt. */
+  def indenting(n: Int)(body: => Unit): Unit
 
 
   /** Print result (Right --> success, Left --> error)
@@ -291,5 +319,29 @@ trait PresentationCompilationResult {
 
   def typeAt(start: Int, end: Int): String
 
-  def candidates(tabCount: Int): (Int, List[String])
+  @deprecated("`completionCandidates` returns richer information (CompletionCandidates, not just strings)", since = "2.13.2")
+  def candidates(tabCount: Int): (Int, List[String]) =
+    completionCandidates(tabCount) match {
+      case (cursor, cands) =>
+        (cursor, cands.map(_.defString))
+    }
+
+  def completionCandidates(tabCount: Int = -1): (Int, List[CompletionCandidate])
 }
+
+case class CompletionCandidate(
+  defString: String,
+  arity: CompletionCandidate.Arity = CompletionCandidate.Nullary,
+  isDeprecated: Boolean = false,
+  isUniversal: Boolean = false)
+object CompletionCandidate {
+  sealed trait Arity
+  case object Nullary extends Arity
+  case object Nilary extends Arity
+  case object Other extends Arity
+  // purely for convenience
+  def fromStrings(defStrings: List[String]): List[CompletionCandidate] =
+    defStrings.map(CompletionCandidate(_))
+}
+
+case class TokenData(token: Int, start: Int, end: Int, isIdentifier: Boolean)

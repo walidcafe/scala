@@ -1,24 +1,33 @@
-/* NSC -- new Scala compiler
- * Copyright 2009-2013 Typesafe/Scala Solutions and LAMP/EPFL
- * @author Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.nsc
 package interactive
 
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.internal.util.Position
-import reporters.Reporter
+import scala.tools.nsc.reporters.FilteringReporter
 
 case class Problem(pos: Position, msg: String, severityLevel: Int)
 
-abstract class InteractiveReporter extends Reporter {
+abstract class InteractiveReporter extends FilteringReporter {
 
   def compiler: Global
 
+  def settings: Settings = compiler.settings
+
   val otherProblems = new ArrayBuffer[Problem]
 
-  override def info0(pos: Position, msg: String, severity: Severity, force: Boolean): Unit = try {
-    severity.count += 1
+  override def doReport(pos: Position, msg: String, severity: Severity): Unit = try {
     val problems =
       if (compiler eq null) {
         otherProblems

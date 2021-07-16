@@ -1,10 +1,14 @@
-/*     ___ ____ ___   __   ___   ___
-**    / _// __// _ | / /  / _ | / _ \    Scala classfile decoder
-**  __\ \/ /__/ __ |/ /__/ __ |/ ___/    (c) 2003-2013, LAMP/EPFL
-** /____/\___/_/ |_/____/_/ |_/_/        http://scala-lang.org/
-**
-*/
-
+/*
+ * Scala classfile decoder (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.tools.scalap
 
@@ -172,12 +176,12 @@ class JavaWriter(classfile: Classfile, writer: Writer) extends CodeWriter(writer
       case cf.Attribute(name, _) => getName(name) == "JacoMeta"
     } match {
       case None =>
-        printClassHeader;
+        printClassHeader();
       case Some(cf.Attribute(_, data)) =>
         val mp = new MetaParser(getName(
           ((data(0) & 0xff) << 8) + (data(1) & 0xff)).trim())
         mp.parse match {
-          case None => printClassHeader;
+          case None => printClassHeader();
           case Some(str) =>
             if (isInterface(cf.flags))
               print("trait " + getSimpleClassName(cf.classname) + str)

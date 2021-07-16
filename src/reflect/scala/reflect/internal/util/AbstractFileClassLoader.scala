@@ -1,5 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -8,13 +16,16 @@ package reflect.internal.util
 import scala.collection.mutable
 import scala.collection.immutable.ArraySeq
 import scala.reflect.io.AbstractFile
-import java.net.{ URL, URLConnection, URLStreamHandler }
+import java.net.{URL, URLConnection, URLStreamHandler}
 import java.security.cert.Certificate
-import java.security.{ ProtectionDomain, CodeSource }
-import java.util.{ Collections => JCollections, Enumeration => JEnumeration }
+import java.security.{CodeSource, ProtectionDomain}
+import java.util.{Collections => JCollections, Enumeration => JEnumeration}
+
+import scala.annotation.nowarn
 
 object AbstractFileClassLoader {
   // should be a method on AbstractFile, but adding in `internal.util._` for now as we're in a minor release
+  @nowarn("cat=lint-nonlocal-return")
   private[scala] final def lookupPath(base: AbstractFile)(pathParts: Seq[String], directory: Boolean): AbstractFile = {
     var file: AbstractFile = base
     for (dirPart <- pathParts.init) {
@@ -28,8 +39,6 @@ object AbstractFileClassLoader {
 }
 
 /** A class loader that loads files from a [[scala.reflect.io.AbstractFile]].
- *
- *  @author Lex Spoon
  */
 class AbstractFileClassLoader(val root: AbstractFile, parent: ClassLoader)
     extends ClassLoader(parent)
@@ -46,6 +55,7 @@ class AbstractFileClassLoader(val root: AbstractFile, parent: ClassLoader)
   protected def dirNameToPath(name: String): String =
     name.replace('.', '/')
 
+  @nowarn("cat=lint-nonlocal-return")
   protected def findAbstractDir(name: String): AbstractFile = {
     var file: AbstractFile = root
     val pathParts          = dirNameToPath(name) split '/'
@@ -99,8 +109,9 @@ class AbstractFileClassLoader(val root: AbstractFile, parent: ClassLoader)
     throw new UnsupportedOperationException()
   }
 
+  // TODO: `getPackage` is deprecated in JDK 9+ - what should be overridden instead?
   override def getPackage(name: String): Package = findAbstractDir(name) match {
-    case null => super.getPackage(name)
+    case null => super.getPackage(name): @nowarn("cat=deprecation")
     case file => packages.getOrElseUpdate(name, {
       val ctor = classOf[Package].getDeclaredConstructor(classOf[String], classOf[String], classOf[String], classOf[String], classOf[String], classOf[String], classOf[String], classOf[URL], classOf[ClassLoader])
       ctor.setAccessible(true)

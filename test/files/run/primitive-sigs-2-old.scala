@@ -1,3 +1,5 @@
+// scalac: -Ydelambdafy:inline
+//
 
 import scala.language.{ postfixOps }
 import java.{ lang => jl }
@@ -18,7 +20,7 @@ class Arr {
   // instead of the more appealing version from the past
   // public <T> T[] Arr.arr4(T[][],scala.reflect.Manifest<T>)
   //
-  // because java inflict's its reference-only generic-arrays on us.
+  // because Java inflicts its reference-only generic-arrays on us.
   //
   def arr4[T: Manifest](xss: Array[Array[T]]): Array[T] = xss map (_.head)
 }
@@ -35,7 +37,7 @@ object Test {
   def main(args: Array[String]): Unit = {
     println(c2.getGenericInterfaces.map(_.toString).sorted mkString " ")
     println(c1m ++ c2m sorted)
-    println(new C f)
+    println(new C().f())
     c3m.sorted foreach println
   }
 }

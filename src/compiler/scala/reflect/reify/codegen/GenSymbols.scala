@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package codegen
 
@@ -172,7 +184,7 @@ trait GenSymbols {
       val reification = reificode(sym)
       import reification.{name, binding}
       val tree = reification.tree updateAttachment ReifyBindingAttachment(binding)
-      state.symtab += (sym, name.toTermName, tree)
+      state.symtab = state.symtab.add(sym, name.toTermName, tree)
     }
     fromSymtab
   }

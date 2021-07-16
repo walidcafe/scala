@@ -1,16 +1,23 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package doc
 
-import scala.tools.nsc.ast.parser.{ SyntaxAnalyzer, BracePatch }
+import scala.tools.nsc.ast.parser.{BracePatch, SyntaxAnalyzer}
 import typechecker.Analyzer
-import scala.reflect.internal.Chars._
-import scala.reflect.internal.util.{ BatchSourceFile, Position }
-import scala.tools.nsc.doc.base.{ CommentFactoryBase, MemberLookupBase, LinkTo }
+import scala.reflect.internal.util.{BatchSourceFile, Position}
+import scala.tools.nsc.Reporting.WarningCategory
+import scala.tools.nsc.doc.base.{CommentFactoryBase, LinkTo, MemberLookupBase}
 
 trait ScaladocAnalyzer extends Analyzer {
   val global : Global // generally, a ScaladocGlobal
@@ -19,7 +26,6 @@ trait ScaladocAnalyzer extends Analyzer {
   override def newTyper(context: Context): ScaladocTyper = new Typer(context) with ScaladocTyper
 
   trait ScaladocTyper extends Typer {
-    private def unit = context.unit
 
     override def canAdaptConstantTypeToLiteral = false
 
@@ -39,12 +45,12 @@ trait ScaladocAnalyzer extends Analyzer {
         for (useCase <- comment.useCases) {
           typer1.silent(_.asInstanceOf[ScaladocTyper].defineUseCases(useCase)) match {
             case SilentTypeError(err) =>
-              reporter.warning(useCase.pos, err.errMsg)
+              context.warning(useCase.pos, err.errMsg, WarningCategory.Scaladoc)
             case _ =>
           }
           for (useCaseSym <- useCase.defined) {
             if (sym.getterName != useCaseSym.getterName)
-              reporter.warning(useCase.pos, "@usecase " + useCaseSym.name.decode + " does not match commented symbol: " + sym.name.decode)
+              context.warning(useCase.pos, "@usecase " + useCaseSym.name.decode + " does not match commented symbol: " + sym.name.decode, WarningCategory.Scaladoc)
           }
         }
       }
@@ -90,7 +96,7 @@ trait ScaladocAnalyzer extends Analyzer {
       typedStats(trees, NoSymbol)
       useCase.defined = context.scope.toList filterNot (useCase.aliases contains _)
 
-      if (settings.debug)
+      if (settings.isDebug)
         useCase.defined foreach (sym => println("defined use cases: %s:%s".format(sym, sym.tpe)))
 
       useCase.defined
@@ -128,9 +134,16 @@ abstract class ScaladocSyntaxAnalyzer[G <: Global](val global: G) extends Syntax
       import global.{ settings, Symbol }
       def parseComment(comment: DocComment) = {
         val nowarnings = settings.nowarn.value
-        settings.nowarn.value = true
+        val maxwarns   = settings.maxwarns.value
+        if (!nowarnings) {
+          settings.nowarn.value = true
+        }
         try parseAtSymbol(comment.raw, comment.raw, comment.pos)
-        finally settings.nowarn.value = nowarnings
+        finally
+          if (!nowarnings) {
+            settings.nowarn.value   = false
+            settings.maxwarns.value = maxwarns
+          }
       }
 
       override def internalLink(sym: Symbol, site: Symbol): Option[LinkTo] = None
@@ -150,7 +163,7 @@ abstract class ScaladocSyntaxAnalyzer[G <: Global](val global: G) extends Syntax
      */
     override def discardDocBuffer() = {
       import scala.tools.nsc.doc.base.comment.Comment
-      val doc = flushDoc
+      val doc = flushDoc()
       // tags that make a local double-star comment look unclean, as though it were API
       def unclean(comment: Comment): Boolean = {
         import comment._
@@ -159,7 +172,7 @@ abstract class ScaladocSyntaxAnalyzer[G <: Global](val global: G) extends Syntax
       }
       def isDirty = unclean(unmooredParser parseComment doc)
       if ((doc ne null) && (settings.warnDocDetached || isDirty))
-        reporter.warning(doc.pos, "discarding unmoored doc comment")
+        runReporting.warning(doc.pos, "discarding unmoored doc comment", WarningCategory.LintDocDetached, site = "")
     }
 
     protected def docPosition: Position = Position.range(unit.source, offset, offset, charOffset - 2)
@@ -169,7 +182,7 @@ abstract class ScaladocSyntaxAnalyzer[G <: Global](val global: G) extends Syntax
     override def withPatches(patches: List[BracePatch]) = new ScaladocUnitParser(unit, patches)
 
     override def joinComment(trees: => List[Tree]): List[Tree] = {
-      val doc = in.flushDoc
+      val doc = in.flushDoc()
       if ((doc ne null) && doc.raw.length > 0) {
         log(s"joinComment(doc=$doc)")
         val joined = trees map {

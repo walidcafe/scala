@@ -1,11 +1,21 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.collection
 package mutable
 
 import scala.reflect.ClassTag
 
 /** A builder class for arrays.
- *
- *  @since 2.8
  *
  *  @tparam T    the type of the elements for the builder.
  */
@@ -19,6 +29,8 @@ sealed abstract class ArrayBuilder[T]
 
   def length: Int = size
 
+  override def knownSize: Int = size
+
   protected[this] final def ensureSize(size: Int): Unit = {
     if (capacity < size || capacity == 0) {
       var newsize = if (capacity == 0) 16 else capacity * 2
@@ -30,7 +42,7 @@ sealed abstract class ArrayBuilder[T]
   override final def sizeHint(size: Int): Unit =
     if (capacity < size) resize(size)
 
-  final def clear(): Unit = size = 0
+  def clear(): Unit = size = 0
 
   protected[this] def resize(size: Int): Unit
 
@@ -47,21 +59,16 @@ sealed abstract class ArrayBuilder[T]
 
   override def addAll(xs: IterableOnce[T]): this.type = {
     val k = xs.knownSize
-    if(k > 0) {
+    if (k > 0) {
       ensureSize(this.size + k)
-      xs match {
-        case xs: Iterable[T] => xs.copyToArray(elems, this.size)
-        case _ => xs.iterator.copyToArray(elems, this.size)
-      }
+      IterableOnce.copyElemsToArray(xs, elems, this.size)
       size += k
-    } else if(k < 0) super.addAll(xs)
+    } else if (k < 0) super.addAll(xs)
     this
   }
 }
 
 /** A companion object for array builders.
- *
- *  @since 2.8
  */
 object ArrayBuilder {
 
@@ -70,7 +77,7 @@ object ArrayBuilder {
    *  @tparam T     type of the elements for the array builder, with a `ClassTag` context bound.
    *  @return       a new empty array builder.
    */
-  def make[T: ClassTag]: ArrayBuilder[T] = {
+  @inline def make[T: ClassTag]: ArrayBuilder[T] = {
     val tag = implicitly[ClassTag[T]]
     tag.runtimeClass match {
       case java.lang.Byte.TYPE      => new ArrayBuilder.ofByte().asInstanceOf[ArrayBuilder[T]]
@@ -98,9 +105,9 @@ object ArrayBuilder {
     protected var elems: Array[T] = _
 
     private def mkArray(size: Int): Array[T] = {
-      val newelems = new Array[T](size)
-      if (this.size > 0) Array.copy(elems, 0, newelems, 0, this.size)
-      newelems
+      if (capacity == size && capacity > 0) elems
+      else if (elems eq null) new Array[T](size)
+      else java.util.Arrays.copyOf[T](elems, size)
     }
 
     protected[this] def resize(size: Int): Unit = {
@@ -115,12 +122,19 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[T] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
+    }
+
+    override def clear(): Unit = {
+      super.clear()
+      if(elems ne null) java.util.Arrays.fill(elems.asInstanceOf[Array[AnyRef]], null)
     }
 
     override def equals(other: Any): Boolean = other match {
@@ -155,10 +169,12 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[Byte] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
     }
@@ -195,10 +211,12 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[Short] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
     }
@@ -235,10 +253,12 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[Char] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
     }
@@ -275,10 +295,12 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[Int] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
     }
@@ -315,10 +337,12 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[Long] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
     }
@@ -355,10 +379,12 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[Float] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
     }
@@ -395,10 +421,12 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[Double] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
     }
@@ -435,10 +463,12 @@ object ArrayBuilder {
       this
     }
 
-    def result() = {
+    def result(): Array[Boolean] = {
       if (capacity != 0 && capacity == size) {
         capacity = 0
-        elems
+        val res = elems
+        elems = null
+        res
       }
       else mkArray(size)
     }

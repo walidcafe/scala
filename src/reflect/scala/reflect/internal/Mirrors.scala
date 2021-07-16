@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -39,19 +46,24 @@ trait Mirrors extends api.Mirrors {
     }
 
     /** Todo: organize similar to mkStatic in scala.reflect.Base */
-    private def getModuleOrClass(path: Name, len: Int): Symbol = {
-      val point = path lastPos('.', len - 1)
+    @annotation.unused
+    private def getModuleOrClass(path: Name, len: Int): Symbol =
+      getModuleOrClass(path.toString, len, path.newName(_))
+
+    private def getModuleOrClass(path: String, len: Int, toName: String => Name): Symbol = {
+      val point = path.lastIndexOf('.', len - 1)
       val owner =
-        if (point > 0) getModuleOrClass(path.toTermName, point)
+        if (point > 0) getModuleOrClass(path, point, newTermName(_))
         else RootClass
-      val name = path subName (point + 1, len)
+
+      val name = toName(path.substring(point + 1, len))
       val sym = owner.info member name
-      val result = if (path.isTermName) sym.suchThat(_ hasFlag MODULE) else sym
+      val result = if (name.isTermName) sym.suchThat(_ hasFlag MODULE) else sym
       if (result != NoSymbol) result
       else {
-        if (settings.debug) { log(sym.info); log(sym.info.members) }//debug
+        if (settings.isDebug) { log(sym.info); log(sym.info.members) }//debug
         thisMirror.missingHook(owner, name) orElse {
-          MissingRequirementError.notFound((if (path.isTermName) "object " else "class ")+path+" in "+thisMirror)
+          MissingRequirementError.notFound((if (name.isTermName) "object " else "class ")+path+" in "+thisMirror)
         }
       }
     }
@@ -62,8 +74,8 @@ trait Mirrors extends api.Mirrors {
      *  Unlike `getModuleOrClass`, this function
      *  loads unqualified names from the root package.
      */
-    private def getModuleOrClass(path: Name): Symbol =
-      getModuleOrClass(path, path.length)
+    private def getModuleOrClass(path: String, toName: String => Name): Symbol =
+      getModuleOrClass(path, path.length, toName)
 
     /** If you're looking for a class, pass a type name.
      *  If a module, a term name.
@@ -71,10 +83,10 @@ trait Mirrors extends api.Mirrors {
      *  Unlike `getModuleOrClass`, this function
      *  loads unqualified names from the empty package.
      */
-    private def staticModuleOrClass(path: Name): Symbol = {
-      val isPackageless = path.pos('.') == path.length
-      if (isPackageless) EmptyPackageClass.info decl path
-      else getModuleOrClass(path)
+    private def staticModuleOrClass(path: String, toName: String => Name): Symbol = {
+      val isPackageless = !path.contains('.')
+      if (isPackageless) EmptyPackageClass.info decl toName(path)
+      else getModuleOrClass(path, toName)
     }
 
     protected def mirrorMissingHook(owner: Symbol, name: Name): Symbol = NoSymbol
@@ -89,28 +101,39 @@ trait Mirrors extends api.Mirrors {
 
     /************************ loaders of class symbols ************************/
 
-    private def ensureClassSymbol(fullname: String, sym: Symbol): ClassSymbol = {
-      var result = sym
-      result match {
+    private def ensureClassSymbol(fullname: String, sym: Symbol): ClassSymbol =
+      sym match {
         case x: ClassSymbol => x
         case _              => MissingRequirementError.notFound("class " + fullname)
       }
-    }
 
+    @deprecated("Use overload that accepts a String.", "2.13.0")
     def getClassByName(fullname: Name): ClassSymbol =
-      ensureClassSymbol(fullname.toString, getModuleOrClass(fullname.toTypeName))
+      ensureClassSymbol(fullname.toString, getModuleOrClass(fullname.toString, fullname.length, newTypeName(_)))
+
+    def getClassByName(fullname: String): ClassSymbol =
+      getRequiredClass(fullname)
+
+    // TODO_NAMES
+    def getRequiredClass(fullname: String, toName: String => Name): ClassSymbol =
+      ensureClassSymbol(fullname, getModuleOrClass(fullname, fullname.length, toName))
 
     def getRequiredClass(fullname: String): ClassSymbol =
-      getClassByName(newTypeNameCached(fullname))
+      ensureClassSymbol(fullname, getModuleOrClass(fullname, fullname.length, newTypeName(_)))
 
     def requiredClass[T: ClassTag] : ClassSymbol =
-      getRequiredClass(erasureName[T])
+      getRequiredClass(erasureName[T], newTypeName(_))
 
     def getClassIfDefined(fullname: String): Symbol =
-      getClassIfDefined(newTypeNameCached(fullname))
+      getClassIfDefined(fullname, newTypeName(_))
 
+    @deprecated("Use overload that accepts a String.", "2.13.0")
     def getClassIfDefined(fullname: Name): Symbol =
       wrapMissing(getClassByName(fullname.toTypeName))
+
+    // TODO_NAMES
+    def getClassIfDefined(fullname: String, toName: String => Name): Symbol =
+      wrapMissing(getRequiredClass(fullname, toName))
 
     /** @inheritdoc
      *
@@ -118,7 +141,7 @@ trait Mirrors extends api.Mirrors {
      *  Compiler might ignore them, but they should be loadable with macros.
      */
     override def staticClass(fullname: String): ClassSymbol =
-      try ensureClassSymbol(fullname, staticModuleOrClass(newTypeNameCached(fullname)))
+      try ensureClassSymbol(fullname, staticModuleOrClass(fullname, newTypeName(_)))
       catch { case mre: MissingRequirementError => throw new ScalaReflectionException(mre.msg) }
 
     /************************ loaders of module symbols ************************/
@@ -129,11 +152,15 @@ trait Mirrors extends api.Mirrors {
         case _                                                     => MissingRequirementError.notFound("object " + fullname)
       }
 
+    @deprecated("Use overload that accepts a String.", "2.13.0")
     def getModuleByName(fullname: Name): ModuleSymbol =
-      ensureModuleSymbol(fullname.toString, getModuleOrClass(fullname.toTermName), allowPackages = true)
+      getModuleByName(fullname.toString)
+
+    def getModuleByName(fullname: String): ModuleSymbol =
+      ensureModuleSymbol(fullname, getModuleOrClass(fullname, fullname.length, newTermName(_)), allowPackages = true)
 
     def getRequiredModule(fullname: String): ModuleSymbol =
-      getModuleByName(newTermNameCached(fullname))
+      getModuleByName(fullname)
 
     // TODO: What syntax do we think should work here? Say you have an object
     // like scala.Predef.  You can't say requiredModule[scala.Predef] since there's
@@ -146,10 +173,11 @@ trait Mirrors extends api.Mirrors {
       getRequiredModule(erasureName[T] stripSuffix "$")
 
     def getModuleIfDefined(fullname: String): Symbol =
-      getModuleIfDefined(newTermNameCached(fullname))
+      wrapMissing(getModuleByName(fullname))
 
+    @deprecated("Use overload that accepts a String.", "2.13.0")
     def getModuleIfDefined(fullname: Name): Symbol =
-      wrapMissing(getModuleByName(fullname.toTermName))
+      getModuleIfDefined(fullname.toString)
 
     /** @inheritdoc
      *
@@ -157,7 +185,7 @@ trait Mirrors extends api.Mirrors {
      *  Compiler might ignore them, but they should be loadable with macros.
      */
     override def staticModule(fullname: String): ModuleSymbol =
-      try ensureModuleSymbol(fullname, staticModuleOrClass(newTermNameCached(fullname)), allowPackages = false)
+      try ensureModuleSymbol(fullname, staticModuleOrClass(fullname, newTermName(_)), allowPackages = false)
       catch { case mre: MissingRequirementError => throw new ScalaReflectionException(mre.msg) }
 
     /************************ loaders of package symbols ************************/
@@ -168,30 +196,39 @@ trait Mirrors extends api.Mirrors {
         case _                                                   => MissingRequirementError.notFound("package " + fullname)
       }
 
+    @deprecated("use overload that accepts a String.", since = "2.13.0")
     def getPackage(fullname: TermName): ModuleSymbol =
-      ensurePackageSymbol(fullname.toString, getModuleOrClass(fullname), allowModules = true)
+      getPackage(fullname.toString)
+    def getPackage(fullname: String): ModuleSymbol =
+      ensurePackageSymbol(fullname, getModuleOrClass(fullname, newTermName(_)), allowModules = true)
 
+    @deprecated("use overload that accepts a String.", since = "2.12.11")
     def getPackageIfDefined(fullname: TermName): Symbol =
+      getPackageIfDefined(fullname.toString)
+    def getPackageIfDefined(fullname: String): Symbol =
       wrapMissing(getPackage(fullname))
 
-    @deprecated("use getPackage", "2.11.0") def getRequiredPackage(fullname: String): ModuleSymbol =
-      getPackage(newTermNameCached(fullname))
+    @deprecated("use getPackage", "2.11.0")
+    def getRequiredPackage(fullname: String): ModuleSymbol =
+      getPackage(fullname)
 
-    def getPackageObject(fullname: String): ModuleSymbol = getPackageObject(newTermName(fullname))
+    @deprecated("use overload that accepts a String.", since = "2.12.11")
     def getPackageObject(fullname: TermName): ModuleSymbol =
-      (getPackage(fullname).packageObject) match {
+      getPackageObject(fullname.toString)
+    def getPackageObject(fullname: String): ModuleSymbol =
+      getPackage(fullname).packageObject match {
         case x: ModuleSymbol => x
         case _               => MissingRequirementError.notFound("package object " + fullname)
       }
 
-    def getPackageObjectIfDefined(fullname: String): Symbol =
-      getPackageObjectIfDefined(newTermNameCached(fullname))
-
+    @deprecated("use overload that accepts a String.", since = "2.12.11")
     def getPackageObjectIfDefined(fullname: TermName): Symbol =
+      getPackageObjectIfDefined(fullname.toString)
+    def getPackageObjectIfDefined(fullname: String): Symbol =
       wrapMissing(getPackageObject(fullname))
 
     override def staticPackage(fullname: String): ModuleSymbol =
-      try ensurePackageSymbol(fullname.toString, getModuleOrClass(newTermNameCached(fullname)), allowModules = false)
+      try ensurePackageSymbol(fullname.toString, getModuleOrClass(fullname, fullname.length, newTermName(_)), allowModules = false)
       catch { case mre: MissingRequirementError => throw new ScalaReflectionException(mre.msg) }
 
     /************************ helpers ************************/

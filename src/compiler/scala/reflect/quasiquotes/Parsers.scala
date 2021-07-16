@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect
 package quasiquotes
 
@@ -32,6 +44,7 @@ trait Parsers { self: Quasiquotes =>
       def fallbackPosition = posMapList match {
         case (pos1, (start1, end1)) :: _   if start1 > offset => pos1
         case _ :+ ((pos2, (start2, end2))) if end2 <= offset  => pos2.withPoint(pos2.point + (end2 - start2))
+        case x                                                => throw new MatchError(x)
       }
       posMapList.sliding(2).collect {
         case (pos1, (start1, end1)) :: _                        if containsOffset(start1, end1) => (pos1, offset - start1)
@@ -57,8 +70,8 @@ trait Parsers { self: Quasiquotes =>
       override implicit lazy val fresh: FreshNameCreator = new FreshNameCreator(nme.QUASIQUOTE_PREFIX)
 
       // Do not check for tuple arity. The placeholders can support arbitrary tuple sizes.
-      override def makeSafeTupleTerm(trees: List[Tree], offset: Offset): Tree = treeBuilder.makeTupleTerm(trees)
-      override def makeSafeTupleType(trees: List[Tree], offset: Offset): Tree = treeBuilder.makeTupleType(trees)
+      override def makeSafeTupleTerm(trees: List[Tree]): Tree = treeBuilder.makeTupleTerm(trees)
+      override def makeSafeTupleType(trees: List[Tree]): Tree = treeBuilder.makeTupleType(trees)
 
       override val treeBuilder = new ParserTreeBuilder {
         override implicit def fresh: FreshNameCreator = parser.fresh
@@ -86,15 +99,15 @@ trait Parsers { self: Quasiquotes =>
         override def makeFunctionTypeTree(argtpes: List[Tree], restpe: Tree): Tree = FunctionTypePlaceholder(argtpes, restpe)
 
         // make q"val (x: T) = rhs" be equivalent to q"val x: T = rhs" for sake of bug compatibility (scala/bug#8211)
-        override def makePatDef(mods: Modifiers, pat: Tree, rhs: Tree) = pat match {
-          case TuplePlaceholder(inParensPat :: Nil) => super.makePatDef(mods, inParensPat, rhs)
-          case _ => super.makePatDef(mods, pat, rhs)
+        override def makePatDef(mods: Modifiers, pat: Tree, rhs: Tree, rhsPos: Position) = pat match {
+          case TuplePlaceholder(inParensPat :: Nil) => super.makePatDef(mods, inParensPat, rhs, rhsPos)
+          case _ => super.makePatDef(mods, pat, rhs, rhsPos)
         }
       }
       import treeBuilder.{global => _, unit => _}
 
       // q"def foo($x)"
-      override def param(owner: Name, implicitmod: Int, caseParam: Boolean): ValDef =
+      override def param(owner: Name, implicitmod: Long, caseParam: Boolean): ValDef =
         if (isHole && lookingAhead { in.token == COMMA || in.token == RPAREN }) {
           ParamPlaceholder(implicitmod, ident())
         } else super.param(owner, implicitmod, caseParam)
@@ -220,7 +233,7 @@ trait Parsers { self: Quasiquotes =>
   object ForEnumeratorParser extends Parser {
     def entryPoint = { parser =>
       val enums = parser.enumerator(isFirst = false, allowNestedIf = false)
-      assert(enums.length == 1)
+      assert(enums.length == 1, "Require one enumerator")
       implodePatDefs(enums.head)
     }
   }

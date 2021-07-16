@@ -1,16 +1,20 @@
-/*                     __                                                      *\
-**     ________ ___   / /  ___     Scala API                                   **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2016, LAMP/EPFL and Lightbend, Inc **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/                      **
-** /____/\___/_/ |_/____/_/ | |                                                **
-**                          |/                                                 **
-\*                                                                             */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.runtime
 
 /** Classes used as holders for lazy vals defined in methods. */
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyRef[T] extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -26,7 +30,7 @@ class LazyRef[T] extends Serializable {
   override def toString = s"LazyRef ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyBoolean extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -42,7 +46,7 @@ class LazyBoolean extends Serializable {
   override def toString = s"LazyBoolean ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyByte extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -60,7 +64,7 @@ class LazyByte extends Serializable {
   override def toString = s"LazyByte ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyChar extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -76,7 +80,7 @@ class LazyChar extends Serializable {
   override def toString = s"LazyChar ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyShort extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -92,7 +96,7 @@ class LazyShort extends Serializable {
   override def toString = s"LazyShort ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyInt extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -108,7 +112,7 @@ class LazyInt extends Serializable {
   override def toString = s"LazyInt ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyLong extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -124,7 +128,7 @@ class LazyLong extends Serializable {
   override def toString = s"LazyLong ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyFloat extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -140,7 +144,7 @@ class LazyFloat extends Serializable {
   override def toString = s"LazyFloat ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyDouble extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized
@@ -156,7 +160,7 @@ class LazyDouble extends Serializable {
   override def toString = s"LazyDouble ${if (_initialized) s"of: ${_value}" else "thunk"}"
 }
 
-@SerialVersionUID(1l)
+@SerialVersionUID(1L)
 class LazyUnit extends Serializable {
   @volatile private[this] var _initialized: Boolean = _
   def initialized = _initialized

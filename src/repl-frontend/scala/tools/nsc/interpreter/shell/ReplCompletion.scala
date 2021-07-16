@@ -1,61 +1,43 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
-package scala.tools.nsc.interpreter.shell
+
+package scala.tools.nsc.interpreter
+package shell
 
 import scala.util.control.NonFatal
-import scala.tools.nsc.interpreter.Repl
-import scala.tools.nsc.interpreter.jline
-import scala.tools.nsc.interpreter.Naming
 
-class ReplCompletion(intp: Repl) extends jline.JLineCompletion {
-  import ReplCompletion._
-
-  private[this] var _partialInput: String = ""
-  override def partialInput: String = _partialInput
-  override def withPartialInput[T](code: String)(body: => T): T = {
-    val saved = partialInput
-    _partialInput = code
-    try body finally _partialInput = saved
-  }
-
-  def shellCompletion(buffer: String, cursor: Int): Option[CompletionResult] = None
+/** Completion for the REPL.
+ */
+class ReplCompletion(intp: Repl, val accumulator: Accumulator = new Accumulator) extends Completion {
 
   def complete(buffer: String, cursor: Int): CompletionResult = {
-    shellCompletion(buffer, cursor) getOrElse {
-      // special case for:
-      //
-      // scala> 1
-      // scala> .toInt
-      val bufferWithVar =
-        if (Parsed.looksLikeInvocation(buffer)) intp.mostRecentVar + buffer
-        else buffer
+    // special case for:
+    //
+    // scala> 1
+    // scala> .toInt
+    val bufferWithVar =
+      if (Parsed.looksLikeInvocation(buffer)) intp.mostRecentVar + buffer
+      else buffer
 
-      // prepend `partialInput` for multi-line input.
-      val bufferWithMultiLine = partialInput + bufferWithVar
-      val cursor1 = cursor + (bufferWithMultiLine.length - buffer.length)
-      codeCompletion(bufferWithMultiLine, cursor1)
-    }
+    val bufferWithMultiLine = accumulator.toString + bufferWithVar
+    val cursor1 = cursor + (bufferWithMultiLine.length - buffer.length)
+    codeCompletion(bufferWithMultiLine, cursor1)
   }
-
-  private var lastRequest = NoRequest
-  private var tabCount = 0
-
-  def resetVerbosity(): Unit = { tabCount = 0 ; lastRequest = NoRequest }
 
   // A convenience for testing
   def complete(before: String, after: String = ""): CompletionResult = complete(before + after, before.length)
+
   private def codeCompletion(buf: String, cursor: Int): CompletionResult = {
     require(cursor >= 0 && cursor <= buf.length)
-
-    val request = Request(buf, cursor)
-    if (request == lastRequest)
-      tabCount += 1
-    else {
-      tabCount = 0
-      lastRequest = request
-    }
 
     // secret handshakes
     val slashPrint  = """.*// *print *""".r
@@ -66,10 +48,32 @@ class ReplCompletion(intp: Repl) extends jline.JLineCompletion {
         case Left(_) => NoCompletions
         case Right(result) => try {
           buf match {
-            case slashPrint() if cursor == buf.length => CompletionResult(cursor, "" :: Naming.unmangle(result.print) :: Nil)
-            case slashPrintRaw() if cursor == buf.length => CompletionResult(cursor, "" :: result.print :: Nil)
-            case slashTypeAt(start, end) if cursor == buf.length => CompletionResult(cursor, "" :: result.typeAt(start.toInt, end.toInt) :: Nil)
-            case _ => val (c, r) = result.candidates(tabCount); CompletionResult(c, r)
+            case slashPrint() if cursor == buf.length            =>
+              CompletionResult(buf, cursor, CompletionCandidate.fromStrings("" :: Naming.unmangle(result.print) :: Nil))
+            case slashPrintRaw() if cursor == buf.length         =>
+              CompletionResult(buf, cursor, CompletionCandidate.fromStrings("" :: result.print :: Nil))
+            case slashTypeAt(start, end) if cursor == buf.length =>
+              CompletionResult(buf, cursor, CompletionCandidate.fromStrings("" :: result.typeAt(start.toInt, end.toInt) :: Nil))
+            case _                                               =>
+              // under JLine 3, we no longer use the tabCount concept, so tabCount is always 1
+              // which always gives us all completions
+              val (c, r)                         = result.completionCandidates(tabCount = 1)
+              // scala/bug#12238
+              // Currently, only when all methods are Deprecated should they be displayed `Deprecated` to users. Only handle result of PresentationCompilation#toCandidates.
+              // We don't handle result of PresentationCompilation#defStringCandidates, because we need to show the deprecated here.
+              if (r.nonEmpty && r.forall(!_.defString.startsWith("def"))) {
+                val groupByDef              = r.groupBy(_.defString)
+                val allOverrideIsUniversal  = groupByDef.filter(f => f._2.forall(_.isUniversal)).keySet
+                val allOverrideIsDeprecated = groupByDef.filter(f => f._2.forall(_.isDeprecated)).keySet
+                def isOverrideMethod(candidate: CompletionCandidate): Boolean = groupByDef(candidate.defString).size > 1
+                val rewriteDecr = r.map(candidate => {
+                  // If not all overloaded methods are deprecated, but they are overloaded methods, they (all) should be set to false.
+                  val isUniv = if (!allOverrideIsUniversal.contains(candidate.defString) && isOverrideMethod(candidate)) false else candidate.isUniversal
+                  val isDepr = if (!allOverrideIsDeprecated.contains(candidate.defString) && isOverrideMethod(candidate)) false else candidate.isDeprecated
+                  candidate.copy(isUniversal = isUniv, isDeprecated = isDepr)
+                })
+                CompletionResult(buf, c, rewriteDecr)
+              } else CompletionResult(buf, c, r)
           }
         } finally result.cleanup()
       }
@@ -79,9 +83,4 @@ class ReplCompletion(intp: Repl) extends jline.JLineCompletion {
         NoCompletions
     }
   }
-}
-
-object ReplCompletion {
-  private case class Request(line: String, cursor: Int)
-  private val NoRequest = Request("", -1)
 }

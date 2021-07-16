@@ -8,9 +8,9 @@ import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
 import scala.tools.asm.Opcodes._
-import scala.tools.partest.ASMConverters._
-import scala.tools.testing.BytecodeTesting
-import scala.tools.testing.BytecodeTesting._
+import scala.tools.testkit.ASMConverters._
+import scala.tools.testkit.BytecodeTesting
+import scala.tools.testkit.BytecodeTesting._
 
 /**
   * Tests for boxing/unboxing optimizations.
@@ -55,7 +55,7 @@ class BoxUnboxTest extends BytecodeTesting {
         |
         |  // two box and two unbox operations
         |  def t2(b: Boolean) = {
-        |    val a = if (b) (3l: Any) else 2l
+        |    val a = if (b) (3L: Any) else 2L
         |    a.asInstanceOf[Long] + 1 + a.asInstanceOf[Long]
         |  }
         |
@@ -70,9 +70,9 @@ class BoxUnboxTest extends BytecodeTesting {
         |  }
         |
         |  def t6: Long = {
-        |    val y = new java.lang.Boolean(true)
-        |    val i: Integer = if (y) new Integer(10) else 13
-        |    val j: java.lang.Long = 3l
+        |    val y = java.lang.Boolean.valueOf(true)
+        |    val i: Integer = if (y) Integer.valueOf(10) else 13
+        |    val j: java.lang.Long = 3L
         |    j + i
         |  }
         |
@@ -145,6 +145,13 @@ class BoxUnboxTest extends BytecodeTesting {
         |    bi + li
         |  }
         |
+        |  def t17(x: Int) = { // this one's pretty contrived but tests that primitives can be unboxed through a branch
+        |    val wat: Any = if (x > 0) x else -x
+        |    wat match {
+        |      case i: Int => String valueOf i
+        |      case _      => "?"
+        |    }
+        |  }
         |}
       """.stripMargin
 
@@ -198,10 +205,11 @@ class BoxUnboxTest extends BytecodeTesting {
     assertDoesNotInvoke(getInstructions(c, "t16"), "boxToLong")
     assertDoesNotInvoke(getInstructions(c, "t16"), "unboxToInt")
     assertDoesNotInvoke(getInstructions(c, "t16"), "unboxToLong")
+    assertDoesNotInvoke(getMethod(c, "t17"), "boxToInteger")
   }
 
   @Test
-  def refEliminiation(): Unit = {
+  def refElimination(): Unit = {
     val code =
       """class C {
         |  import runtime._
@@ -220,7 +228,7 @@ class BoxUnboxTest extends BytecodeTesting {
         |  }
         |
         |  def t3 = {
-        |    val r = LongRef.create(10l) // eliminated
+        |    val r = LongRef.create(10L) // eliminated
         |    r.elem += 3
         |    r.elem
         |  }
@@ -244,6 +252,12 @@ class BoxUnboxTest extends BytecodeTesting {
         |    val res: IntRef = if (b) r1 else r2
         |    res.elem // boxes remain: can't rewrite this read, don't know which local
         |  }
+        |
+        |  // this case is contemplated by BoxUnbox despite my inability to provide a motivating example
+        |  def t7(b: Boolean) = {
+        |    val r1 = if (b) IntRef.zero() else IntRef.create(1)
+        |    r1.elem
+        |  }
         |}
       """.stripMargin
     val c = compileClass(code)
@@ -255,6 +269,7 @@ class BoxUnboxTest extends BytecodeTesting {
       List("scala/runtime/IntRef.elem"))
     assertEquals(getInstructions(c, "t6") collect { case Field(op, owner, name, _) => s"$op $owner.$name" },
       List(s"$PUTFIELD scala/runtime/IntRef.elem", s"$GETFIELD scala/runtime/IntRef.elem"))
+    assertNoInvoke(getMethod(c, "t7"))
   }
 
   @Test
@@ -273,7 +288,7 @@ class BoxUnboxTest extends BytecodeTesting {
         |
         |  def t3 = {
         |    // boxed before tuple creation, a non-specialized tuple is created
-        |    val t = (new Integer(3), Integer.valueOf(4))
+        |    val t = (Integer.valueOf(3), Integer.valueOf(4))
         |    t._1 + t._2 // invokes the generic `_1` / `_2` getters, both values unboxed by Integer2int
         |  }
         |
@@ -308,6 +323,21 @@ class BoxUnboxTest extends BytecodeTesting {
         |    case (x, y) if x == y => 0
         |    case (x, y) => x + y
         |  }
+        |
+        |  def t10(a: Int, b: Int) = { // tuple is optimized away
+        |    val (greater, lesser) = if (a > b) (a, b) else (b, a)
+        |    greater - lesser
+        |  }
+        |
+        |  def t11(n: Int)(j: Int) = { // tuple is optimized away
+        |    val (a, b, c, _) = n match {
+        |      case 0 => (j, 0, 1, 1)
+        |      case 1 => (0, j, 0, 1)
+        |      case 2 => (1, 0, j, 0)
+        |      case 3 => (1, 1, 0, j)
+        |    }
+        |    a + b + c
+        |  }
         |}
       """.stripMargin
     val c = compileClass(code)
@@ -327,6 +357,56 @@ class BoxUnboxTest extends BytecodeTesting {
       ILOAD, ILOAD, IADD, ILOAD, IADD, IRETURN))
     assertNoInvoke(getMethod(c, "t8"))
     assertNoInvoke(getMethod(c, "t9"))
+    assertNoInvoke(getMethod(c, "t10"))
+    assertInvokedMethods(getMethod(c, "t11"), List(
+      "scala/runtime/BoxesRunTime.boxToInteger", // only once, for the MatchError
+      "scala/MatchError.<init>",
+    ))
   }
 
+  @Test
+  def unboxKeepCCE(): Unit = {
+    val code =
+      """def f(b: java.lang.Byte) = {
+        |  Int.unbox(new Object)
+        |  Long.unbox("")
+        |  Byte.unbox(b)                  // eliminated: push-pop replaces it by a checkcast, which is then eliminated
+        |  Int.unbox(null)                // eliminated by box-unbox
+        |  Int.unbox(Integer.valueOf(1))  // eliminated by box-unbox
+        |
+        |  b.byteValue                    // replaced by null check
+        |  Long.box(10L).longValue        // eliminated by box-unbox
+        |  this.asInstanceOf[Integer].intValue // replaced by null check, which is then eliminated (this is known to be non-null)
+        |  0
+        |}""".stripMargin
+    val m = compileMethod(code)
+    assertSameCode(m, List(
+      TypeOp(NEW, "java/lang/Object"), Op(DUP), Invoke(INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false), TypeOp(CHECKCAST, "java/lang/Integer"), Op(POP),
+      Ldc(LDC, ""), TypeOp(CHECKCAST, "java/lang/Long"), Op(POP),
+      VarOp(ALOAD, 1), Jump(IFNONNULL, Label(18)), Op(ACONST_NULL), Op(ATHROW), Label(18),
+      VarOp(ALOAD, 0), TypeOp(CHECKCAST, "java/lang/Integer"), Op(POP),
+      Op(ICONST_0), Op(IRETURN)))
+  }
+
+  @Test
+  def unboxAsmCrash(): Unit = {
+    val code =
+      """
+        |package p1
+        |
+        |class AssertUtil {
+        |
+        |  def waitForIt(terminated: => Boolean, progress: Int = 0, label: => String = "test"): Unit = {
+        |    val limit = 5
+        |    var n = 1
+        |    var (dormancy, factor) = progress match {
+        |      case 0 => (10000L, 5)
+        |      case _ => (250L, 4)
+        |    }
+        |    ()
+        |  }
+        |}""".stripMargin
+    val m = getMethod(compileClass(code), "waitForIt")
+    assertSameCode(m, List(VarOp(ILOAD, 2), TableSwitch(TABLESWITCH, 0, 0, Label(4), List(Label(4))), Label(4), Op(RETURN)))
+  }
 }

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -19,9 +26,6 @@ import scala.collection.mutable.ListBuffer
 import scala.annotation.switch
 import scala.util.control.NonFatal
 
-/** @author Martin Odersky
- *  @version 1.0
- */
 abstract class UnPickler {
   val symbolTable: SymbolTable
   import symbolTable._
@@ -49,25 +53,23 @@ abstract class UnPickler {
     *
     * Useful for reporting on stub errors and cyclic errors.
     */
-  private val completingStack = new mutable.ArrayBuffer[Symbol](24)
+  private[this] val completingStack = new mutable.ArrayBuffer[Symbol](24)
 
   class Scan(_bytes: Array[Byte], offset: Int, classRoot: ClassSymbol, moduleRoot: ModuleSymbol, filename: String) extends PickleBuffer(_bytes, offset, -1) {
     //println("unpickle " + classRoot + " and " + moduleRoot)//debug
 
-    protected def debug = settings.debug.value
-
     checkVersion()
 
-    private val loadingMirror = mirrorThatLoaded(classRoot)
+    private[this] val loadingMirror = mirrorThatLoaded(classRoot)
 
     /** A map from entry numbers to array offsets */
-    private val index = createIndex
+    private[this] val index = createIndex
 
     /** A map from entry numbers to symbols, types, or annotations */
-    private val entries = new Array[AnyRef](index.length)
+    private[this] val entries = new Array[AnyRef](index.length)
 
     /** A map from symbols to their associated `decls` scopes */
-    private val symScopes = mutable.HashMap[Symbol, Scope]()
+    private[this] val symScopes = mutable.HashMap[Symbol, Scope]()
 
     private def expect(expected: Int, msg: => String): Unit = {
       val tag = readByte()
@@ -151,11 +153,6 @@ abstract class UnPickler {
       tag == CHILDREN
     }
 
-    private def maybeReadSymbol(): Either[Int, Symbol] = readNat() match {
-      case index if isSymbolRef(index) => Right(at(index, () => readSymbol()))
-      case index                       => Left(index)
-    }
-
     /** Does entry represent a refinement symbol?
      *  pre: Entry is a class symbol
      */
@@ -163,7 +160,7 @@ abstract class UnPickler {
       val savedIndex = readIndex
       readIndex = index(i)
       val tag = readByte().toInt
-      assert(tag == CLASSsym)
+      assert(tag == CLASSsym, "Entry must be a class symbol")
 
       readNat(); // read length
       val result = readNameRef() == tpnme.REFINE_CLASS_NAME
@@ -233,7 +230,7 @@ abstract class UnPickler {
 
           (module map { case (group, art) =>
             s"""\n(NOTE: It looks like the $art module is missing; try adding a dependency on "$group" : "$art".
-               |       See http://docs.scala-lang.org/overviews/ for more information.)""".stripMargin
+               |       See https://docs.scala-lang.org/overviews/ for more information.)""".stripMargin
            } getOrElse "")
         }
 
@@ -242,6 +239,9 @@ abstract class UnPickler {
             owner.newLocalDummy(NoPosition)
           else NoSymbol
         }
+
+        if (owner == definitions.ScalaPackageClass && name == tpnme.AnyRef)
+          return definitions.AnyRefClass
 
         // (1) Try name.
         localDummy orElse fromName(name) orElse {
@@ -281,9 +281,15 @@ abstract class UnPickler {
       val owner        = readSymbolRef()
       val flags        = pickledToRawFlags(readLongNat())
 
-      val (privateWithin, inforef) = maybeReadSymbol() match {
-        case Left(index) => NoSymbol -> index
-        case Right(sym)  => sym -> readNat()
+      var privateWithin: Symbol = null
+      var inforef: Int = 0
+      readNat() match {
+        case index if isSymbolRef(index) =>
+          privateWithin = at(index, () => readSymbol())
+          inforef = readNat()
+        case index =>
+          privateWithin = NoSymbol
+          inforef = index
       }
 
       def isModuleFlag      = (flags & MODULE) != 0L
@@ -293,7 +299,7 @@ abstract class UnPickler {
       def pflags            = flags & PickledFlags
 
       def finishSym(sym: Symbol): Symbol = {
-        /**
+        /*
          * member symbols (symbols owned by a class) are added to the class's scope, with a number
          * of exceptions:
          *
@@ -360,14 +366,14 @@ abstract class UnPickler {
       })
     }
 
-    protected def readType(forceProperType: Boolean = false): Type = {
+    protected def readType(): Type = {
       val tag = readByte()
       val end = readEnd()
       @inline def all[T](body: => T): List[T] = until(end, () => body)
 
-      def readTypes()   = all(readTypeRef)
-      def readSymbols() = all(readSymbolRef)
-      def readAnnots()  = all(readAnnotationRef)
+      def readTypes()   = all(readTypeRef())
+      def readSymbols() = all(readSymbolRef())
+      def readAnnots()  = all(readAnnotationRef())
 
       // if the method is overloaded, the params cannot be determined (see readSymbol) => return NoType.
       // Only happen for trees, "case Apply" in readTree() takes care of selecting the correct
@@ -434,7 +440,7 @@ abstract class UnPickler {
         case LITERALnull    => Constant(null)
         case LITERALclass   => Constant(readTypeRef())
         case LITERALenum    => Constant(readSymbolRef())
-        case LITERALsymbol  => Constant(scala.Symbol(readNameRef().toString))
+        case LITERALsymbol  => Constant(null) // TODO: needed until we have a STARR that does not emit it.
         case _              => noSuchConstantTag(tag, len)
       }
     }
@@ -446,7 +452,7 @@ abstract class UnPickler {
      */
     protected def readChildren(): Unit = {
       val tag = readByte()
-      assert(tag == CHILDREN)
+      assert(tag == CHILDREN, "Entry must be children")
       val end = readEnd()
       val target = readSymbolRef()
       while (readIndex != end) target addChild readSymbolRef()
@@ -467,7 +473,7 @@ abstract class UnPickler {
     private def readArrayAnnot() = {
       readByte() // skip the `annotargarray` tag
       val end = readEnd()
-      until(end, () => readClassfileAnnotArg(readNat())).toArray(JavaArgumentTag)
+      until(end, () => readClassfileAnnotArg(readNat())).toArray
     }
     protected def readClassfileAnnotArg(i: Int): ClassfileAnnotArg = bytes(index(i)) match {
       case ANNOTINFO     => NestedAnnotArg(at(i, () => readAnnotation()))
@@ -546,51 +552,51 @@ abstract class UnPickler {
       }
       def selectorsRef() = all(ImportSelector(nameRef(), -1, nameRef(), -1))
 
-      /** A few of the most popular trees have been pulled to the top for
-       *  switch efficiency purposes.
+      /* A few of the most popular trees have been pulled to the top for
+       * switch efficiency purposes.
        */
       def readTree(tpe: Type): Tree = (tag: @switch) match {
-        case IDENTtree           => Ident(nameRef)
-        case SELECTtree          => Select(ref, nameRef)
-        case APPLYtree           => fixApply(Apply(ref, all(ref)), tpe) // !!!
-        case BINDtree            => Bind(nameRef, ref)
-        case BLOCKtree           => all(ref) match { case stats :+ expr => Block(stats, expr) }
-        case IFtree              => If(ref, ref, ref)
-        case LITERALtree         => Literal(constRef)
-        case TYPEAPPLYtree       => TypeApply(ref, all(ref))
-        case TYPEDtree           => Typed(ref, ref)
-        case ALTERNATIVEtree     => Alternative(all(ref))
-        case ANNOTATEDtree       => Annotated(ref, ref)
-        case APPLIEDTYPEtree     => AppliedTypeTree(ref, all(ref))
-        case APPLYDYNAMICtree    => ApplyDynamic(ref, all(ref))
-        case ARRAYVALUEtree      => ArrayValue(ref, all(ref))
-        case ASSIGNtree          => Assign(ref, ref)
-        case CASEtree            => CaseDef(ref, ref, ref)
-        case CLASStree           => ClassDef(modsRef, typeNameRef, rep(tparamRef), implRef)
-        case COMPOUNDTYPEtree    => CompoundTypeTree(implRef)
-        case DEFDEFtree          => DefDef(modsRef, termNameRef, rep(tparamRef), rep(rep(vparamRef)), ref, ref)
-        case EXISTENTIALTYPEtree => ExistentialTypeTree(ref, all(memberRef))
-        case FUNCTIONtree        => Function(rep(vparamRef), ref)
-        case IMPORTtree          => Import(ref, selectorsRef)
-        case LABELtree           => LabelDef(termNameRef, rep(idRef), ref)
-        case MATCHtree           => Match(ref, all(caseRef))
-        case MODULEtree          => ModuleDef(modsRef, termNameRef, implRef)
-        case NEWtree             => New(ref)
-        case PACKAGEtree         => PackageDef(refTreeRef, all(ref))
-        case RETURNtree          => Return(ref)
-        case SELECTFROMTYPEtree  => SelectFromTypeTree(ref, typeNameRef)
-        case SINGLETONTYPEtree   => SingletonTypeTree(ref)
-        case STARtree            => Star(ref)
-        case SUPERtree           => Super(ref, typeNameRef)
-        case TEMPLATEtree        => Template(rep(ref), vparamRef, all(ref))
-        case THIStree            => This(typeNameRef)
-        case THROWtree           => Throw(ref)
-        case TREtree             => Try(ref, rep(caseRef), ref)
-        case TYPEBOUNDStree      => TypeBoundsTree(ref, ref)
-        case TYPEDEFtree         => TypeDef(modsRef, typeNameRef, rep(tparamRef), ref)
+        case IDENTtree           => Ident(nameRef())
+        case SELECTtree          => Select(ref(), nameRef())
+        case APPLYtree           => fixApply(Apply(ref(), all(ref())), tpe) // !!!
+        case BINDtree            => Bind(nameRef(), ref())
+        case BLOCKtree           => all(ref()) match { case stats :+ expr => Block(stats, expr) case x => throw new MatchError(x) }
+        case IFtree              => If(ref(), ref(), ref())
+        case LITERALtree         => Literal(constRef())
+        case TYPEAPPLYtree       => TypeApply(ref(), all(ref()))
+        case TYPEDtree           => Typed(ref(), ref())
+        case ALTERNATIVEtree     => Alternative(all(ref()))
+        case ANNOTATEDtree       => Annotated(ref(), ref())
+        case APPLIEDTYPEtree     => AppliedTypeTree(ref(), all(ref()))
+        case APPLYDYNAMICtree    => ApplyDynamic(ref(), all(ref()))
+        case ARRAYVALUEtree      => ArrayValue(ref(), all(ref()))
+        case ASSIGNtree          => Assign(ref(), ref())
+        case CASEtree            => CaseDef(ref(), ref(), ref())
+        case CLASStree           => ClassDef(modsRef(), typeNameRef(), rep(tparamRef()), implRef())
+        case COMPOUNDTYPEtree    => CompoundTypeTree(implRef())
+        case DEFDEFtree          => DefDef(modsRef(), termNameRef(), rep(tparamRef()), rep(rep(vparamRef())), ref(), ref())
+        case EXISTENTIALTYPEtree => ExistentialTypeTree(ref(), all(memberRef()))
+        case FUNCTIONtree        => Function(rep(vparamRef()), ref())
+        case IMPORTtree          => Import(ref(), selectorsRef())
+        case LABELtree           => LabelDef(termNameRef(), rep(idRef()), ref())
+        case MATCHtree           => Match(ref(), all(caseRef()))
+        case MODULEtree          => ModuleDef(modsRef(), termNameRef(), implRef())
+        case NEWtree             => New(ref())
+        case PACKAGEtree         => PackageDef(refTreeRef(), all(ref()))
+        case RETURNtree          => Return(ref())
+        case SELECTFROMTYPEtree  => SelectFromTypeTree(ref(), typeNameRef())
+        case SINGLETONTYPEtree   => SingletonTypeTree(ref())
+        case STARtree            => Star(ref())
+        case SUPERtree           => Super(ref(), typeNameRef())
+        case TEMPLATEtree        => Template(rep(ref()), vparamRef(), all(ref()))
+        case THIStree            => This(typeNameRef())
+        case THROWtree           => Throw(ref())
+        case TREtree             => Try(ref(), rep(caseRef()), ref())
+        case TYPEBOUNDStree      => TypeBoundsTree(ref(), ref())
+        case TYPEDEFtree         => TypeDef(modsRef(), typeNameRef(), rep(tparamRef()), ref())
         case TYPEtree            => TypeTree()
-        case UNAPPLYtree         => UnApply(ref, all(ref))
-        case VALDEFtree          => ValDef(modsRef, termNameRef, ref, ref)
+        case UNAPPLYtree         => UnApply(ref(), all(ref()))
+        case VALDEFtree          => ValDef(modsRef(), termNameRef(), ref(), ref())
         case _                   => noSuchTreeTag(tag, end)
       }
 
@@ -709,29 +715,17 @@ abstract class UnPickler {
 
     /** A lazy type which when completed returns type at index `i`. */
     private class LazyTypeRef(i: Int) extends LazyType with FlagAgnosticCompleter {
-      private val definedAtRunId = currentRunId
-      private val p = phase
+      private[this] val definedAtRunId = currentRunId
+      private[this] val p = phase
       protected def completeInternal(sym: Symbol) : Unit = try {
         completingStack += sym
-        val tp = at(i, () => readType(sym.isTerm)) // after NMT_TRANSITION, revert `() => readType(sym.isTerm)` to `readType`
-
-        // This is a temporary fix allowing to read classes generated by an older, buggy pickler.
-        // See the generation of the LOCAL_CHILD class in Pickler.scala. In an earlier version, the
-        // pickler did not add the ObjectTpe superclass, it used a trait as the first parent. This
-        // tripped an assertion in AddInterfaces which checks that the first parent is not a trait.
-        // This workaround can probably be removed in 2.12, because the 2.12 compiler is supposed
-        // to only read classfiles generated by 2.12.
-        val fixLocalChildTp = if (sym.rawname == tpnme.LOCAL_CHILD) tp match {
-            case ClassInfoType(superClass :: traits, decls, typeSymbol) if superClass.typeSymbol.isTrait =>
-              ClassInfoType(definitions.ObjectTpe :: superClass :: traits, decls, typeSymbol)
-            case _ => tp
-          } else tp
+        val tp = at(i, () => readType())
 
         if (p ne null) {
-          slowButSafeEnteringPhase(p)(sym setInfo fixLocalChildTp)
+          slowButSafeEnteringPhase(p)(sym setInfo tp)
         }
         if (currentRunId != definedAtRunId)
-          sym.setInfo(adaptToNewRunMap(fixLocalChildTp))
+          sym.setInfo(adaptToNewRunMap(tp))
       }
       catch {
         case e: MissingRequirementError => throw toTypeError(e)
@@ -754,8 +748,13 @@ abstract class UnPickler {
         super.completeInternal(sym)
 
         var alias = at(j, () => readSymbol())
-        if (alias.isOverloaded)
-          alias = slowButSafeEnteringPhase(picklerPhase)((alias suchThat (alt => sym.tpe =:= sym.owner.thisType.memberType(alt))))
+        if (alias.isOverloaded) {
+          alias = slowButSafeEnteringPhase(picklerPhase)(alias suchThat {
+            alt =>
+              if (sym.isParamAccessor) alt.isParamAccessor
+              else sym.tpe =:= sym.owner.thisType.memberType(alt)
+          })
+        }
 
         sym.asInstanceOf[TermSymbol].setAlias(alias)
       }

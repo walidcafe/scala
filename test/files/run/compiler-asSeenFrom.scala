@@ -1,56 +1,4 @@
-/*
- * filter: inliner warning; re-run with
- */
-import scala.tools.nsc._
-import scala.tools.partest.DirectTest
-import scala.collection.{ mutable, immutable, generic }
-import scala.language.{postfixOps, implicitConversions}
-import scala.reflect.runtime.{universe => ru}
-
-// necessary to avoid bincompat with scala-partest compiled against the old compiler
-abstract class CompilerTest extends DirectTest {
-  def check(source: String, unit: global.CompilationUnit): Unit
-
-  lazy val global: Global = newCompiler()
-  lazy val units: List[global.CompilationUnit] = compilationUnits(global)(sources: _ *)
-  import global._
-  import definitions.{ compilerTypeFromTag }
-
-  override def extraSettings = "-feature -usejavacp -d " + testOutput.path
-
-  def show() = (sources, units).zipped foreach check
-
-  // Override at least one of these...
-  def code = ""
-  def sources: List[String] = List(code)
-
-  // Utility functions
-  class MkType(sym: Symbol) {
-    def apply[M](implicit t: ru.TypeTag[M]): Type =
-      if (sym eq NoSymbol) NoType
-      else appliedType(sym, compilerTypeFromTag(t))
-  }
-  implicit def mkMkType(sym: Symbol) = new MkType(sym)
-
-  def allMembers(root: Symbol): List[Symbol] = {
-    def loop(seen: Set[Symbol], roots: List[Symbol]): List[Symbol] = {
-      val latest = roots flatMap (_.info.members) filterNot (seen contains _)
-      if (latest.isEmpty) seen.toList.sortWith(_ isLess _)
-      else loop(seen ++ latest, latest)
-    }
-    loop(Set(), List(root))
-  }
-
-  class SymsInPackage(pkgName: String) {
-    def pkg     = rootMirror.getPackage(TermName(pkgName))
-    def classes = allMembers(pkg) filter (_.isClass)
-    def modules = allMembers(pkg) filter (_.isModule)
-    def symbols = classes ++ terms filterNot (_ eq NoSymbol)
-    def terms   = allMembers(pkg) filter (s => s.isTerm && !s.isConstructor)
-    def tparams = classes flatMap (_.info.typeParams)
-    def tpes    = symbols map (_.tpe) distinct
-  }
-}
+import scala.tools.partest.CompilerTest
 
 /** It's too messy but it's better than not having it.
  */
@@ -86,24 +34,22 @@ package ll {
 """
 
   object syms extends SymsInPackage("ll") {
-    def isPossibleEnclosure(encl: Symbol, sym: Symbol) = sym.enclClassChain drop 1 exists (_ isSubClass encl)
+    def isPossibleEnclosure(encl: Symbol, sym: Symbol) = sym.enclClassChain.drop(1).exists(_ isSubClass encl)
     def isInterestingPrefix(pre: Type) = pre.typeConstructor.typeParams.nonEmpty && pre.members.exists(_.isType)
 
-    def asSeenPrefixes  = tpes map (_.finalResultType) distinct
-    def typeRefPrefixes = asSeenPrefixes filter isInterestingPrefix
+    def asSeenPrefixes  = tpes.map(_.finalResultType).distinct
+    def typeRefPrefixes = asSeenPrefixes.filter(isInterestingPrefix)
 
-    def nestsIn(outer: Symbol) = classes filter (c => c.enclClassChain drop 1 exists(_ isSubClass outer))
+    def nestsIn(outer: Symbol) = classes.filter(_.enclClassChain.drop(1).exists(_ isSubClass outer))
     def typeRefs(targs: List[Type]) = (
-      for (p <- typeRefPrefixes ; c <- classes filter (isPossibleEnclosure(p.typeSymbol, _)) ; a <- targs) yield
+      for (p <- typeRefPrefixes ; c <- classes.filter(isPossibleEnclosure(p.typeSymbol, _)) ; a <- targs) yield
         typeRef(p, c, List(a))
     )
 
     val wfmt      = "%-" + 25 + "s"
     def to_s(x: Any): String    = wfmt.format(x.toString.replaceAll("""\bll\.""", ""))
 
-    def fmt(args: Any*): String = {
-      (args map to_s mkString "  ").replaceAll("""\s+$""", "")
-    }
+    def fmt(args: Any*): String = args.map(to_s).mkString("  ").replaceAll("""\s+$""", "")
     def fname(sym: Symbol) = {
       val p = "" + sym.owner.name
       val x = if (sym.owner.isPackageClass || sym.owner.isModuleClass || sym.owner.isTerm) "." else "#"
@@ -112,7 +58,7 @@ package ll {
 
     def permuteAsSeenFrom(targs: List[Type]) = (
       for {
-        tp <- typeRefs(targs filterNot (_ eq NoType))
+        tp <- typeRefs(targs.filterNot(_ eq NoType))
         prefix <- asSeenPrefixes
         if tp.prefix != prefix
         site <- classes
@@ -120,7 +66,7 @@ package ll {
         if tp != seen
         if !seen.isInstanceOf[ExistentialType]
       }
-      yield ((site, tp, prefix, seen))
+      yield (site, tp, prefix, seen)
     )
 
     def block(label: Any)(lines: List[String]): List[String] = {
@@ -148,10 +94,13 @@ package ll {
 
   def pretty(xs: List[_]) = if (xs.isEmpty) "" else xs.mkString("\n  ", "\n  ", "\n")
 
-  def signaturesIn(info: Type): List[String] = (
-    info.members.toList
-      filterNot (s => s.isType || s.owner == ObjectClass || s.owner == AnyClass || s.isConstructor)
-      map (_.defString)
+  def signaturesIn(sym: Symbol): List[String] = (
+    if (sym.owner == ObjectClass || sym.owner == AnyClass) Nil
+    else {
+      sym.tpe.members.toList
+        .filterNot(s => s.isType || s.owner == ObjectClass || s.owner == AnyClass || s.isConstructor)
+        .map(_.defString)
+    }
   )
 
   def check(source: String, unit: global.CompilationUnit) = {
@@ -161,10 +110,10 @@ package ll {
       val typeArgs = List[Type](IntClass.tpe, ListClass[Int]) ++ tparams.map(_.tpe)
       permute(typeArgs) foreach println
     }
-    for (x <- classes ++ terms) {
-      afterEachPhase(signaturesIn(x.tpe)) collect {
+    for (sym <- classes ++ terms) {
+      afterEachPhase(signaturesIn(sym)) collect {
         case (ph, sigs) if sigs.nonEmpty =>
-          println(sigs.mkString(x.toString + " { // after " + ph + "\n  ", "\n  ", "\n}\n"))
+          println(sigs.mkString(s"$sym { // after $ph\n  ", "\n  ", "\n}\n"))
       }
     }
   }

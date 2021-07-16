@@ -3,14 +3,9 @@ package scala.io
 
 import org.junit.Test
 import org.junit.Assert._
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 
-import scala.tools.testing.AssertUtil._
+import java.io.{Console => _, _}
 
-import java.io.{ Console => _, _ }
-
-@RunWith(classOf[JUnit4])
 class SourceTest {
 
   private implicit val `our codec` = Codec.UTF8
@@ -25,12 +20,20 @@ class SourceTest {
 
   private def in = new ByteArrayInputStream(sampler.getBytes)
 
-  @Test def canIterateLines() = {
-    assertEquals(sampler.lines.size, (Source fromString sampler).getLines.size)
-  }
+  @Test def canIterateLines() = assertEquals(sampler.linesIterator.size, (Source fromString sampler).getLines().size)
   @Test def loadFromResource() = {
     val res = Source.fromResource("rootdoc.txt")
-    assertTrue("No classpath resource found", res.getLines().size > 5)
+    val ls = res.getLines()
+    ls.next() match {
+      case "The Scala compiler and reflection APIs." =>
+      case "This is the documentation for the Scala standard library." =>
+      case l =>
+        assertTrue(s"$l\n${ls.mkString("\n")}", false)
+    }
+  }
+  @Test(expected = classOf[java.io.FileNotFoundException])
+  def loadFromMissingResource(): Unit = {
+    Source.fromResource("missing.txt")
   }
   @Test def canCustomizeReporting() = {
     class CapitalReporting(is: InputStream) extends BufferedSource(is) {
@@ -49,7 +52,7 @@ class SourceTest {
     val s = new CapitalReporting(in)
     // skip to next line and report an error
     do {
-      val c = s.next()
+      s.next()
     } while (s.ch != '\n')
     s.next()
     val out = new ByteArrayOutputStream
@@ -70,7 +73,7 @@ class SourceTest {
       override def pos = _pos
       private[this] var _ch: Char = _
       override def ch = _ch
-      override def next = {
+      override def next() = {
         _ch = iter.next()
         _pos += 1
         _ch
@@ -79,7 +82,7 @@ class SourceTest {
     val s = new CapitalReporting(in)
     // skip to next line and report an error
     do {
-      val c = s.next()
+      s.next()
     } while (s.ch != '\n')
     s.next()
     val out = new ByteArrayOutputStream

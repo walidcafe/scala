@@ -1,6 +1,13 @@
-/* NSC -- new scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Iulian Dragos
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -9,11 +16,11 @@ package transform
 
 import symtab.Flags
 import Flags.SYNTHETIC
+import scala.annotation.tailrec
 
 /** Perform tail recursive call elimination.
  *
  *  @author Iulian Dragos
- *  @version 1.0
  */
 abstract class TailCalls extends Transform {
   import global._                     // the global environment
@@ -22,20 +29,10 @@ abstract class TailCalls extends Transform {
 
   val phaseName: String = "tailcalls"
 
-  def newTransformer(unit: CompilationUnit): Transformer =
+  override def enabled = settings.debuginfo.value != "notailcalls"
+
+  def newTransformer(unit: CompilationUnit): AstTransformer =
     new TailCallElimination(unit)
-
-  /** Create a new phase which applies transformer */
-  override def newPhase(prev: scala.tools.nsc.Phase): StdPhase = new Phase(prev)
-
-  /** The phase defined by this transform */
-  class Phase(prev: scala.tools.nsc.Phase) extends StdPhase(prev) {
-    def apply(unit: global.CompilationUnit): Unit = {
-      if (!(settings.debuginfo.value == "notailcalls")) {
-        newTransformer(unit).transformUnit(unit)
-      }
-    }
-  }
 
   import treeInfo.hasSynthCaseSymbol
 
@@ -43,7 +40,6 @@ abstract class TailCalls extends Transform {
    * A Tail Call Transformer
    *
    * @author     Erik Stenman, Iulian Dragos
-   * @version    1.1
    *
    * What it does:
    * <p>
@@ -88,7 +84,7 @@ abstract class TailCalls extends Transform {
    *            parameter lists exist.
    * </p>
    */
-  class TailCallElimination(unit: CompilationUnit) extends Transformer {
+  class TailCallElimination(unit: CompilationUnit) extends AstTransformer {
     private def defaultReason = "it contains a recursive call not in tail position"
     private val failPositions = perRunCaches.newMap[TailContext, Position]() withDefault (_.methodPos)
     private val failReasons   = perRunCaches.newMap[TailContext, String]() withDefaultValue defaultReason
@@ -132,7 +128,8 @@ abstract class TailCalls extends Transform {
 
       final def noTailContext() = clonedTailContext(false)
       final def yesTailContext() = clonedTailContext(true)
-      protected def clonedTailContext(tailPos: Boolean): TailContext = this match {
+      @tailrec
+      protected final def clonedTailContext(tailPos: Boolean): TailContext = this match {
         case _ if this.tailPos == tailPos => this
         case clone: ClonedTailContext => clone.that.clonedTailContext(tailPos)
         case _ => new ClonedTailContext(this, tailPos)
@@ -167,7 +164,7 @@ abstract class TailCalls extends Transform {
         val thisParam = method.newSyntheticValueParam(currentClass.typeOfThis)
         label setInfo MethodType(thisParam :: method.tpe.params, method.tpe_*.finalResultType)
         if (isEligible)
-          label substInfo (method.tpe.typeParams, tparams)
+          label.substInfo(method.tpe.typeParams, tparams)
 
         label
       }
@@ -345,7 +342,7 @@ abstract class TailCalls extends Transform {
         case CaseDef(pat, guard, body) =>
           // CaseDefs are already translated and guards were moved into the body.
           // If this was not the case, guards would have to be transformed here as well.
-          assert(guard.isEmpty)
+          assert(guard.isEmpty, "empty guard")
           deriveCaseDef(tree)(transform)
 
         case If(cond, thenp, elsep) =>

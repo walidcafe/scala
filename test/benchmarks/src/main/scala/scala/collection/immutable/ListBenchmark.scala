@@ -24,6 +24,8 @@ class ListBenchmark {
   var mid: Content = _
   var last: Content = _
   var replacement: Content = _
+  var firstHalf: List[Content] = _
+  var lastHalf: List[Content] = _
 
 
   @Setup(Level.Trial) def initKeys(): Unit = {
@@ -31,6 +33,8 @@ class ListBenchmark {
     mid = Content(size / 2)
     last = Content(Math.max(0,size -1))
     replacement = Content(size * 2 + 1)
+    firstHalf = values.take(size / 2)
+    lastHalf = values.drop(size / 2)
   }
 
   @Benchmark def filter_includeAll: Any = {
@@ -66,5 +70,48 @@ class ListBenchmark {
   }
   @Benchmark def mapConserve_modifyMid: Any = {
     values.mapConserve(x => if (x == mid) replacement else x)
+  }
+  @Benchmark def partition_includeAll: Any = {
+    values.partition(v => true)
+  }
+
+  @Benchmark def partition_excludeAll: Any = {
+    values.partition(_ => false)
+  }
+
+  @Benchmark def partition_exc_mid: Any = {
+    values.partition(v => v.value != mid.value)
+  }
+
+  @Benchmark def partition_from_mid: Any = {
+    values.partition(v => v.value <= mid.value)
+  }
+
+  @Benchmark def partition_exc_last: Any = {
+    values.partition(v => v.value != last.value)
+  }
+
+  @Benchmark def diff_single_mid: Any = {
+    values.diff(List(mid))
+  }
+
+  @Benchmark def diff_single_last: Any = {
+    values.diff(List(last))
+  }
+
+  @Benchmark def diff_notIncluded: Any = {
+    values.diff(List(Content(-1)))
+  }
+
+  @Benchmark def diff_identical: Any = {
+    values.diff(values)
+  }
+
+  @Benchmark def diff_first_half: Any = {
+    values.diff(firstHalf)
+  }
+
+  @Benchmark def diff_last_half: Any = {
+    values.diff(lastHalf)
   }
 }

@@ -1,3 +1,5 @@
+// scalac: -language:experimental.macros
+//
 import scala.reflect.runtime.universe._
 import scala.reflect.runtime.{universe => ru}
 import scala.reflect.runtime.{currentMirror => cm}
@@ -11,6 +13,7 @@ object Test extends App {
       toolbox.typecheck(tree) match{
         case Apply(Select(lhs,op),rhs::Nil) =>
           println(rhs.tpe)
+        case x => throw new MatchError(x)
       }
     }
   }

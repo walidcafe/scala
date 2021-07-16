@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author  Manohar Jonnalagedda
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -55,6 +62,15 @@ final case class UnorderedList(items: Seq[Block]) extends Block
 final case class OrderedList(items: Seq[Block], style: String) extends Block
 final case class DefinitionList(items: SortedMap[Inline, Block]) extends Block
 final case class HorizontalRule() extends Block
+final case class Table(header: Row, columnOptions: Seq[ColumnOption], rows: Seq[Row]) extends Block
+final case class ColumnOption(option: Char) { require(option == 'L' || option == 'C' || option == 'R') }
+object ColumnOption {
+  val ColumnOptionLeft = ColumnOption('L')
+  val ColumnOptionCenter = ColumnOption('C')
+  val ColumnOptionRight = ColumnOption('R')
+}
+final case class Row(cells: Seq[Cell])
+final case class Cell(blocks: Seq[Block])
 
 /** An section of text inside a block, possibly with formatting. */
 sealed abstract class Inline
@@ -71,7 +87,7 @@ final case class Text(text: String) extends Inline
 abstract class EntityLink(val title: Inline) extends Inline { def link: LinkTo }
 object EntityLink {
   def apply(title: Inline, linkTo: LinkTo) = new EntityLink(title) { def link: LinkTo = linkTo }
-  def unapply(el: EntityLink): Option[(Inline, LinkTo)] = Some((el.title, el.link))
+  def unapply(el: EntityLink): Some[(Inline, LinkTo)] = Some((el.title, el.link))
 }
 final case class HtmlTag(data: String) extends Inline {
   private val (isEnd, tagName) = data match {

@@ -1,15 +1,27 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.collection.mutable
 
-import scala.collection.{IterableFactory, IterableOnce}
-import scala.language.higherKinds
+import scala.collection.{IterableFactory, IterableFactoryDefaults, IterableOps}
 
 /** Base trait for mutable sets */
 trait Set[A]
   extends Iterable[A]
     with collection.Set[A]
-    with SetOps[A, Set, Set[A]] {
+    with SetOps[A, Set, Set[A]]
+    with IterableFactoryDefaults[A, Set] {
 
-  override def iterableFactory: IterableFactory[IterableCC] = Set
+  override def iterableFactory: IterableFactory[Set] = Set
 }
 
 /**
@@ -17,28 +29,20 @@ trait Set[A]
   * @define Coll `mutable.Set`
   */
 trait SetOps[A, +CC[X], +C <: SetOps[A, CC, C]]
-  extends IterableOps[A, CC, C]
-    with collection.SetOps[A, CC, C]
+  extends collection.SetOps[A, CC, C]
+    with IterableOps[A, CC, C] // only needed so we can use super[IterableOps] below
     with Cloneable[C]
+    with Builder[A, C]
     with Growable[A]
     with Shrinkable[A] {
 
-  def mapInPlace(f: A => A): this.type = {
-    val toAdd = Set[A]()
-    for (elem <- this) {
-      toAdd += f(elem)
-    }
-    coll.clear()
-    coll ++= toAdd
-    this
-  }
+  def result(): C = coll
 
-  /**
-    * @return The reference of the contained element that is equal to `elem`, if found, otherwise `None`
-    * @param elem The element to get.
-    */
-  def get(elem: A): Option[A]
-
+  /** Check whether the set contains the given element, and add it if not.
+   *
+   *  @param elem  the element to be added
+   *  @return true if the element was added
+   */
   def add(elem: A): Boolean =
     !contains(elem) && {
       coll += elem; true
@@ -62,6 +66,11 @@ trait SetOps[A, +CC[X], +C <: SetOps[A, CC, C]]
     else remove(elem)
   }
 
+  /** Removes an element from this set.
+   *
+   *  @param elem     the element to be removed
+   *  @return true if this set contained the element before it was removed
+   */
   def remove(elem: A): Boolean = {
     val res = contains(elem)
     coll -= elem
@@ -71,43 +80,33 @@ trait SetOps[A, +CC[X], +C <: SetOps[A, CC, C]]
   def diff(that: collection.Set[A]): C =
     toIterable.foldLeft(empty)((result, elem) => if (that contains elem) result else result += elem)
 
-  def flatMapInPlace(f: A => IterableOnce[A]): this.type = {
-    val toAdd = Set[A]()
-    val toRemove = Set[A]()
-    toRemove ++= this
+  @deprecated("Use filterInPlace instead", "2.13.0")
+  @inline final def retain(p: A => Boolean): Unit = filterInPlace(p)
 
-    for (elem <- this){
-      for (mapped <- f(elem).iterator)
-        if(contains(mapped)) {
-          toRemove -= mapped 
-        } else  {
-          toAdd += mapped 
-        }
-    }
-    coll --= toRemove
-    coll ++= toAdd 
-    this
-  }
-
-  def filterInPlace(p: A => Boolean): this.type = {
-    val toRemove = Set[A]()
-    for (elem <- this)
-      if (!p(elem)) toRemove += elem
-    for (elem <- toRemove)
-      coll -= elem
-    this
-  }
-
-  /** Retains only those elements for which the predicate
-    *  `p` returns `true`.
-    *
-    * @param p  The test predicate
+  /** Removes all elements from the set for which do not satisfy a predicate.
+    *  @param  p  the predicate used to test elements. Only elements for
+    *             which `p` returns `true` are retained in the set; all others
+    *             are removed.
     */
-  @deprecated("Use .filterInPlace instead of .retain", "2.13.0")
-  @`inline` final def retain(p: A => Boolean): this.type = filterInPlace(p)
+  def filterInPlace(p: A => Boolean): this.type = {
+    if (nonEmpty) {
+      val array = this.toArray[Any] // scala/bug#7269 toArray avoids ConcurrentModificationException
+      val arrayLength = array.length
+      var i = 0
+      while (i < arrayLength) {
+        val elem = array(i).asInstanceOf[A]
+        if (!p(elem)) {
+          this -= elem
+        }
+        i += 1
+      }
+    }
+    this
+  }
 
   override def clone(): C = empty ++= toIterable
 
+  override def knownSize: Int = super[IterableOps].knownSize
 }
 
 /**
@@ -120,5 +119,4 @@ object Set extends IterableFactory.Delegate[Set](HashSet)
 
 
 /** Explicit instantiation of the `Set` trait to reduce class file size in subclasses. */
-@SerialVersionUID(3L)
 abstract class AbstractSet[A] extends scala.collection.AbstractSet[A] with Set[A]

@@ -1,3 +1,5 @@
+// scalac: -Yrangepos
+//
 import scala.language.implicitConversions
 
 object Test extends App {
@@ -16,16 +18,16 @@ object Test extends App {
 
   mkBarString andThen_: mkFoo
 
-  println
+  println()
 
   mkFoo.andThen_:(mkBarString)
 
-  println
+  println()
 
   // bar should be deferred but isn't due to scala/bug#10693
   mkBarString andThenByName_: mkFoo
 
-  println
+  println()
   
   mkFoo.andThenByName_:(mkBarString)
 }

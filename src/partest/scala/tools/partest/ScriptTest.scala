@@ -1,5 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.partest
@@ -13,7 +21,7 @@ abstract class ScriptTest extends DirectTest {
   def testmain = "TestMain"
   override def extraSettings = s"-usejavacp -Xscript $testmain"
   def scriptPath = testPath changeExtension "script"
-  def code = scriptPath.toFile.slurp
+  def code = scriptPath.toFile.slurp()
   def argv = Seq.empty[String]
   def show() = {
     compile()

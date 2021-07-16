@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.partest.sbt
 
 import scala.tools.partest.nest.RunnerSpec
@@ -40,7 +52,7 @@ case class PartestTask(taskDef: TaskDef, args: Array[String]) extends Task {
     if (Runtime.getRuntime().maxMemory() / (1024*1024) < 800)
       loggers foreach (_.warn(s"""Low heap size detected (~ ${Runtime.getRuntime().maxMemory() / (1024*1024)}M). Please add the following to your build.sbt: javaOptions in Test += "-Xmx1G""""))
 
-    try runner.run
+    try runner.run()
     catch {
       case ex: ClassNotFoundException =>
         loggers foreach { l => l.error("Please make sure partest is running in a forked VM by including the following line in build.sbt:\nfork in Test := true") }

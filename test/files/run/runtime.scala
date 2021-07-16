@@ -15,7 +15,7 @@ object Test0Test {
       i = i + 1;
     }
     Console.print("]");
-    Console.println;
+    Console.println()
   }
 
   def test(args: Array[String]): Unit = {
@@ -24,7 +24,7 @@ object Test0Test {
     val ss: Array[Short  ] = Array(3, 4, 5);
     val cs: Array[Char   ] = Array('a', 'b', 'c');
     val is: Array[Int    ] = Array(6, 7, 8);
-    val ls: Array[Long   ] = Array(9l, 10l, 11l);
+    val ls: Array[Long   ] = Array(9L, 10L, 11L);
     val fs: Array[Float  ] = Array(12.0f, 13.0f);
     val ds: Array[Double ] = Array(14.0d, 15.0d);
     val os: Array[AnyRef ] = Array("string");
@@ -51,7 +51,7 @@ package test1.bar {
 
   class PrintStream() {
     def println(): Unit = {
-      Console.println;
+      Console.println()
     }
   }
 
@@ -60,20 +60,20 @@ package test1.bar {
 object Test1Test {
 
   def test(args: Array[String]): Unit = {
-    {Console.print(10)}; Console.println;
+    {Console.print(10)}; Console.println();
     // {System.out.print(11); java}.lang.System.out.println();
     // {System.out.print(12); java.lang}.System.out.println();
     // {System.out.print(13); java.lang.System}.out.println();
-    {Console.print(14); Console}.println;
-    {Console.print(15); (() => Console.println):(() => Unit)} apply ();
-    {Console.print(16); Console.println};
+    {Console.print(14); Console}.println();
+    {Console.print(15); (() => Console.println()):(() => Unit)}.apply();
+    {Console.print(16); Console.println()};
 
     {Console.print(20)}; test1.bar.System.out.println();
     // {System.out.print(21); test1}.bar.System.out.println();
     // {System.out.print(22); test1.bar}.System.out.println();
     {Console.print(23); test1.bar.System}.out.println();
     {Console.print(24); test1.bar.System.out}.println();
-    {Console.print(25); test1.bar.System.out.println _ : (() => Unit)} apply ();
+    {Console.print(25); test1.bar.System.out.println _ : (() => Unit)}.apply();
     {Console.print(26); test1.bar.System.out.println()};
   }
 
@@ -85,23 +85,23 @@ object Test1Test {
 package test2 {
 
   class A {
-    def run = Console.println("A");
+    def run() = Console.println("A");
   }
 
   trait M0 extends A {
-    override def run = { super.run; Console.println("M0"); }
+    override def run() = { super.run(); Console.println("M0"); }
   }
 
   class M1 extends M0 {
-    override def run = { super.run; Console.println("M1"); }
+    override def run() = { super.run(); Console.println("M1"); }
   }
 
   trait N0 extends A {
-    override def run = { super.run; Console.println("N0"); }
+    override def run() = { super.run(); Console.println("N0"); }
   }
 
   class N1 extends N0 {
-    override def run = { super.run; Console.println("N1"); }
+    override def run() = { super.run(); Console.println("N1"); }
   }
 
   object M0N0 extends M0 with N0;
@@ -113,10 +113,10 @@ package test2 {
 
 object Test2Test {
   def test(args: Array[String]): Unit = {
-    test2.M0N0.run; Console.println;
-    test2.N0M0.run; Console.println;
-    test2.M1N0.run; Console.println;
-    test2.N1M0.run; Console.println;
+    test2.M0N0.run(); Console.println()
+    test2.N0M0.run(); Console.println()
+    test2.M1N0.run(); Console.println()
+    test2.N1M0.run(); Console.println()
   }
 }
 
@@ -174,12 +174,12 @@ object Test  {
       case exception: Throwable => {
         //val name: String = Thread.currentThread().getName();
         Console.print("Exception in thread \"" + name + "\" " + exception);
-        Console.println;
+        Console.println()
         errors = errors + 1;
       }
     }
     Console.println(">>> " + name);
-    Console.println;
+    Console.println()
   }
 
   def main(args: Array[String]): Unit = {
@@ -190,8 +190,8 @@ object Test  {
     test("Test3"  , Test3Test.test(args));
 
     if (errors > 0) {
-      Console.println;
-      Console.println(errors + " error" + (if (errors > 1) "s" else ""));
+      Console.println()
+      Console.println(s"$errors error" + (if (errors > 1) "s" else ""));
     }
   }
 }

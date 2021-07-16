@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -9,6 +16,7 @@ package classfile
 
 import java.lang.Float.floatToIntBits
 import java.lang.Double.doubleToLongBits
+import java.util.Arrays.fill
 
 import scala.io.Codec
 import scala.reflect.internal.pickling.{PickleBuffer, PickleFormat}
@@ -16,14 +24,14 @@ import scala.reflect.internal.util.shortClassOfInstance
 import scala.collection.mutable
 import PickleFormat._
 import Flags._
+import scala.annotation.{nowarn, tailrec}
 
 /**
  * Serialize a top-level module and/or class.
  *
- * @see EntryTags.scala for symbol table attribute format.
+ * @see [[scala.reflect.internal.pickling.PickleFormat PickleFormat]] for symbol table attribute format.
  *
  * @author Martin Odersky
- * @version 1.0
  */
 abstract class Pickler extends SubComponent {
   import global._
@@ -32,7 +40,35 @@ abstract class Pickler extends SubComponent {
 
   def newPhase(prev: Phase): StdPhase = new PicklePhase(prev)
 
+  final def pickle(sym: Symbol, companion: Symbol, noPrivates: Boolean): Pickle = {
+    initPickle(sym, noPrivates) { pickle =>
+      def reserveDeclEntries(sym: Symbol): Unit = {
+        if (pickle.reserveEntry(sym)) {
+          if (sym.isClass) sym.info.decls.foreach(reserveDeclEntries)
+          else if (sym.isModule) reserveDeclEntries(sym.moduleClass)
+        }
+      }
+
+      val syms = sym :: (if (companion != NoSymbol) companion :: Nil else Nil)
+      syms.foreach(reserveDeclEntries)
+      syms.foreach { sym =>
+        pickle.putDecl(sym)
+      }
+      pickle.writeArray()
+    }
+  }
+
   class PicklePhase(prev: Phase) extends StdPhase(prev) {
+    import global.genBCode.postProcessor.classfileWriters.FileWriter
+    private lazy val sigWriter: Option[FileWriter] =
+      if (settings.YpickleWrite.isSetByUser && !settings.YpickleWrite.value.isEmpty) {
+        val file = settings.pathFactory.getFile(settings.YpickleWrite.value) // might be a JAR (possibly still to be created) or a directory
+        Some(FileWriter(global, file, None))
+      }
+      else
+        None
+
+    @nowarn("cat=lint-nonlocal-return")
     def apply(unit: CompilationUnit): Unit = {
       def pickle(tree: Tree): Unit = {
         tree match {
@@ -42,22 +78,23 @@ abstract class Pickler extends SubComponent {
             val sym = tree.symbol
             def shouldPickle(sym: Symbol) = currentRun.compiles(sym) && !currentRun.symData.contains(sym)
             if (shouldPickle(sym)) {
-              val pickle = new Pickle(sym)
-              def reserveDeclEntries(sym: Symbol): Unit = {
-                pickle.reserveEntry(sym)
-                if (sym.isClass) sym.info.decls.foreach(reserveDeclEntries)
-                else if (sym.isModule) reserveDeclEntries(sym.moduleClass)
+              def pickle(noPrivates: Boolean, writeToSymData: Boolean, writeToSigFile: Boolean): Unit = {
+                val companion = sym.companionSymbol.filter(_.owner == sym.owner).filter(shouldPickle) // exclude companionship between package- and package object-owned symbols.
+                val pickle = Pickler.this.pickle(sym, companion, noPrivates)
+                if (writeToSymData) {
+                  currentRun.symData(sym) = pickle
+                  companion.andAlso(sym => currentRun.symData(sym) = pickle)
+                  currentRun registerPickle sym
+                }
+                if (writeToSigFile)
+                  writeSigFile(sym, pickle)
               }
-
-              val companion = sym.companionSymbol.filter(_.owner == sym.owner) // exclude companionship between package- and package object-owned symbols.
-              val syms = sym :: (if (shouldPickle(companion)) companion :: Nil else Nil)
-              syms.foreach(reserveDeclEntries)
-              syms.foreach { sym =>
-                pickle.putSymbol(sym)
-                currentRun.symData(sym) = pickle
+              if (sigWriter.isDefined && settings.YpickleWriteApiOnly) {
+                pickle(noPrivates = false, writeToSymData = true, writeToSigFile = false)
+                pickle(noPrivates = true, writeToSymData = false, writeToSigFile = true)
+              } else {
+                pickle(noPrivates = false, writeToSymData = true, writeToSigFile = true)
               }
-              pickle.writeArray()
-              currentRun registerPickle sym
             }
           case _ =>
         }
@@ -75,7 +112,7 @@ abstract class Pickler extends SubComponent {
             //
             // OPT: do this only as a recovery after fatal error. Checking in advance was expensive.
             if (t.isErroneous) {
-              if (settings.debug) e.printStackTrace()
+              if (settings.isDebug) e.printStackTrace()
               reporter.error(t.pos, "erroneous or inaccessible type")
               return
             }
@@ -83,28 +120,74 @@ abstract class Pickler extends SubComponent {
           throw e
       }
     }
+
+    override def run(): Unit = {
+      try super.run()
+      finally {
+        closeSigWriter()
+        _index = null
+        _entries = null
+      }
+    }
+
+    private def writeSigFile(sym: Symbol, pickle: PickleBuffer): Unit = {
+      sigWriter.foreach { writer =>
+        val binaryName = sym.javaBinaryNameString
+        val binaryClassName = if (sym.isModule) binaryName.stripSuffix(nme.MODULE_SUFFIX_STRING) else binaryName
+        val relativePath = binaryClassName + ".sig"
+        val data = pickle.bytes.take(pickle.writeIndex)
+        writer.writeFile(relativePath, data)
+      }
+    }
+    private def closeSigWriter(): Unit = {
+      sigWriter.foreach { writer =>
+        writer.close()
+        if (settings.verbose)
+          reporter.echo(NoPosition, "[sig files written]")
+      }
+    }
+
+    override protected def shouldSkipThisPhaseForJava: Boolean = !settings.YpickleJava.value
   }
 
-  private class Pickle(root: Symbol) extends PickleBuffer(new Array[Byte](4096), -1, 0) {
+  type Index   = mutable.AnyRefMap[AnyRef, Int] // a map from objects (symbols, types, names, ...) to indices into Entries
+  type Entries = Array[AnyRef]
+
+  final val InitEntriesSize = 256
+  private[this] var _index: Index = _
+  private[this] var _entries: Entries = _
+
+  final def initPickle(root: Symbol, noPrivates: Boolean)(f: Pickle => Unit): Pickle = {
+    if (_index eq null)   { _index   = new Index(InitEntriesSize) }
+    if (_entries eq null) { _entries = new Entries(InitEntriesSize) }
+    val pickle = new Pickle(root, _index, _entries, noPrivates)
+    try f(pickle) finally { pickle.close(); _index.clear(); fill(_entries, null) }
+    pickle
+  }
+
+  class Pickle private[Pickler](root: Symbol, private var index: Index, private var entries: Entries, noPrivates: Boolean)
+      extends PickleBuffer(new Array[Byte](4096), -1, 0) {
     private val rootName  = root.name.toTermName
     private val rootOwner = root.owner
-    private var entries   = new Array[AnyRef](256)
     private var ep        = 0
-    private val index     = new mutable.AnyRefMap[AnyRef, Int]
     private lazy val nonClassRoot = findSymbol(root.ownersIterator)(!_.isClass)
+    def include(sym: Symbol) = !noPrivates || !sym.isPrivate || (sym.owner.isTrait && sym.isAccessor)
+
+    def close(): Unit = { index = null; entries = null }
 
     private def isRootSym(sym: Symbol) =
       sym.name.toTermName == rootName && sym.owner == rootOwner
 
-    /** Returns usually symbol's owner, but picks classfile root instead
-     *  for existentially bound variables that have a non-local owner.
-     *  Question: Should this be done for refinement class symbols as well?
-     *
-     *  Note: tree pickling also finds its way here; e.g. in scala/bug#7501 the pickling
-     *  of trees in annotation arguments considers the parameter symbol of a method
-     *  called in such a tree as "local". The condition `sym.isValueParameter` was
-     *  added to fix that bug, but there may be a better way.
-     */
+    /** Usually `sym.owner`, except when `sym` is pickle-local, while `sym.owner` is not.
+      *
+      * In the latter case, the alternative owner is the pickle root,
+      * or a non-class owner of root (so that term-owned parameters remain term-owned).
+      *
+      * Note: tree pickling also finds its way here; e.g. in scala/bug#7501 the pickling
+      * of trees in annotation arguments considers the parameter symbol of a method
+      * called in such a tree as "local". The condition `sym.isValueParameter` was
+      * added to fix that bug, but there may be a better way.
+      */
     private def localizedOwner(sym: Symbol) =
       if (isLocalToPickle(sym) && !isRootSym(sym) && !isLocalToPickle(sym.owner))
         // don't use a class as the localized owner for type parameters that are not owned by a class: those are not instantiated by asSeenFrom
@@ -117,6 +200,7 @@ abstract class Pickler extends SubComponent {
      *  anyway? This is the case if symbol is a refinement class,
      *  an existentially bound variable, or a higher-order type parameter.
      */
+    @tailrec
     private def isLocalToPickle(sym: Symbol): Boolean = (sym != NoSymbol) && !sym.isPackageClass && (
          isRootSym(sym)
       || sym.isRefinementClass
@@ -128,9 +212,12 @@ abstract class Pickler extends SubComponent {
 
     // Phase 1 methods: Populate entries/index ------------------------------------
     private val reserved = mutable.BitSet()
-    final def reserveEntry(sym: Symbol): Unit = {
-      reserved(ep) = true
-      putEntry(sym)
+    final def reserveEntry(sym: Symbol): Boolean = {
+      if (include(sym)) {
+        reserved(ep) = true
+        putEntry(sym)
+        true
+      } else false
     }
 
     /** Store entry e in index at next available position unless
@@ -138,19 +225,22 @@ abstract class Pickler extends SubComponent {
      *
      *  @return      true iff entry is new.
      */
-    private def putEntry(entry: AnyRef): Boolean = index.get(entry) match {
-      case Some(i) =>
-        reserved.remove(i)
-      case None =>
-        if (ep == entries.length) {
-          val entries1 = new Array[AnyRef](ep * 2)
-          System.arraycopy(entries, 0, entries1, 0, ep)
-          entries = entries1
-        }
-        entries(ep) = entry
-        index(entry) = ep
-        ep = ep + 1
-        true
+    private def putEntry(entry: AnyRef): Boolean = {
+      assert(index ne null, this)
+      index.get(entry) match {
+        case Some(i) =>
+          reserved.remove(i)
+        case None =>
+          if (ep == entries.length) {
+            val entries1 = new Array[AnyRef](ep * 2)
+            System.arraycopy(entries, 0, entries1, 0, ep)
+            entries = entries1
+          }
+          entries(ep) = entry
+          index(entry) = ep
+          ep = ep + 1
+          true
+      }
     }
 
     private def deskolemizeTypeSymbols(ref: AnyRef): AnyRef = ref match {
@@ -181,6 +271,8 @@ abstract class Pickler extends SubComponent {
       else sym
     }
 
+    def putDecl(sym: Symbol): Unit = if (include(sym)) putSymbol(sym)
+
     /** Store symbol in index. If symbol is local, also store everything it references.
      */
     def putSymbol(sym0: Symbol): Unit = {
@@ -206,7 +298,7 @@ abstract class Pickler extends SubComponent {
                 // initially, but seems not to work, as the bug shows).
                 // Adding the LOCAL_CHILD is necessary to retain exhaustivity warnings under separate
                 // compilation. See test neg/aladdin1055.
-                val parents = (if (sym.isTrait) List(definitions.ObjectTpe) else Nil) ::: List(sym.tpe)
+                val parents = if (sym.isTrait) List(definitions.ObjectTpe, sym.tpe) else List(sym.tpe)
                 globals + sym.newClassWithInfo(tpnme.LOCAL_CHILD, parents, EmptyScope, pos = sym.pos)
               }
 
@@ -251,7 +343,7 @@ abstract class Pickler extends SubComponent {
         case tp: CompoundType =>
           putSymbol(tp.typeSymbol)
           putTypes(tp.parents)
-          putSymbols(tp.decls.toList)
+          tp.decls.toList.foreach(putDecl)
         case MethodType(params, restpe) =>
           putType(restpe)
           putSymbols(params)
@@ -299,7 +391,6 @@ abstract class Pickler extends SubComponent {
     private def putConstant(c: Constant): Unit = {
       if (putEntry(c)) {
         if (c.tag == StringTag) putEntry(newTermName(c.stringValue))
-        else if (c.tag == SSymbolTag) putEntry(newTermName(c.scalaSymbolValue.name))
         else if (c.tag == ClazzTag) putType(c.typeValue)
         else if (c.tag == EnumTag) putSymbol(c.symbolValue)
       }
@@ -352,6 +443,7 @@ abstract class Pickler extends SubComponent {
     /** Write a reference to object, i.e., the object's number in the map index.
      */
     private def writeRef(ref: AnyRef): Unit = {
+      assert(index ne null, this)
       writeNat(index(deskolemizeTypeSymbols(ref)))
     }
     private def writeRefs(refs: List[AnyRef]): Unit = refs foreach writeRef
@@ -477,6 +569,7 @@ abstract class Pickler extends SubComponent {
         case StaticallyAnnotatedType(annots, tp) => writeRef(tp) ; writeRefs(annots)
         case AnnotatedType(_, tp)                => writeTypeBody(tp) // write the underlying type if there are no static annotations
         case CompoundType(parents, _, clazz)     => writeRef(clazz); writeRefs(parents)
+        case x                                   => throw new MatchError(x)
       }
 
       def writeTreeBody(tree: Tree): Unit = {
@@ -490,7 +583,6 @@ abstract class Pickler extends SubComponent {
         case FloatTag   => writeLong(floatToIntBits(c.floatValue).toLong)
         case DoubleTag  => writeLong(doubleToLongBits(c.doubleValue))
         case StringTag  => writeRef(newTermName(c.stringValue))
-        case SSymbolTag => writeRef(newTermName(c.scalaSymbolValue.name))
         case ClazzTag   => writeRef(c.typeValue)
         case EnumTag    => writeRef(c.symbolValue)
         case tag        => if (ByteTag <= tag && tag <= LongTag) writeLong(c.longValue)
@@ -540,8 +632,9 @@ abstract class Pickler extends SubComponent {
     }
 
     /** Write byte array */
-    def writeArray(): Unit = {
-      assert(writeIndex == 0)
+    final def writeArray(): Unit = {
+      assert(writeIndex == 0, "Index must be zero")
+      assert(index ne null, this)
       writeNat(MajorVersion)
       writeNat(MinorVersion)
       writeNat(ep)

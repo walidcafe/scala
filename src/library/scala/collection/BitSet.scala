@@ -1,9 +1,22 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package collection
 
 import java.io.{ObjectInputStream, ObjectOutputStream}
 
-import scala.annotation.unchecked.uncheckedVariance
+import scala.annotation.nowarn
+import scala.collection.Stepper.EfficientSplit
 import scala.collection.mutable.Builder
 
 
@@ -14,19 +27,25 @@ import scala.collection.mutable.Builder
   *
   * @define bitsetinfo
   *  Bitsets are sets of non-negative integers which are represented as
-  *  variable-size arrays of bits packed into 64-bit words. The memory footprint of a bitset is
+  *  variable-size arrays of bits packed into 64-bit words. The lower bound of memory footprint of a bitset is
   *  determined by the largest number stored in it.
   * @define coll bitset
   * @define Coll `BitSet`
   */
 trait BitSet extends SortedSet[Int] with BitSetOps[BitSet] {
-  override protected def fromSpecificIterable(coll: Iterable[Int]): BitSetC = bitSetFactory.fromSpecific(coll)
-  override protected def newSpecificBuilder: Builder[Int, BitSetC] = bitSetFactory.newBuilder
-  override def empty: BitSetC = bitSetFactory.empty
+  override protected def fromSpecific(coll: IterableOnce[Int]): BitSet = bitSetFactory.fromSpecific(coll)
+  override protected def newSpecificBuilder: Builder[Int, BitSet] = bitSetFactory.newBuilder
+  override def empty: BitSet = bitSetFactory.empty
+  @nowarn("""cat=deprecation&origin=scala\.collection\.Iterable\.stringPrefix""")
+  override protected[this] def stringPrefix = "BitSet"
+  override def unsorted: Set[Int] = this
 }
 
 @SerialVersionUID(3L)
 object BitSet extends SpecificIterableFactory[Int, BitSet] {
+  private[collection] final val ordMsg = "No implicit Ordering[${B}] found to build a SortedSet[${B}]. You may want to upcast to a Set[Int] first by calling `unsorted`."
+  private[collection] final val zipOrdMsg = "No implicit Ordering[${B}] found to build a SortedSet[(Int, ${B})]. You may want to upcast to a Set[Int] first by calling `unsorted`."
+
   def empty: BitSet = immutable.BitSet.empty
   def newBuilder: Builder[Int, BitSet] = immutable.BitSet.newBuilder
   def fromSpecific(it: IterableOnce[Int]): BitSet = immutable.BitSet.fromSpecific(it)
@@ -67,16 +86,9 @@ trait BitSetOps[+C <: BitSet with BitSetOps[C]]
   extends SortedSetOps[Int, SortedSet, C] { self =>
   import BitSetOps._
 
-  def bitSetFactory: SpecificIterableFactory[Int, BitSetC]
+  def bitSetFactory: SpecificIterableFactory[Int, C]
 
-  /**
-    * Type alias to `C`. It is used to provide a default implementation of the `fromSpecificIterable`
-    * and `newSpecificBuilder` operations.
-    *
-    * Due to the `@uncheckedVariance` annotation, usage of this type member can be unsound and is
-    * therefore not recommended.
-    */
-  protected type BitSetC = C @uncheckedVariance
+  def unsorted: Set[Int]
 
   final def ordering: Ordering[Int] = Ordering.Int
 
@@ -98,15 +110,34 @@ trait BitSetOps[+C <: BitSet with BitSetOps[C]]
   def iterator: Iterator[Int] = iteratorFrom(0)
 
   def iteratorFrom(start: Int): Iterator[Int] = new AbstractIterator[Int] {
-    private[this] var current = start
-    private[this] val end = nwords * WordLength
-    def hasNext: Boolean = {
-      while (current != end && !self.contains(current)) current += 1
-      current != end
+    private[this] var currentPos = if (start > 0) start >> LogWL else 0
+    private[this] var currentWord = if (start > 0) word(currentPos) & (-1L << (start & (WordLength - 1))) else word(0)
+    final override def hasNext: Boolean = {
+      while (currentWord == 0) {
+        if (currentPos + 1 >= nwords) return false
+        currentPos += 1
+        currentWord = word(currentPos)
+      }
+      true
     }
-    def next(): Int =
-      if (hasNext) { val r = current; current += 1; r }
-      else Iterator.empty.next()
+    final override def next(): Int = {
+      if (hasNext) {
+        val bitPos = java.lang.Long.numberOfTrailingZeros(currentWord)
+        currentWord &= currentWord - 1
+        (currentPos << LogWL) + bitPos
+      } else Iterator.empty.next()
+    }
+  }
+
+  override def stepper[S <: Stepper[_]](implicit shape: StepperShape[Int, S]): S with EfficientSplit = {
+    val st = scala.collection.convert.impl.BitSetStepper.from(this)
+    val r =
+      if (shape.shape == StepperShape.IntShape) st
+      else {
+        assert(shape.shape == StepperShape.ReferenceShape, s"unexpected StepperShape: $shape")
+        AnyStepper.ofParIntStepper(st)
+      }
+    r.asInstanceOf[S with EfficientSplit]
   }
 
   override def size: Int = {
@@ -120,6 +151,42 @@ trait BitSetOps[+C <: BitSet with BitSetOps[C]]
   }
 
   override def isEmpty: Boolean = 0 until nwords forall (i => word(i) == 0)
+
+  @inline private[this] def smallestInt: Int = {
+    val thisnwords = nwords
+    var i = 0
+    while(i < thisnwords) {
+      val currentWord = word(i)
+      if (currentWord != 0L) {
+        return java.lang.Long.numberOfTrailingZeros(currentWord) + (i * WordLength)
+      }
+      i += 1
+    }
+    throw new UnsupportedOperationException("empty.smallestInt")
+  }
+
+  @inline private[this] def largestInt: Int = {
+    var i = nwords - 1
+    while(i >= 0) {
+      val currentWord = word(i)
+      if (currentWord != 0L) {
+        return ((i + 1) * WordLength) - java.lang.Long.numberOfLeadingZeros(currentWord) - 1
+      }
+      i -= 1
+    }
+    throw new UnsupportedOperationException("empty.largestInt")
+  }
+
+  override def max[B >: Int](implicit ord: Ordering[B]): Int =
+    if (Ordering.Int eq ord) largestInt
+    else if (Ordering.Int isReverseOf ord) smallestInt
+    else super.max(ord)
+
+
+  override def min[B >: Int](implicit ord: Ordering[B]): Int =
+    if (Ordering.Int eq ord) smallestInt
+    else if (Ordering.Int isReverseOf ord) largestInt
+    else super.min(ord)
 
   override def foreach[U](f: Int => U): Unit = {
     /* NOTE: while loops are significantly faster as of 2.11 and
@@ -155,27 +222,54 @@ trait BitSetOps[+C <: BitSet with BitSetOps[C]]
     val a = coll.toBitMask
     val len = a.length
     if (from.isDefined) {
-      var f = from.get
-      var pos = 0
-      while (f >= 64 && pos < len) {
-        f -= 64
-        a(pos) = 0
-        pos += 1
+      val f = from.get
+      val w = f >> LogWL
+      val b = f & (WordLength - 1)
+      if (w >= 0) {
+        java.util.Arrays.fill(a, 0, math.min(w, len), 0)
+        if (b > 0 && w < len) a(w) &= ~((1L << b) - 1)
       }
-      if (f > 0 && pos < len) a(pos) &= ~((1L << f)-1)
     }
     if (until.isDefined) {
       val u = until.get
-      val w = u / 64
-      val b = u % 64
-      var clearw = w+1
-      while (clearw < len) {
-        a(clearw) = 0
-        clearw += 1
+      val w = u >> LogWL
+      val b = u & (WordLength - 1)
+      if (w < len) {
+        java.util.Arrays.fill(a, math.max(w + 1, 0), len, 0)
+        if (w >= 0) a(w) &= (1L << b) - 1
       }
-      if (w < len) a(w) &= (1L << b)-1
     }
     coll.fromBitMaskNoCopy(a)
+  }
+
+  override def concat(other: collection.IterableOnce[Int]): C = other match {
+    case otherBitset: BitSet =>
+      val len = coll.nwords max otherBitset.nwords
+      val words = new Array[Long](len)
+      for (idx <- 0 until len)
+        words(idx) = this.word(idx) | otherBitset.word(idx)
+      fromBitMaskNoCopy(words)
+    case _ => super.concat(other)
+  }
+
+  override def intersect(other: Set[Int]): C = other match {
+    case otherBitset: BitSet =>
+      val len = coll.nwords min otherBitset.nwords
+      val words = new Array[Long](len)
+      for (idx <- 0 until len)
+        words(idx) = this.word(idx) & otherBitset.word(idx)
+      fromBitMaskNoCopy(words)
+    case _ => super.intersect(other)
+  }
+
+  abstract override def diff(other: Set[Int]): C = other match {
+    case otherBitset: BitSet =>
+      val len = coll.nwords
+      val words = new Array[Long](len)
+      for (idx <- 0 until len)
+        words(idx) = this.word(idx) & ~otherBitset.word(idx)
+      fromBitMaskNoCopy(words)
+    case _ => super.diff(other)
   }
 
   /** Computes the symmetric difference of this bitset and another bitset by performing
@@ -201,11 +295,16 @@ trait BitSetOps[+C <: BitSet with BitSetOps[C]]
     * @return a new bitset resulting from applying the given function ''f'' to
     *         each element of this bitset and collecting the results
     */
-  def map(f: Int => Int): C = fromSpecificIterable(new View.Map(toIterable, f))
+  def map(f: Int => Int): C = fromSpecific(new View.Map(toIterable, f))
 
-  def flatMap(f: Int => IterableOnce[Int]): C = fromSpecificIterable(new View.FlatMap(toIterable, f))
+  def flatMap(f: Int => IterableOnce[Int]): C = fromSpecific(new View.FlatMap(toIterable, f))
 
-  def collect(pf: PartialFunction[Int, Int]): C = fromSpecificIterable(super[SortedSetOps].collect(pf).toIterable)
+  def collect(pf: PartialFunction[Int, Int]): C = fromSpecific(super[SortedSetOps].collect(pf).toIterable)
+
+  override def partition(p: Int => Boolean): (C, C) = {
+    val left = filter(p)
+    (left, this &~ left)
+  }
 }
 
 object BitSetOps {
@@ -226,4 +325,24 @@ object BitSetOps {
     else assert(w == 0L)
     newelems
   }
+
+  private[collection] def computeWordForFilter(pred: Int => Boolean, isFlipped: Boolean, oldWord: Long, wordIndex: Int): Long =
+    if (oldWord == 0L) 0L else {
+      var w = oldWord
+      val trailingZeroes = java.lang.Long.numberOfTrailingZeros(w)
+      var jmask = 1L << trailingZeroes
+      var j = wordIndex * BitSetOps.WordLength + trailingZeroes
+      val maxJ = (wordIndex + 1) * BitSetOps.WordLength - java.lang.Long.numberOfLeadingZeros(w)
+      while (j != maxJ) {
+        if ((w & jmask) != 0L) {
+          if (pred(j) == isFlipped) {
+            // j did not pass the filter here
+            w = w & ~jmask
+          }
+        }
+        jmask = jmask << 1
+        j += 1
+      }
+      w
+    }
 }

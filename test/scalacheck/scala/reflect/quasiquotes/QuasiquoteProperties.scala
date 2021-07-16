@@ -23,8 +23,8 @@ trait Helpers {
       val st = scala.reflect.runtime.universe.asInstanceOf[scala.reflect.internal.SymbolTable]
       val FreshName = new st.FreshNameExtractor
       def unapply[T <: Name](name: T): Option[T] = name.asInstanceOf[st.Name] match {
-        case FreshName(prefix) =>
-          Some((if (name.isTermName) TermName(prefix) else TypeName(prefix)).asInstanceOf[T])
+        case FreshName(prefix) => Some((if (name.isTermName) TermName(prefix) else TypeName(prefix)).asInstanceOf[T])
+        case x                 => throw new MatchError(x)
       }
     }
 
@@ -32,8 +32,7 @@ trait Helpers {
       case Ident(SimplifiedName(name))                  => Ident(name)
       case ValDef(mods, SimplifiedName(name), tpt, rhs) => ValDef(mods, name, transform(tpt), transform(rhs))
       case Bind(SimplifiedName(name), rhs)              => Bind(name, rhs)
-      case _ =>
-        super.transform(tree)
+      case _                                            => super.transform(tree)
     }
 
     def apply(tree: Tree): Tree = transform(tree)
@@ -68,14 +67,20 @@ trait Helpers {
       } catch {
         case u: Throwable =>
           if (!clazz.isAssignableFrom(u.getClass))
-            assert(false, s"wrong exception: $u")
+            assert(false, s"wrong exception: expected ${clazz.getName} but was ${u.getClass.getName}")
           true
       }
     if(!thrown)
       assert(false, "exception wasn't thrown")
   }
 
-  def assertEqAst(tree: Tree, code: String) = assert(eqAst(tree, code))
+  def assertEqAst(tree: Tree, code: String) =
+    assert(eqAst(tree, code),
+      s"""quasiquote tree != parse(code) tree
+         |quasiquote: $tree
+         |parse tree: ${parse(code)}
+         |code (str): $code""".stripMargin)
+
   def eqAst(tree: Tree, code: String) = tree ≈ parse(code)
 
   val toolbox = currentMirror.mkToolBox()

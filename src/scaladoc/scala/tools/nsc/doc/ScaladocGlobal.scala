@@ -1,12 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package doc
 
-import reporters.Reporter
+import scala.tools.nsc.reporters.Reporter
+import scala.tools.nsc.typechecker.MacroAnnotationNamers
 
 trait ScaladocGlobalTrait extends Global {
   outer =>
@@ -36,6 +44,7 @@ trait ScaladocGlobalTrait extends Global {
   }
 }
 
+// takes a `Reporter`, not `FilteringReporter` for sbt compatibility
 class ScaladocGlobal(settings: doc.Settings, reporter: Reporter) extends Global(settings, reporter) with ScaladocGlobalTrait {
   override protected def computeInternalPhases(): Unit = {
     phasesSet += syntaxAnalyzer
@@ -43,10 +52,9 @@ class ScaladocGlobal(settings: doc.Settings, reporter: Reporter) extends Global(
     phasesSet += analyzer.packageObjects
     phasesSet += analyzer.typerFactory
   }
-  override def forScaladoc = true
   override def createJavadoc = if (settings.docNoJavaComments.value) false else true
 
-  override lazy val analyzer = new {
-    val global: ScaladocGlobal.this.type = ScaladocGlobal.this
-  } with ScaladocAnalyzer
+  override lazy val analyzer =
+    if (settings.YmacroAnnotations) new { val global: ScaladocGlobal.this.type = ScaladocGlobal.this } with ScaladocAnalyzer with MacroAnnotationNamers
+    else new { val global: ScaladocGlobal.this.type = ScaladocGlobal.this } with ScaladocAnalyzer
 }

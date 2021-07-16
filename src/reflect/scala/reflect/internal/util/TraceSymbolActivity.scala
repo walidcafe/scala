@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect.internal
 package util
@@ -5,6 +17,10 @@ package util
 import scala.collection.mutable
 
 trait TraceSymbolActivity {
+  // FIXME: With `global` as a `val`, implementers must use early initializers, which
+  //        are deprecated and will not be supported in 3.0. Please change the design,
+  //        remove the early initializers from implementers, and then remove the
+  //        `@nowarn` annotations from implementers.
   val global: SymbolTable
   import global._
 
@@ -73,13 +89,11 @@ trait TraceSymbolActivity {
     sym.name.decode + "#" + sym.id
   }
 
-  private def freq[T, U](xs: scala.collection.Iterable[T])(fn: T => U): List[(U, Int)] = {
-    val ys = xs groupBy fn mapValues (_.size)
-    ys.toList sortBy (-_._2)
-  }
+  private def freq[T, U](xs: collection.Iterable[T])(fn: T => U): List[(U, Int)] =
+    xs.groupMapReduce(fn)(_ => 1)(_ + _).toList.sortBy(-_._2)
 
-  private def showMapFreq[T](xs: scala.collection.Map[T, Iterable[_]])(showFn: T => String): Unit = {
-    xs.mapValues(_.size).toList.sortBy(-_._2) take 100 foreach { case (k, size) =>
+  private def showMapFreq[T](xs: collection.Map[T, Iterable[_]])(showFn: T => String): Unit = {
+    xs.view.mapValues(_.size).toList.sortBy(-_._2) take 100 foreach { case (k, size) =>
       show(size, showFn(k))
     }
     println("\n")
@@ -121,7 +135,7 @@ trait TraceSymbolActivity {
 
         "%4s owners (%s)".format(
           owners.size,
-          owners.take(3).map({ case (k, v) => v + "/" + k }).mkString(", ") + ", ..."
+          owners.take(3).map({ case (k, v) => s"${v}/${k}" }).mkString(", ") + ", ..."
         )
       })
     }

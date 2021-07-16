@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -51,7 +58,7 @@ import java.io.ObjectStreamException
  * Each of these methods constructs a `TypeTag[T]` or `ClassTag[T]` for the given
  * type argument `T`.
  *
- * === #2 Using an implicit parameter of type `TypeTag[T]`, `ClassTag[T]`, or `WeakTypeTag[T]`
+ * === #2 Using an implicit parameter of type `TypeTag[T]`, `ClassTag[T]`, or `WeakTypeTag[T]` ===
  *
  * For example:
  * {{{
@@ -59,7 +66,7 @@ import java.io.ObjectStreamException
  *
  *   def paramInfo[T](x: T)(implicit tag: TypeTag[T]): Unit = {
  *     val targs = tag.tpe match { case TypeRef(_, _, args) => args }
- *     println(s"type of $x has type arguments $targs")
+ *     println(s"type of \$x has type arguments \$targs")
  *   }
  *
  *   scala> paramInfo(42)
@@ -78,7 +85,7 @@ import java.io.ObjectStreamException
  *
  *   def paramInfo[T: TypeTag](x: T): Unit = {
  *     val targs = typeOf[T] match { case TypeRef(_, _, args) => args }
- *     println(s"type of $x has type arguments $targs")
+ *     println(s"type of \$x has type arguments \$targs")
  *   }
  *
  *   scala> paramInfo(42)
@@ -100,7 +107,7 @@ import java.io.ObjectStreamException
  * {{{
  * def weakParamInfo[T](x: T)(implicit tag: WeakTypeTag[T]): Unit = {
  *   val targs = tag.tpe match { case TypeRef(_, _, args) => args }
- *   println(s"type of $x has type arguments $targs")
+ *   println(s"type of \$x has type arguments \$targs")
  * }
  *
  * scala> def foo[T] = weakParamInfo(List[T]())
@@ -143,7 +150,7 @@ import java.io.ObjectStreamException
  * APIs to use `Tag`s.
  *
  * For more information about `TypeTag`s, see the
- * [[http://docs.scala-lang.org/overviews/reflection/typetags-manifests.html Reflection Guide: TypeTags]]
+ * [[https://docs.scala-lang.org/overviews/reflection/typetags-manifests.html Reflection Guide: TypeTags]]
  *
  * @see [[scala.reflect.ClassTag]], [[scala.reflect.api.TypeTags#TypeTag]], [[scala.reflect.api.TypeTags#WeakTypeTag]]
  * @group ReflectionAPI
@@ -163,7 +170,7 @@ trait TypeTags { self: Universe =>
    * [[scala.reflect.api.TypeTags#TypeTag]] instead, which statically guarantees this property.
    *
    * For more information about `TypeTag`s, see the
-   * [[http://docs.scala-lang.org/overviews/reflection/typetags-manifests.html Reflection Guide: TypeTags]]
+   * [[https://docs.scala-lang.org/overviews/reflection/typetags-manifests.html Reflection Guide: TypeTags]]
    *
    * @see [[scala.reflect.api.TypeTags]]
    * @group TypeTags
@@ -281,12 +288,22 @@ trait TypeTags { self: Universe =>
     val Nothing: TypeTag[scala.Nothing]    = new PredefTypeTag[scala.Nothing]    (NothingTpe, _.TypeTag.Nothing)
     val Null:    TypeTag[scala.Null]       = new PredefTypeTag[scala.Null]       (NullTpe,    _.TypeTag.Null)
 
-    def apply[T](mirror1: scala.reflect.api.Mirror[self.type], tpec1: TypeCreator): TypeTag[T] =
-      new TypeTagImpl[T](mirror1.asInstanceOf[Mirror], tpec1)
+    def apply[T](mirror1: scala.reflect.api.Mirror[self.type], tpec1: TypeCreator): TypeTag[T] = {
+      (mirror1: AnyRef) match {
+        case m: scala.reflect.runtime.JavaMirrors#MirrorImpl
+          if cacheMaterializedTypeTags && tpec1.getClass.getName.contains("$typecreator")
+            && tpec1.getClass.getDeclaredFields.length == 0 => // excludes type creators that splice in bound types.
 
+          m.typeTag(tpec1).asInstanceOf[TypeTag[T]]
+        case _ =>
+          new TypeTagImpl[T](mirror1.asInstanceOf[Mirror], tpec1)
+      }
+    }
     def unapply[T](ttag: TypeTag[T]): Option[Type] = Some(ttag.tpe)
-  }
 
+    private val cacheMaterializedTypeTags = !java.lang.Boolean.getBoolean("scala.reflect.runtime.disable.typetag.cache")
+  }
+  private[reflect] def TypeTagImpl[T](mirror: Mirror, tpec: TypeCreator): TypeTag[T] = new TypeTagImpl[T](mirror, tpec)
   /* @group TypeTags */
   private class TypeTagImpl[T](mirror: Mirror, tpec: TypeCreator) extends WeakTypeTagImpl[T](mirror, tpec) with TypeTag[T] {
     override def in[U <: Universe with Singleton](otherMirror: scala.reflect.api.Mirror[U]): U # TypeTag[T] = {
@@ -300,6 +317,8 @@ trait TypeTags { self: Universe =>
   /* @group TypeTags */
   // This class only exists to silence MIMA complaining about a binary incompatibility.
   // Only the top-level class (api.PredefTypeCreator) should be used.
+  @deprecated("This class only exists to silence MIMA complaining about a binary incompatibility.", since="forever")
+  @annotation.unused
   private class PredefTypeCreator[T](copyIn: Universe => Universe#TypeTag[T]) extends TypeCreator {
     def apply[U <: Universe with Singleton](m: scala.reflect.api.Mirror[U]): U # Type = {
       copyIn(m.universe).asInstanceOf[U # TypeTag[T]].tpe

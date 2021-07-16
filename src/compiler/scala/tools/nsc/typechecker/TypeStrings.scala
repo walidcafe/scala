@@ -1,15 +1,24 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package typechecker
 
-import java.lang.{ reflect => r }
+import java.lang.{reflect => r}
 import r.TypeVariable
+
 import scala.reflect.NameTransformer
 import NameTransformer._
+import scala.collection.immutable.ArraySeq
 import scala.reflect.runtime.{universe => ru}
 import scala.reflect.{ClassTag, classTag}
 
@@ -50,7 +59,7 @@ trait StructuredTypeStrings extends DestructureTypes {
     else block(level, grouping)(name, nodes)
   }
   private def shortClass(x: Any) = {
-    if (settings.debug) {
+    if (settings.isDebug) {
       val name   = (x.getClass.getName split '.').last
       val str    = if (TypeStrings.isAnonClass(x.getClass)) name else (name split '$').last
 
@@ -198,7 +207,7 @@ trait TypeStrings {
     else scalaName(xs.head)
   }
   private def tparamString(clazz: JClass): String = {
-    brackets(clazz.getTypeParameters map tvarString: _*)
+    brackets(ArraySeq.unsafeWrapArray(clazz.getTypeParameters map tvarString): _*)
   }
 
   private def tparamString[T: ru.TypeTag] : String = {

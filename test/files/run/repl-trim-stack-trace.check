@@ -1,26 +1,35 @@
 
 scala> def f = throw new Exception("Uh-oh")
-f: Nothing
+def f: Nothing
 
 scala> f
 java.lang.Exception: Uh-oh
-  at .f(<console>:1)
+  at f(<console>:XX)
   ... ??? elided
 
 scala> def f = throw new Exception("")
-f: Nothing
+def f: Nothing
 
 scala> f
 java.lang.Exception:
-  at .f(<console>:1)
+  at f(<console>:XX)
   ... ??? elided
 
 scala> def f = throw new Exception
-f: Nothing
+def f: Nothing
 
 scala> f
 java.lang.Exception
-  at .f(<console>:1)
+  at f(<console>:XX)
+  ... ??? elided
+
+scala> null.asInstanceOf
+#partest !java15+
+java.lang.NullPointerException
+#partest java15+
+java.lang.NullPointerException: Cannot throw exception because the return value of "res3()" is null
+#partest
+  at .lzycompute(<synthetic>:8)
   ... ??? elided
 
 scala> :quit

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -56,29 +63,12 @@ trait TypeDebugging {
 
   /** Light color wrappers.
    */
-  object typeDebug {
-    import scala.io.AnsiColor._
-
-    private val colorsOk = scala.util.Properties.coloredOutputEnabled
-    private def inColor(s: String, color: String) = if (colorsOk && s != "") color +        s + RESET else s
-    private def inBold(s: String, color: String)  = if (colorsOk && s != "") color + BOLD + s + RESET else s
-
-    def inLightRed(s: String)          = inColor(s, RED)
-    def inLightGreen(s: String)        = inColor(s, GREEN)
-    def inLightMagenta(s: String)      = inColor(s, MAGENTA)
-    def inLightCyan(s: String): String = inColor(s, CYAN)
-    def inGreen(s: String): String     = inBold(s, GREEN)
-    def inRed(s: String): String       = inBold(s, RED)
-    def inBlue(s: String): String      = inBold(s, BLUE)
-    def inCyan(s: String): String      = inBold(s, CYAN)
-    def inMagenta(s: String)           = inBold(s, MAGENTA)
-    def resetColor(s: String): String  = if (colorsOk) s + RESET else s
-
+  object typeDebug extends TypeDebugging.AnsiColor {
     private def to_s(x: Any): String = x match {
       // otherwise case classes are caught looking like products
       case _: Tree | _: Type     => "" + x
       case x: IterableOnce[_]    => x.iterator mkString ", "
-      case x: Product            => x.productIterator mkString ("(", ", ", ")")
+      case x: Product            => x.productIterator.mkString("(", ", ", ")")
       case _                     => "" + x
     }
     def ptBlock(label: String, pairs: (String, Any)*): String = {
@@ -114,19 +104,23 @@ trait TypeDebugging {
     }
     def ptTypeParam(td: TypeDef): String = {
       val TypeDef(_, name, tparams, rhs) = td
-      name + ptTypeParams(tparams) + ptTree(rhs)
+      name.toString + ptTypeParams(tparams) + ptTree(rhs)
     }
     def ptTypeParams(tparams: List[TypeDef]): String = str brackets (tparams map ptTypeParam)
 
     object str {
       def parentheses(xs: List[_]): String     = xs.mkString("(", ", ", ")")
+      def params(params: List[Symbol]): String = {
+        val paramsStrPre = if (params.nonEmpty && params.head.isImplicit) "(implicit " else "("
+        params.map(_.defStringWithoutImplicit).mkString(paramsStrPre, ", ", ")")
+      }
       def brackets(xs: List[_]): String        = if (xs.isEmpty) "" else xs.mkString("[", ", ", "]")
       def tparams(tparams: List[Type]): String = brackets(tparams map debug)
       def parents(ps: List[Type]): String      = (ps map debug).mkString(" with ")
       def refine(defs: Scope): String          = defs.toList.mkString("{", " ;\n ", "}")
       def bounds(lo: Type, hi: Type): String   = {
-        val lo_s = if (typeIsNothing(lo)) "" else s" >: $lo"
-        val hi_s = if (typeIsAny(hi)) "" else s" <: $hi"
+        val lo_s = if (lo.isNothing) "" else s" >: $lo"
+        val hi_s = if (typeIsAnyOrJavaObject(hi)) "" else s" <: $hi"
         lo_s + hi_s
       }
     }
@@ -145,7 +139,37 @@ trait TypeDebugging {
     }
     def debugString(tp: Type) = debug(tp)
   }
-  def paramString(tp: Type)      = typeDebug.str parentheses (tp.params map (_.defString))
+  def paramString(tp: Type)      = typeDebug.str params tp.params
   def typeParamsString(tp: Type) = typeDebug.str brackets (tp.typeParams map (_.defString))
   def debugString(tp: Type)      = typeDebug debugString tp
+}
+
+object TypeDebugging {
+  object AnsiColor extends AnsiColor {
+    implicit class StringColorOps(private val s: String) extends AnyVal {
+      def red    = inLightRed(s)
+      def green  = inLightGreen(s)
+      def yellow = inLightYellow(s)
+      def blue   = inLightBlue(s)
+    }
+  }
+
+  trait AnsiColor extends scala.io.AnsiColor {
+    private[this] val colorsOk = scala.util.Properties.coloredOutputEnabled
+    private def inColor(s: String, color: String) = if (colorsOk && s != "") color +        s + RESET else s
+    private def inBold(s: String, color: String)  = if (colorsOk && s != "") color + BOLD + s + RESET else s
+
+    def inLightRed(s: String)            = inColor(s, RED)
+    def inLightBlue(s: String)           = inColor(s, BLUE)
+    def inLightGreen(s: String)          = inColor(s, GREEN)
+    def inLightYellow(s: String): String = inColor(s, YELLOW)
+    def inLightMagenta(s: String)        = inColor(s, MAGENTA)
+    def inLightCyan(s: String): String   = inColor(s, CYAN)
+    def inGreen(s: String): String       = inBold(s, GREEN)
+    def inRed(s: String): String         = inBold(s, RED)
+    def inBlue(s: String): String        = inBold(s, BLUE)
+    def inCyan(s: String): String        = inBold(s, CYAN)
+    def inMagenta(s: String)             = inBold(s, MAGENTA)
+    def resetColor(s: String): String    = if (colorsOk) s + RESET else s
+  }
 }

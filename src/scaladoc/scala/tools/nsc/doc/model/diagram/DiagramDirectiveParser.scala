@@ -1,9 +1,24 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.doc
 package model
 package diagram
 
 import model._
 import java.util.regex.Pattern
+
+import scala.annotation.nowarn
+import scala.tools.nsc.Reporting.WarningCategory
 import scala.util.matching.Regex
 
 /**
@@ -77,8 +92,8 @@ trait DiagramDirectiveParser {
       defaultFilter
   }
 
-  protected var tFilter = 0l
-  protected var tModel = 0l
+  protected var tFilter = 0L
+  protected var tModel = 0L
 
   /** Show the entire diagram, no filtering */
   case object FullDiagram extends DiagramFilter {
@@ -121,6 +136,7 @@ trait DiagramDirectiveParser {
       else
         n.name
 
+    @nowarn("cat=lint-nonlocal-return")
     def hideNode(clazz: Node): Boolean = {
       val qualifiedName = getName(clazz)
       for (hideFilter <- hideNodesFilter)
@@ -131,6 +147,7 @@ trait DiagramDirectiveParser {
       false
     }
 
+    @nowarn("cat=lint-nonlocal-return")
     def hideEdge(clazz1: Node, clazz2: Node): Boolean = {
       val clazz1Name = getName(clazz1)
       val clazz2Name = getName(clazz2)
@@ -179,7 +196,7 @@ trait DiagramDirectiveParser {
         // we need the position from the package object (well, ideally its comment, but yeah ...)
         val sym = if (template.sym.hasPackageFlag) template.sym.packageObject else template.sym
         assert((sym != global.NoSymbol) || (sym == global.rootMirror.RootPackage))
-        global.reporter.warning(sym.pos, message)
+        global.runReporting.warning(sym.pos, message, WarningCategory.Scaladoc, sym)
       }
 
       def preparePattern(className: String) =

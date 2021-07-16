@@ -1,6 +1,19 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 
-import java.lang.reflect.{ AccessibleObject => jAccessibleObject }
+import java.lang.reflect.{AccessibleObject => jAccessibleObject}
+import scala.annotation.nowarn
 
 package object reflect {
 
@@ -35,13 +48,6 @@ package object reflect {
   @deprecated("use scala.reflect.ClassTag instead", "2.10.0")
   val ClassManifest = ClassManifestFactory
 
-  /** The object `Manifest` defines factory methods for manifests.
-   *  It is intended for use by the compiler and should not be used in client code.
-   */
-  // TODO undeprecated until Scala reflection becomes non-experimental
-  // @deprecated("use scala.reflect.ClassTag (to capture erasures), scala.reflect.runtime.universe.TypeTag (to capture types) or both instead", "2.10.0")
-  val Manifest = ManifestFactory
-
   def classTag[T](implicit ctag: ClassTag[T]) = ctag
 
   /** Make a java reflection object accessible, if it is not already
@@ -49,7 +55,10 @@ package object reflect {
    *  attempt, it is caught and discarded.
    */
   def ensureAccessible[T <: jAccessibleObject](m: T): T = {
-    if (!m.isAccessible) {
+    // This calls `setAccessible` unnecessarily, because `isAccessible` is only `true` if `setAccessible(true)`
+    // was called before, not if the reflected object is inherently accessible.
+    // TODO: replace by `canAccess` once we're on JDK 9+
+    if (!m.isAccessible: @nowarn("cat=deprecation")) {
       try m setAccessible true
       catch { case _: SecurityException => } // does nothing
     }

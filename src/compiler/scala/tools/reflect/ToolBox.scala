@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools
 package reflect
 
@@ -55,7 +67,7 @@ trait ToolBox[U <: scala.reflect.api.Universe] {
    *
    *  If `silent` is false, `ToolBoxError` will be thrown in case of a typecheck error.
    *  If `silent` is true, the typecheck is silent and will return `EmptyTree` if an error occurs.
-   *  Such errors don't vanish and can be inspected by turning on -Ydebug.
+   *  Such errors don't vanish and can be inspected by turning on -Vdebug.
    *
    *  Typechecking can be steered with the following optional parameters:
    *    `withImplicitViewsDisabled` recursively prohibits implicit views (though, implicit vals will still be looked up and filled in), default value is false
@@ -72,7 +84,7 @@ trait ToolBox[U <: scala.reflect.api.Universe] {
    *
    *  If `silent` is false, `ToolBoxError` will be thrown in case of an inference error.
    *  If `silent` is true, the typecheck is silent and will return `EmptyTree` if an error occurs.
-   *  Such errors don't vanish and can be inspected by turning on -Xlog-implicits.
+   *  Such errors don't vanish and can be inspected by turning on -Vimplicits.
    *  Unlike in `typecheck`, `silent` is true by default.
    */
   def inferImplicitValue(pt: u.Type, silent: Boolean = true, withMacrosDisabled: Boolean = false, pos: u.Position = u.NoPosition): u.Tree
@@ -86,7 +98,7 @@ trait ToolBox[U <: scala.reflect.api.Universe] {
    *
    *  If `silent` is false, `ToolBoxError` will be thrown in case of an inference error.
    *  If `silent` is true, the typecheck is silent and will return `EmptyTree` if an error occurs.
-   *  Such errors don't vanish and can be inspected by turning on -Xlog-implicits.
+   *  Such errors don't vanish and can be inspected by turning on -Vimplicits.
    *  Unlike in `typecheck`, `silent` is true by default.
    */
   def inferImplicitView(tree: u.Tree, from: u.Type, to: u.Type, silent: Boolean = true, withMacrosDisabled: Boolean = false, pos: u.Position = u.NoPosition): u.Tree
@@ -121,7 +133,7 @@ trait ToolBox[U <: scala.reflect.api.Universe] {
    *  For a ClassDef, a ClassSymbol is returned, and for a ModuleDef, a ModuleSymbol is returned (not a module class, but a module itself).
    *
    *  This method can be used to generate definitions that will later be re-used by subsequent calls to
-   *  `compile`, `define` or `eval`. To refer to the generated definition in a tree, use q"$sym".
+   *  `compile`, `define` or `eval`. To refer to the generated definition in a tree, use q"\$sym".
    */
   def define(tree: u.ImplDef): u.Symbol
 

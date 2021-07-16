@@ -16,14 +16,14 @@ object TreeSetTest extends Properties("TreeSet") {
     val it = subject.iterator
     var consistent = true
     subject.foreach { element =>
-      consistent &&= it.hasNext && element == it.next
+      consistent &&= it.hasNext && element == it.next()
     }
     consistent
   }
 
   property("worst-case tree height is iterable") = forAll(choose(0, 10), arbitrary[Boolean]) { (n: Int, even: Boolean) =>
     /*
-     * According to "Ralf Hinze. Constructing red-black trees" [http://www.cs.ox.ac.uk/ralf.hinze/publications/#P5]
+     * According to "Ralf Hinze. Constructing red-black trees" [https://www.cs.ox.ac.uk/ralf.hinze/publications/#P5]
      * you can construct a skinny tree of height 2n by inserting the elements [1 .. 2^(n+1) - 2] and a tree of height
      * 2n+1 by inserting the elements [1 .. 3 * 2^n - 2], both in reverse order.
      *
@@ -34,7 +34,7 @@ object TreeSetTest extends Properties("TreeSet") {
     val values = (1 to highest).reverse
     val subject = TreeSet(values: _*)
     val it = subject.iterator
-    try { while (it.hasNext) it.next; true } catch { case _: Throwable => false }
+    try { while (it.hasNext) it.next(); true } catch { case _: Throwable => false }
   }
 
   property("sorted") = forAll { (subject: TreeSet[Int]) => (subject.size >= 3) ==> {
@@ -70,7 +70,7 @@ object TreeSetTest extends Properties("TreeSet") {
     val half = elements.take(elements.size / 2)
     val subject = TreeSet(half: _*)
     elements.forall{e => {
-      val temp = subject.from(e)
+      val temp = subject.rangeFrom(e)
       if (temp.isEmpty) subject.minAfter(e).isEmpty
       else subject.minAfter(e).get == temp.min
     }}
@@ -80,7 +80,7 @@ object TreeSetTest extends Properties("TreeSet") {
     val half = elements.take(elements.size / 2)
     val subject = TreeSet(half: _*)
     elements.forall{e => {
-      val temp = subject.from(e)
+      val temp = subject.rangeFrom(e)
       if (temp.isEmpty) subject.minAfter(e).isEmpty
       else subject.minAfter(e).get == temp.min
     }}
@@ -144,7 +144,7 @@ object TreeSetTest extends Properties("TreeSet") {
   property("from is inclusive") = forAll { (subject: TreeSet[Int]) => subject.nonEmpty ==> {
     val n = choose(0, subject.size - 1).sample.get
     val from = subject.drop(n).firstKey
-    subject.from(from).firstKey == from && subject.from(from).forall(_ >= from)
+    subject.rangeFrom(from).firstKey == from && subject.rangeFrom(from).forall(_ >= from)
   }}
 
   property("to is inclusive") = forAll { (subject: TreeSet[Int]) => subject.nonEmpty ==> {
@@ -156,7 +156,7 @@ object TreeSetTest extends Properties("TreeSet") {
   property("until is exclusive") = forAll { (subject: TreeSet[Int]) => subject.size > 1 ==> {
     val n = choose(1, subject.size - 1).sample.get
     val until = subject.drop(n).firstKey
-    subject.until(until).lastKey == subject.take(n).lastKey && subject.until(until).forall(_ <= until)
+    subject.rangeUntil(until).lastKey == subject.take(n).lastKey && subject.rangeUntil(until).forall(_ <= until)
   }}
 
   property("remove single") = forAll { (subject: TreeSet[Int]) => subject.nonEmpty ==> {

@@ -1,18 +1,26 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package ast
 
+import scala.annotation.tailrec
 import symtab._
 import util.DocStrings._
 import scala.collection.mutable
+import scala.tools.nsc.Reporting.WarningCategory
 
 /*
  *  @author  Martin Odersky
- *  @version 1.0
  */
 trait DocComments { self: Global =>
 
@@ -50,8 +58,10 @@ trait DocComments { self: Global =>
    *  since r23926.
    */
   private def allInheritedOverriddenSymbols(sym: Symbol): List[Symbol] = {
-    if (!sym.owner.isClass) Nil
-    else sym.owner.ancestors map (sym overriddenSymbol _) filter (_ != NoSymbol)
+    val getter: Symbol = sym.getter
+    val symOrGetter = getter.orElse(sym)
+    if (!symOrGetter.owner.isClass) Nil
+    else symOrGetter.owner.ancestors map (symOrGetter overriddenSymbol _) filter (_ != NoSymbol)
   }
 
   def fillDocComment(sym: Symbol, comment: DocComment): Unit = {
@@ -79,8 +89,8 @@ trait DocComments { self: Global =>
       case None =>
         // scala/bug#8210 - The warning would be false negative when this symbol is a setter
         if (ownComment.indexOf("@inheritdoc") != -1 && ! sym.isSetter)
-          reporter.warning(sym.pos, s"The comment for ${sym} contains @inheritdoc, but no parent comment is available to inherit from.")
-        ownComment.replaceAllLiterally("@inheritdoc", "<invalid inheritdoc annotation>")
+          runReporting.warning(sym.pos, s"The comment for ${sym} contains @inheritdoc, but no parent comment is available to inherit from.", WarningCategory.Scaladoc, sym)
+        ownComment.replace("@inheritdoc", "<invalid inheritdoc annotation>")
       case Some(sc) =>
         if (ownComment == "") sc
         else expandInheritdoc(sc, merge(sc, ownComment, sym), sym)
@@ -135,8 +145,7 @@ trait DocComments { self: Global =>
 
   /** The cooked doc comment of an overridden symbol */
   protected def superComment(sym: Symbol): Option[String] = {
-    val getter: Symbol = sym.getter
-    allInheritedOverriddenSymbols(getter.orElse(sym)).iterator
+    allInheritedOverriddenSymbols(sym).iterator
       .map(cookedDocComment(_))
       .find(_ != "")
   }
@@ -238,7 +247,7 @@ trait DocComments { self: Global =>
         if (childSection.indexOf("@inheritdoc") == -1)
           childSection
         else
-          childSection.replaceAllLiterally("@inheritdoc", parentSection)
+          childSection.replace("@inheritdoc", parentSection)
 
       def getParentSection(section: (Int, Int)): String = {
 
@@ -254,8 +263,8 @@ trait DocComments { self: Global =>
               val sectionTextBounds = extractSectionText(parent, section)
               cleanupSectionText(parent.substring(sectionTextBounds._1, sectionTextBounds._2))
             case None =>
-              reporter.info(sym.pos, "The \"" + getSectionHeader + "\" annotation of the " + sym +
-                  " comment contains @inheritdoc, but the corresponding section in the parent is not defined.", force = true)
+              reporter.echo(sym.pos, "The \"" + getSectionHeader + "\" annotation of the " + sym +
+                  " comment contains @inheritdoc, but the corresponding section in the parent is not defined.")
               "<invalid inheritdoc annotation>"
           }
 
@@ -295,7 +304,8 @@ trait DocComments { self: Global =>
    *  @param vble  The variable for which a definition is searched
    *  @param site  The class for which doc comments are generated
    */
-  def lookupVariable(vble: String, site: Symbol): Option[String] = site match {
+  @tailrec
+  final def lookupVariable(vble: String, site: Symbol): Option[String] = site match {
     case NoSymbol => None
     case _        =>
       val searchList =
@@ -304,7 +314,8 @@ trait DocComments { self: Global =>
 
       searchList collectFirst { case x if defs(x) contains vble => defs(x)(vble) } match {
         case Some(str) if str startsWith "$" => lookupVariable(str.tail, site)
-        case res                             => res orElse lookupVariable(vble, site.owner)
+        case s @ Some(str)                   => s
+        case None                            => lookupVariable(vble, site.owner)
       }
   }
 
@@ -319,6 +330,7 @@ trait DocComments { self: Global =>
   protected def expandVariables(initialStr: String, sym: Symbol, site: Symbol): String = {
     val expandLimit = 10
 
+    @tailrec
     def expandInternal(str: String, depth: Int): String = {
       if (depth >= expandLimit)
         throw new ExpansionLimitExceeded(str)
@@ -354,7 +366,7 @@ trait DocComments { self: Global =>
                 case None              =>
                   val pos = docCommentPos(sym)
                   val loc = pos withPoint (pos.start + vstart + 1)
-                  reporter.warning(loc, s"Variable $vname undefined in comment for $sym in $site")
+                  runReporting.warning(loc, s"Variable $vname undefined in comment for $sym in $site", WarningCategory.Scaladoc, sym)
               }
             }
         }
@@ -368,7 +380,7 @@ trait DocComments { self: Global =>
 
     // We suppressed expanding \$ throughout the recursion, and now we
     // need to replace \$ with $ so it looks as intended.
-    expandInternal(initialStr, 0).replaceAllLiterally("""\$""", "$")
+    expandInternal(initialStr, 0).replace("""\$""", "$")
   }
 
   // !!! todo: inherit from Comment?
@@ -401,6 +413,8 @@ trait DocComments { self: Global =>
       val comment      = "/** " + raw.substring(commentStart, end) + "*/"
       val commentPos   = subPos(commentStart, end)
 
+      runReporting.deprecationWarning(codePos, "The @usecase tag is deprecated, instead use the @example tag to document the usage of your API", "2.13.0", site = "", origin = "")
+
       UseCase(DocComment(comment, commentPos, codePos), code, codePos)
     }
 
@@ -408,7 +422,7 @@ trait DocComments { self: Global =>
       if (pos == NoPosition) NoPosition
       else {
         val start1 = pos.start + start
-        val end1 = pos.end + end
+        val end1 = pos.start + end
         pos withStart start1 withPoint start1 withEnd end1
       }
 
@@ -422,8 +436,8 @@ trait DocComments { self: Global =>
           key.drop(start) -> value
         }
       } map {
-        case (key, Trim(value)) =>
-          variableName(key) -> value.replaceAll("\\s+\\*+$", "")
+        case (key, Trim(value)) => variableName(key) -> value.replaceAll("\\s+\\*+$", "")
+        case x                  => throw new MatchError(x)
       }
     }
   }
@@ -483,9 +497,11 @@ trait DocComments { self: Global =>
         }
         val result = rest.foldLeft(start)(select(_, _, NoType))
         if (result == NoType)
-          reporter.warning(comment.codePos, "Could not find the type " + variable + " points to while expanding it " +
-                                            "for the usecase signature of " + sym + " in " + site + "." +
-                                            "In this context, " + variable + " = \"" + str + "\".")
+          runReporting.warning(
+            comment.codePos,
+            s"""Could not find the type $variable points to while expanding it for the usecase signature of $sym in $site. In this context, $variable = "$str".""",
+            WarningCategory.Scaladoc,
+            site)
         result
       }
 
@@ -519,6 +535,7 @@ trait DocComments { self: Global =>
               (typeRef(NoPrefix, alias, Nil), false)
           }
 
+      @tailrec
       def subst(sym: Symbol, from: List[Symbol], to: List[(Type, Boolean)]): (Type, Boolean) =
         if (from.isEmpty) (sym.tpe, false)
         else if (from.head == sym) to.head

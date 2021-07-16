@@ -1,13 +1,19 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package symtab
 
 import scala.language.implicitConversions
-import scala.language.postfixOps
 
 /** Printing the symbol graph (for those symbols attached to an AST node)
  *  after each phase.
@@ -46,8 +52,8 @@ trait SymbolTrackers {
     def dropSymbol(sym: Symbol) = sym.ownerChain exists (_ hasFlag Flags.SPECIALIZED)
 
     def symbolSnapshot(unit: CompilationUnit): Map[Symbol, Set[Tree]] = {
-      if (unit.body == null) Map()
-      else unit.body filter containsSymbol groupBy (_.symbol) mapValues (_.toSet) toMap
+      if (unit.body == null) Map.empty
+      else unit.body.filter(containsSymbol).groupBy(_.symbol).view.mapValues(_.toSet).toMap
     }
     def apply(unit: CompilationUnit) = new SymbolTracker(
       () => symbolSnapshot(unit) filterNot { case (k, _) => dropSymbol(k) }
@@ -127,11 +133,11 @@ trait SymbolTrackers {
           else " (" + Flags.flagsToString(masked) + ")"
       }
       def symString(sym: Symbol) = (
-        if (settings.debug && sym.hasCompleteInfo) {
+        if (settings.isDebug && sym.hasCompleteInfo) {
           val s = sym.defString take 240
           if (s.length == 240) s + "..." else s
         }
-        else sym + changedOwnerString + flagSummaryString
+        else "" + sym + changedOwnerString + flagSummaryString
       )
 
       def flatten = children.foldLeft(Set(root))(_ ++ _.flatten)
@@ -141,7 +147,7 @@ trait SymbolTrackers {
         else {
           indicatorString + indent + symString(root) + (
             if (children.isEmpty) ""
-            else children map (c => c.indentString(indent + "    ")) mkString ("\n", "\n", "")
+            else children.map(_.indentString(indent + "    ")).mkString("\n", "\n", "")
           )
         }
       }
@@ -169,28 +175,26 @@ trait SymbolTrackers {
       val change = Change(added, removed, prevMap, owners, flags)
 
       prevMap    = currentMap
-      prevOwners = current map (s => (s, s.owner)) toMap;
-      prevFlags  = current map (s => (s, (s.flags & flagsMask))) toMap;
+      prevOwners = current.map(s => (s, s.owner)).toMap
+      prevFlags  = current.map(s => (s, (s.flags & flagsMask))).toMap
       history    = change :: history
     }
     def show(label: String): String = {
       val hierarchy = Node(current)
       val Change(_, removed, symMap, _, _) = history.head
       def detailString(sym: Symbol) = {
-        val ownerString = sym.ownerChain splitAt 3 match {
-          case (front, back) =>
-            val xs = if (back.isEmpty) front else front :+ "..."
-            xs mkString " -> "
+        val ownerString = {
+          val (few, rest) = sym.ownersIterator.splitAt(3)
+          val ellipsis = Iterator("...").filter(_ => rest.hasNext)
+          few.map(_.toString).concat(ellipsis).mkString(" -> ")
         }
-        val treeStrings = symMap(sym) map { t =>
-          "%10s: %s".format(t.shortClass, t)
-        }
+        val treeStrings = symMap(sym).map(t => f"${t.shortClass}%10s: $t")
 
-        ownerString :: treeStrings mkString "\n"
+        (ownerString :: treeStrings).mkString("\n")
       }
-      def removedString = (removed: List[Symbol]).zipWithIndex map {
+      def removedString = (removed: List[Symbol]).zipWithIndex.map {
         case (t, i) => "(%2s) ".format(i + 1) + detailString(t)
-      } mkString "\n"
+      }.mkString("\n")
 
       "" + hierarchy + (
         if (removed.isEmpty) ""

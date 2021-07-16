@@ -1,3 +1,4 @@
+// scalac: -opt:l:default
 import scala.sys.error
 
 class Foo_1 {
@@ -8,14 +9,14 @@ class Foo_1 {
 
   def unreachableIf: Int = {
     return 42
-    if (util.Random.nextInt % 2 == 0)
+    if (util.Random.nextInt() % 2 == 0)
       0
     else
       1
   }
 
   def unreachableIfBranches: Int = {
-    if (util.Random.nextInt % 2 == 0)
+    if (util.Random.nextInt() % 2 == 0)
       return 42
     else
       return 42
@@ -24,14 +25,14 @@ class Foo_1 {
   }
 
   def unreachableOneLegIf: Int = {
-    if (util.Random.nextInt % 2 == 0)
+    if (util.Random.nextInt() % 2 == 0)
       return 42
 
     return 42
   }
 
   def unreachableLeftBranch: Int = {
-    val result = if (util.Random.nextInt % 2 == 0)
+    val result = if (util.Random.nextInt() % 2 == 0)
       return 42
     else
       42
@@ -40,7 +41,7 @@ class Foo_1 {
   }
 
   def unreachableRightBranch: Int = {
-    val result = if (util.Random.nextInt % 2 == 0)
+    val result = if (util.Random.nextInt() % 2 == 0)
       42
     else
       return 42
@@ -91,7 +92,7 @@ class Foo_1 {
 
   def unreachableSwitch: Int = {
   	return 42
-    val x = util.Random.nextInt % 2
+    val x = util.Random.nextInt() % 2
     x match {
       case 0 => return 0
       case 1 => return 1
@@ -101,7 +102,7 @@ class Foo_1 {
   }
 
   def unreachableAfterSwitch: Int = {
-    val x = util.Random.nextInt % 2
+    val x = util.Random.nextInt() % 2
     x match {
       case 0 => return 42
       case 1 => return 41 + x

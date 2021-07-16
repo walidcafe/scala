@@ -1,14 +1,9 @@
 package scala.collection
 
 import org.junit.Test
-import org.junit.Ignore
-import org.junit.Assert.{assertEquals, _}
+import org.junit.Assert._
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
-
-// with the Ant JUnit runner, it's necessary to @Ignore the abstract
-// classes here, or JUnit tries to instantiate them.  the annotations
-// can be removed when this is merged forward (TODO 2.12.x)
 
 /**
   * base class for testing common methods on a various implementations
@@ -17,7 +12,6 @@ import org.junit.runners.JUnit4
   * @tparam E the element type
   */
 @RunWith(classOf[JUnit4])
-@Ignore
 abstract class IndexedTest[T, E] {
 
   protected def size = 10
@@ -29,7 +23,7 @@ abstract class IndexedTest[T, E] {
 
   /**
     * returns the value of the data that is expected to be present int the original data at index {{{index}}}
-    * This is conceptully the same as the normal apply operation but unavaialbe due to the base types of T not supporting apply
+    * This is conceptually the same as the normal apply operation but unavailable due to the base types of T not supporting apply
     *
     * @param index the index to use for the returned value
     * @return the value at the specified index
@@ -38,23 +32,29 @@ abstract class IndexedTest[T, E] {
   /**
     * check some simple indexed access
     */
-  @Test def checkIndexedAccess: Unit = {
+  @Test def checkIndexedAccess(): Unit = {
     val test = underTest(size)
     for (i <- 0 until size) {
       assertEquals(s" at index $i", expectedValueAtIndex(i), get(test, i))
     }
   }
 
+  /** check that lengthCompare compares values correctly */
+  @Test def checkLengthCompare(): Unit = {
+    val test = underTest(size)
+    assert(lengthCompare(test, Int.MinValue) > 0)
+  }
+
   /**
-    * check simple equallity of the initial data.
-    * More a test of the infra that we use in this est than a full test of equallity
+    * check simple equality of the initial data.
+    * More a test of the infra that we use in this est than a full test of equality
     */
-  @Test def checkEquals: Unit = {
+  @Test def checkEquals(): Unit = {
     val test1 = underTest(size)
     val test2 = underTest(size)
     doAssertEquals("", test1, test2)
     assertNotSame(test1, test2)
-    expectSameContent("basic equallity", false, test1, test2, 0, size)
+    expectSameContent("basic equality", false, test1, test2, 0, size)
   }
 
   protected def expectSameContent(txt: String, canBeSame:Boolean, orig: T, test: T, offset: Int, len: Int): Unit = {
@@ -73,7 +73,7 @@ abstract class IndexedTest[T, E] {
   /**
     * check the operation of {{{take}}} when the parameter is less than the size of the test data
     */
-  @Test def checkTakeNormal: Unit = {
+  @Test def checkTakeNormal(): Unit = {
     val orig = underTest(size)
     for (len <- 0 until size) {
       val taken = take(orig, len)
@@ -84,7 +84,7 @@ abstract class IndexedTest[T, E] {
   /**
     * check the operation of {{{slice}}} within the bounds of the source
     */
-  @Test def checkSliceNormal: Unit = {
+  @Test def checkSliceNormal(): Unit = {
     val orig = underTest(size)
     for (
       from <- 0 until size;
@@ -97,9 +97,9 @@ abstract class IndexedTest[T, E] {
 
   /**
     * check the operation of {{{take}}} works for size of 0
-    * There is a special case tha for some implementations empty will be a singleton
+    * There is a special case that for some implementations empty will be a singleton
     */
-  @Test def checkTakeEmpty: Unit = {
+  @Test def checkTakeEmpty(): Unit = {
     val orig = underTest(size)
     val empty1 = take(orig, 0)
     val empty2 = take(orig, 0)
@@ -109,9 +109,9 @@ abstract class IndexedTest[T, E] {
 
   /**
     * check the operation of {{{slice}}} works for size of 0
-    * There is a special case tha for some implementations empty will be a singleton
+    * There is a special case that for some implementations empty will be a singleton
     */
-  @Test def checkSliceEmpty: Unit = {
+  @Test def checkSliceEmpty(): Unit = {
     val orig = underTest(size)
     for (start <- 0 until size) {
       val empty1 = slice(orig, start, start)
@@ -125,7 +125,7 @@ abstract class IndexedTest[T, E] {
     * check the operation of {{{take}}} works for the entire content
     * There is a special case that for some immutable implementations they can share the result
     */
-  @Test def checkTakeAll: Unit = {
+  @Test def checkTakeAll(): Unit = {
     val orig = underTest(size)
     val all = take(orig, size)
     assertEquals(size, length(all))
@@ -140,7 +140,7 @@ abstract class IndexedTest[T, E] {
     * check the operation of {{{slice}}} works for the entire content
     * There is a special case that for some immutable implementations they can share the result
     */
-  @Test def checkSliceAll: Unit = {
+  @Test def checkSliceAll(): Unit = {
     val orig = underTest(size)
     val all = slice(orig, 0, size)
     assertEquals(size, length(all))
@@ -155,7 +155,7 @@ abstract class IndexedTest[T, E] {
     * check that take operates appropriately for negative values
     * take and slice should be lenient and silently ignore any data outside valid ranges
     */
-  @Test def checkTakeNeg: Unit = {
+  @Test def checkTakeNeg(): Unit = {
     val orig = underTest(size)
     val e = take(orig, 0)
     for (len <- List(-1, -10, -99, Int.MinValue)) {
@@ -169,9 +169,10 @@ abstract class IndexedTest[T, E] {
     * check that take operates appropriately for lengths that exceed the input size
     * take and slice should be lenient and silently ignore any data outside valid ranges
     */
-  @Test def checkTakeTooBig: Unit = {
+  @Test def checkTakeTooBig(): Unit = {
     val orig = underTest(size)
     val e = take(orig, 0)
+    assertNotNull(e)
     for (len <- List(size + 1, size + 10, Int.MaxValue)) {
       val all = take(orig, len)
       assertEquals(s"len $len", size, length(all))
@@ -183,7 +184,7 @@ abstract class IndexedTest[T, E] {
     * check that slice operates appropriately for negative start point
     * take and slice should be lenient and silently ignore any data outside valid ranges
     */
-  @Test def checkSliceFromNeg: Unit = {
+  @Test def checkSliceFromNeg(): Unit = {
     val orig = underTest(size)
     for (
       from <- List(-1, -10, -99, Int.MinValue);
@@ -197,7 +198,7 @@ abstract class IndexedTest[T, E] {
     * check that slice operates appropriately for out of range end values
     * take and slice should be lenient and silently ignore any data outside valid ranges
     */
-  @Test def checkSliceToTooBig: Unit = {
+  @Test def checkSliceToTooBig(): Unit = {
     val orig = underTest(size)
     for (
       from <- List(-1, -10, -99, Int.MinValue, 0, 1, 5);
@@ -213,7 +214,7 @@ abstract class IndexedTest[T, E] {
     * check that slice operates appropriately for negative values start and ends too large
     * take and slice should be lenient and silently ignore any data outside valid ranges
     */
-  @Test def checkSliceFromNegAndToTooBig: Unit = {
+  @Test def checkSliceFromNegAndToTooBig(): Unit = {
     val orig = underTest(size)
     for (
       from <- List(-1, -10, -99, Int.MinValue);
@@ -236,6 +237,8 @@ abstract class IndexedTest[T, E] {
   //accessors
   //the length of underTest
   def length(underTest: T): Int
+
+  def lengthCompare(underTest: T, len: Int): Int
 
   //the value at index i of underTest
   def get(underTest: T, i: Int): E
@@ -302,7 +305,7 @@ package IndexedTestImpl {
     def toType(n: Int) = n
   }
   trait FloatTestData extends DataProvider [Float] {
-    def toType(n: Int) = n
+    def toType(n: Int) = n.toFloat
   }
   trait DoubleTestData extends DataProvider [Double] {
     def toType(n: Int) = n
@@ -317,11 +320,12 @@ package IndexedTestImpl {
     def toType(n: Int)= if ((n & 0) == 0) null else BoxedUnit.UNIT
   }
 
-  @Ignore
   abstract class ArrayTest[E] (
                                //the object or primitive type of the array
                                val TYPE: Class[_]) extends IndexedTest[Array[E], E]{
     override final def length(underTest: Array[E]) = underTest.length
+
+    override final def lengthCompare(underTest: Array[E], len: Int): Int = underTest.lengthCompare(len)
 
     override def get(underTest: Array[E], i: Int) = underTest(i)
 
@@ -348,13 +352,13 @@ package IndexedTestImpl {
     }
   }
 
-
-  @Ignore
   abstract class ArraySeqTest[E](
                                       //the object or primitive type of the array
                                       val TYPE: Class[_]) extends IndexedTest[mutable.ArraySeq[E], E]  with DataProvider[E]{
     import mutable.ArraySeq
     override final def length(underTest: ArraySeq[E]) = underTest.length
+
+    override final def lengthCompare(underTest: ArraySeq[E], len: Int): Int = underTest.lengthCompare(len)
 
     override def get(underTest: ArraySeq[E], i: Int) = underTest(i)
 
@@ -383,9 +387,10 @@ package IndexedTestImpl {
 
   //construct the data using java as much as possible to avoid invalidating the test
 
-  @Ignore
   abstract class MutableIndexedSeqTest[T <: mutable.Seq[E], E] extends IndexedTest[T, E]   with DataProvider[E]{
     override final def length(underTest: T) = underTest.length
+
+    override final def lengthCompare(underTest: T, len: Int): Int = underTest.lengthCompare(len)
 
     override def get(underTest: T, i: Int) = underTest(i)
 
@@ -413,9 +418,11 @@ package IndexedTestImpl {
     }
 
   }
-  @Ignore
+
   abstract class ImmutableIndexedSeqTest[T <: SeqOps[E, Seq, T], E] extends IndexedTest[T, E]   with DataProvider[E] {
     override final def length(underTest: T) = underTest.length
+
+    override final def lengthCompare(underTest: T, len: Int): Int = underTest.lengthCompare(len)
 
     override def get(underTest: T, i: Int) = underTest(i)
 
@@ -434,9 +441,11 @@ package IndexedTestImpl {
     }
 
   }
-  @Ignore
+
   abstract class StringOpsBaseTest extends IndexedTest[StringOps, Char] with DataProvider[Char]  {
     override final def length(underTest: StringOps) = underTest.size
+
+    override final def lengthCompare(underTest: StringOps, len: Int): Int = underTest.lengthCompare(len)
 
     override def get(underTest: StringOps, i: Int) = underTest(i)
 
@@ -539,7 +548,7 @@ package IndexedTestImpl {
     override def createEmpty(size: Int): StringBuilder = new StringBuilder(size)
 
     override protected def underTest(size: Int): StringBuilder = {
-      var res = createEmpty(size)
+      val res = createEmpty(size)
       for (i <- 0 until size)
         res += expectedValueAtIndex(i)
       res
@@ -548,7 +557,7 @@ package IndexedTestImpl {
   class StringOpsTest extends StringOpsBaseTest with CharTestData {
 
     override protected def underTest(size: Int): StringOps = {
-      var res = new StringBuilder(size)
+      val res = new StringBuilder(size)
       for (i <- 0 until size)
         res += expectedValueAtIndex(i)
       res.toString
@@ -559,7 +568,7 @@ package IndexedTestImpl {
     override def isTakeAllSame: Boolean = false
 
     override protected def underTest(size: Int):  WrappedString = {
-      var res = new StringBuilder(size)
+      val res = new StringBuilder(size)
       for (i <- 0 until size)
         res += expectedValueAtIndex(i)
       new WrappedString(res.toString)
@@ -568,7 +577,7 @@ package IndexedTestImpl {
   class VectorTest extends ImmutableIndexedSeqTest[Vector[String], String]  with StringTestData {
 
     override protected def underTest(size: Int): Vector[String] = {
-      var res = Vector.newBuilder[String]
+      val res = Vector.newBuilder[String]
       for (i <- 0 until size)
         res += expectedValueAtIndex(i)
       res.result()

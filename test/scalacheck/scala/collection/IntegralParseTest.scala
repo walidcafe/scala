@@ -120,8 +120,11 @@ object NumericStringGenerators {
       if (n >= 0) Gen.oneOf(digitsByValue(n))
       else Gen.const(ch)
     })
+
+    import scala.jdk.CollectionConverters._
+
     val sequenced = Gen.sequence(listOfGens)
-    sequenced.map(l => scala.collection.JavaConverters.asScalaBuffer(l).mkString)
+    sequenced.map(_.asScala.mkString)
   }
 
 }

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package api
@@ -12,7 +24,7 @@ package api
  *  and vice versa. It can also perform reflective invocations (getting/setting field values,
  *  calling methods, etc).
  *
- *  See the [[http://docs.scala-lang.org/overviews/reflection/overview.html Reflection Guide]] for details on how to use runtime reflection.
+ *  See the [[https://docs.scala-lang.org/overviews/reflection/overview.html Reflection Guide]] for details on how to use runtime reflection.
  *
  *  @groupname JavaUniverse Java Mirrors
  *  @group ReflectionAPI
@@ -39,7 +51,7 @@ trait JavaUniverse extends Universe { self =>
    *  become capable of performing reflective invocations (getting/setting field values, calling methods, etc).
    *
    *  For more information about `Mirrors`s, see [[scala.reflect.api.Mirrors]] or the
-   * [[http://docs.scala-lang.org/overviews/reflection/environment-universes-mirrors.html Reflection Guide: Mirrors]]
+   * [[https://docs.scala-lang.org/overviews/reflection/environment-universes-mirrors.html Reflection Guide: Mirrors]]
    *
    *  @group JavaMirrors
    */
@@ -51,7 +63,7 @@ trait JavaUniverse extends Universe { self =>
   /** Creates a runtime reflection mirror from a JVM classloader.
    *
    *  For more information about `Mirrors`s, see [[scala.reflect.api.Mirrors]] or the
-   * [[http://docs.scala-lang.org/overviews/reflection/environment-universes-mirrors.html Reflection Guide: Mirrors]]
+   * [[https://docs.scala-lang.org/overviews/reflection/environment-universes-mirrors.html Reflection Guide: Mirrors]]
    *
    *  @group JavaMirrors
    */

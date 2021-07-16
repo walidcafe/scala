@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.macros
 package compiler
 
@@ -26,8 +38,9 @@ abstract class DefaultMacroCompiler extends Resolvers
   /** Resolves a macro impl reference provided in the right-hand side of the given macro definition.
    *
    *  Acceptable shapes of the right-hand side:
-   *    1) [<static object>].<method name>[[<type args>]] // vanilla macro impl ref
-   *    2) [<macro bundle>].<method name>[[<type args>]]  // shiny new macro bundle impl ref
+   *
+   *    1. `[<static object>].<method name>[ [<type args>] ] // vanilla macro impl ref`
+   *    1. `[<macro bundle>].<method name>[ [<type args>] ]  // shiny new macro bundle impl ref`
    *
    *  Produces a tree, which represents a reference to a macro implementation if everything goes well,
    *  otherwise reports found errors and returns EmptyTree. The resulting tree should have the following format:
@@ -74,7 +87,10 @@ abstract class DefaultMacroCompiler extends Resolvers
         case SilentResultValue(result) if looksLikeMacroBundleType(result.tpe) =>
           val bundle = result.tpe.typeSymbol
           if (!isMacroBundleType(bundle.tpe)) MacroBundleWrongShapeError()
-          if (!bundle.owner.isStaticOwner) MacroBundleNonStaticError()
+          if (!bundle.owner.isStaticOwner) {
+            val isReplClassBased = settings.Yreplclassbased.value && bundle.owner.enclosingTopLevelClass.isInterpreterWrapper
+            MacroBundleNonStaticError(isReplClassBased)
+          }
           bundleResult.get
         case _ =>
           vanillaResult.get

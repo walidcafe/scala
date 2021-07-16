@@ -1,12 +1,22 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 // $Id$
 
 package scala
 package reflect.internal
 package settings
+
+import scala.reflect.internal.util.StatisticsStatics
 
 /** A mutable Settings object.
  */
@@ -36,6 +46,7 @@ abstract class MutableSettings extends AbsSettings {
     def valueSetByUser: Option[T] = if (isSetByUser) Some(value) else None
   }
 
+  def async: BooleanSetting
   def XnoPatmatAnalysis: BooleanSetting
   def Xprintpos: BooleanSetting
   def Yposdebug: BooleanSetting
@@ -50,21 +61,21 @@ abstract class MutableSettings extends AbsSettings {
   def uniqid: BooleanSetting
   def verbose: BooleanSetting
 
-  // Define them returning a `Boolean` to avoid breaking bincompat change
-  // TODO: Add these fields typed as `BooleanSetting` for 2.13.x
-  def YhotStatisticsEnabled: Boolean = false
-  def YstatisticsEnabled: Boolean = false
+  def YhotStatisticsEnabled: BooleanSetting
+  def YstatisticsEnabled: BooleanSetting
 
   def Yrecursion: IntSetting
-  def maxClassfileName: IntSetting
-
-  def isScala211: Boolean
-  def isScala212: Boolean
-  private[scala] def isScala213: Boolean
 }
 
 object MutableSettings {
   import scala.language.implicitConversions
   /** Support the common use case, `if (settings.debug) println("Hello, martin.")` */
   @inline implicit def reflectSettingToBoolean(s: MutableSettings#BooleanSetting): Boolean = s.value
+
+  implicit class SettingsOps(private val settings: MutableSettings) extends AnyVal {
+    @inline final def areStatisticsEnabled = (StatisticsStatics.COLD_STATS_GETTER.invokeExact(): Boolean) && settings.YstatisticsEnabled
+    @inline final def areHotStatisticsEnabled = (StatisticsStatics.HOT_STATS_GETTER.invokeExact(): Boolean) && settings.YhotStatisticsEnabled
+    @inline final def isDebug: Boolean     = (StatisticsStatics.DEBUG_GETTER.invokeExact(): Boolean) && settings.debug
+    @inline final def isDeveloper: Boolean = (StatisticsStatics.DEVELOPER_GETTER.invokeExact(): Boolean) && settings.developer
+  }
 }

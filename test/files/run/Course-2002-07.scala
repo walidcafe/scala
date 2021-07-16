@@ -49,7 +49,7 @@ object M0 {
     else sys.error("unknown expression")
   }
 
-  def test = {
+  def test() = {
     Console.println("        0 = " + eval(new Number(0)));
     Console.println("        1 = " + eval(new Number(1)));
     Console.println("    0 + 1 = " +
@@ -58,7 +58,7 @@ object M0 {
       eval(new Sum(new Number(1),new Number(2))));
     Console.println("2 + 3 + 4 = " +
       eval(new Sum(new Sum(new Number(2),new Number(3)),new Number(4))));
-    Console.println;
+    Console.println()
   }
 
 }
@@ -77,7 +77,7 @@ object M1 {
     def eval: Int = e1.eval + e2.eval;
   }
 
-  def test = {
+  def test() = {
     Console.println("        0 = " + new Number(0).eval);
     Console.println("        1 = " + new Number(1).eval);
     Console.println("    0 + 1 = " +
@@ -86,7 +86,7 @@ object M1 {
       new Sum(new Number(1),new Number(2)).eval);
     Console.println("2 + 3 + 4 = " +
       new Sum(new Sum(new Number(2),new Number(3)),new Number(4)).eval);
-    Console.println;
+    Console.println()
   }
 }
 
@@ -94,7 +94,7 @@ object M1 {
 
 object M2 {
 
-  trait Expr;
+  sealed trait Expr;
   case class Number(n: Int) extends Expr;
   case class Sum(e1: Expr, e2: Expr) extends Expr;
 
@@ -103,14 +103,14 @@ object M2 {
     case Sum(e1, e2) => eval(e1) + eval(e2)
   }
 
-  def test = {
+  def test() = {
     Console.println("        0 = " + eval(Number(0)));
     Console.println("        1 = " + eval(Number(1)));
     Console.println("    0 + 1 = " + eval(Sum(Number(0),Number(1))));
     Console.println("    1 + 2 = " + eval(Sum(Number(1),Number(2))));
     Console.println("2 + 3 + 4 = " + eval(Sum(Sum(Number(2),Number(3)),
                                              Number(4))));
-    Console.println;
+    Console.println()
   }
 }
 
@@ -118,7 +118,7 @@ object M2 {
 
 object M3 {
 
-  trait Expr {
+  sealed trait Expr {
     def eval: Int = this match {
       case Number(n) => n
       case Sum(e1, e2) => e1.eval + e2.eval
@@ -127,14 +127,14 @@ object M3 {
   case class Number(n: Int) extends Expr;
   case class Sum(e1: Expr, e2: Expr) extends Expr;
 
-  def test = {
+  def test() = {
     Console.println("        0 = " + Number(0).eval);
     Console.println("        1 = " + Number(1).eval);
     Console.println("    0 + 1 = " + Sum(Number(0),Number(1)).eval);
     Console.println("    1 + 2 = " + Sum(Number(1),Number(2)).eval);
     Console.println("2 + 3 + 4 = " + Sum(Sum(Number(2),Number(3)),
                                              Number(4)).eval);
-    Console.println;
+    Console.println()
   }
 
 }
@@ -152,7 +152,7 @@ object M4 {
     Console.println(concat(xss).toString + " = concat(" + xss + ")"); // !!! .toString
   }
 
-  def test = {
+  def test() = {
     test_concat(List());
     test_concat(List(List()));
     test_concat(List(List(),List()));
@@ -172,7 +172,7 @@ object M4 {
     test_concat(List(List[Int](),List(1),List(2,3,4,5,6))); // !!! [int]
     test_concat(List(List[Int](),List[Int](),List(1,2,3,4,5,6))); // !!! [int]
     test_concat(List(List(1,2),List(3,4),List(5,6)));
-    Console.println;
+    Console.println()
   }
 
 }
@@ -191,7 +191,7 @@ object M5 {
     Console.println(zipFun(xs,ys).toString + " = zipFun(" + xs + "," + ys + ")"); // !!! .toString
   }
 
-  def test = {
+  def test() = {
     test_zipFun(List(),List());
     test_zipFun(List(),List('a','b','c'));
     test_zipFun(List(1,2,3),List());
@@ -206,7 +206,7 @@ object M5 {
 
     test_zipFun(List(1,2,3),List('a','b','c'));
 
-    Console.println;
+    Console.println()
   }
 
 }
@@ -225,7 +225,7 @@ object M6 {
     Console.println(zipFun(xs,ys).toString + " = zipFun(" + xs + "," + ys + ")"); // !!! .toString
   }
 
-  def test = {
+  def test() = {
     test_zipFun(List(),List());
     test_zipFun(List(),List('a','b','c'));
     test_zipFun(List(1,2,3),List());
@@ -240,7 +240,7 @@ object M6 {
 
     test_zipFun(List(1,2,3),List('a','b','c'));
 
-    Console.println;
+    Console.println()
   }
 
 }
@@ -258,7 +258,7 @@ object M7 {
     Console.println(heads(xss).toString + " = heads(" + xss + ")"); // !!! .toString
   }
 
-  def test = {
+  def test() = {
     test_heads(List());
     test_heads(List(List()));
     test_heads(List(List(),List()));
@@ -283,7 +283,7 @@ object M7 {
 
     test_heads(List(List(1,2),List(3,4),List(5,6)));
 
-    Console.println;
+    Console.println()
   }
 
 }
@@ -304,7 +304,7 @@ object M8 {
   }
 
 
-  def test = {
+  def test() = {
     test_heads(List());
     test_heads(List(List()));
     test_heads(List(List(),List()));
@@ -329,7 +329,7 @@ object M8 {
 
     test_heads(List(List(1,2),List(3,4),List(5,6)));
 
-    Console.println;
+    Console.println()
   }
 
 }
@@ -338,7 +338,7 @@ object M8 {
 
 object M9 {
 
-  trait Expr {
+  sealed trait Expr {
     def derive(v: Var): Expr = this match {
       case Number(_) => Number(0)
       case Var(name) => if (name == v.name) Number(1) else Number(0)
@@ -359,13 +359,13 @@ object M9 {
     override def toString = "Prod(" + e1 + ", " + e2 + ")"; // !!! remove !
   }
 
-  def test = {
+  def test() = {
     val x = Var("x");
     val f0 = Prod(x, x);
     val f1 = f0 derive x;
     Console.println("f (x) = " + f0);
     Console.println("f'(x) = " + f1);
-    Console.println;
+    Console.println()
   }
 
 }
@@ -379,7 +379,7 @@ object MA {
     case (k1,v1) :: xs1 => if (k1 == k) v1 else lookup(xs1, k)
   }
 
-  trait Expr {
+  sealed trait Expr {
     def + (that: Expr) = Sum(this, that);
     def * (that: Expr) = Prod(this, that);
     def derive(v: Var): Expr = this match {
@@ -425,7 +425,7 @@ object MA {
     loop
   }
 
-  def test = {
+  def test() = {
     val x = Var("x");
 
     val f0 = x * x;
@@ -440,7 +440,7 @@ object MA {
     Console.println("g (3) = " + evalvars(List(("x",3)))(g0));
     Console.println("g'(3) = " + evalvars(List(("x",3)))(g1));
 
-    Console.println;
+    Console.println()
   }
 
 }
@@ -506,7 +506,7 @@ object MB {
       case _        => List()
     }
 
-    private def +<  (that: Expr): Boolean = (this +<? that) <  0;
+    @annotation.unused private def +<  (that: Expr): Boolean = (this +<? that) <  0;
     private def +<= (that: Expr): Boolean = (this +<? that) <= 0;
     private def +<? (that: Expr): Int = (this,that) match {
       case (Add(_,_), _       ) =>  0
@@ -625,11 +625,11 @@ object MB {
     }
   }
 
-  def test = {
+  def test() = {
     val _1 = Lit(1);
     val _2 = Lit(2);
     val _3 = Lit(3);
-    val _4 = Lit(4);
+    @annotation.unused val _4 = Lit(4);
     val _5 = Lit(5);
 
     val x  = Var("x");
@@ -651,7 +651,7 @@ object MB {
     Console.println("tf(x) = " + tf);
     Console.println("tg(x) = " + tg);
     Console.println("th(x) = " + th);
-    Console.println;
+    Console.println()
 
     val f4 = (x+ _3)*(_2+x)*x*(x+ _1) + (x+ _5)*(x*(x+ _2)+x+ _1) + (x^2) + x;
     val f3 = f4.derive(x);
@@ -664,7 +664,7 @@ object MB {
     Console.println("f2(x) = " + f2);
     Console.println("f1(x) = " + f1);
     Console.println("f0(x) = " + f0);
-    Console.println;
+    Console.println()
 
     def check(n: String, f: Expr, x: Int, e: Int): Unit = {
       val a: Int = f.evaluate(List(("x",x)));
@@ -677,25 +677,25 @@ object MB {
     check("f4", f4, 2, 203);
     check("f4", f4, 3, 524);
     check("f4", f4, 4, 1121);
-    Console.println;
+    Console.println()
 
     check("f3", f3, 0, 23);
     check("f3", f3, 1, 88);
     check("f3", f3, 2, 219);
     check("f3", f3, 3, 440);
-    Console.println;
+    Console.println()
 
     check("f2", f2, 0, 40);
     check("f2", f2, 1, 94);
     check("f2", f2, 2, 172);
-    Console.println;
+    Console.println()
 
     check("f1", f1, 0, 42);
     check("f1", f1, 1, 66);
-    Console.println;
+    Console.println()
 
     check("f0", f0, 0, 24);
-    Console.println;
+    Console.println()
   }
 }
 
@@ -703,18 +703,18 @@ object MB {
 
 object Test {
   def main(args: Array[String]): Unit = {
-    M0.test;
-    M1.test;
-    M2.test;
-    M3.test;
-    M4.test;
-    M5.test;
+    M0.test()
+    M1.test()
+    M2.test()
+    M3.test()
+    M4.test()
+    M5.test()
     // !!! M6.test;
-    M7.test;
-    M8.test;
-    M9.test;
-    MA.test;
-    MB.test;
+    M7.test()
+    M8.test()
+    M9.test()
+    MA.test()
+    MB.test()
     ()
   }
 }

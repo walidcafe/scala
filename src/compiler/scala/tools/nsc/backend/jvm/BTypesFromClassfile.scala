@@ -1,7 +1,20 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.backend.jvm
 
 import scala.annotation.switch
-import scala.collection.JavaConverters._
+import scala.collection.mutable
+import scala.jdk.CollectionConverters._
 import scala.tools.asm.Opcodes
 import scala.tools.asm.tree.{ClassNode, InnerClassNode}
 import scala.tools.nsc.backend.jvm.BTypes.{InlineInfo, InternalName, MethodInlineInfo}
@@ -26,7 +39,13 @@ abstract class BTypesFromClassfile {
    *
    * This method supports both descriptors and internal names.
    */
-  def bTypeForDescriptorOrInternalNameFromClassfile(desc: String): BType = (desc(0): @switch) match {
+  def bTypeForDescriptorOrInternalNameFromClassfile(descOrIntN: String): BType = (descOrIntN(0): @switch) match {
+    case '['                           => ArrayBType(bTypeForDescriptorFromClassfile(descOrIntN.substring(1)))
+    case 'L' if descOrIntN.last == ';' => bTypeForDescriptorFromClassfile(descOrIntN)
+    case _                             => classBTypeFromParsedClassfile(descOrIntN)
+  }
+
+  def bTypeForDescriptorFromClassfile(desc: String): BType = (desc(0): @switch) match {
     case 'V'                     => UNIT
     case 'Z'                     => BOOL
     case 'C'                     => CHAR
@@ -36,34 +55,30 @@ abstract class BTypesFromClassfile {
     case 'F'                     => FLOAT
     case 'J'                     => LONG
     case 'D'                     => DOUBLE
-    case '['                     => ArrayBType(bTypeForDescriptorOrInternalNameFromClassfile(desc.substring(1)))
+    case '['                     => ArrayBType(bTypeForDescriptorFromClassfile(desc.substring(1)))
     case 'L' if desc.last == ';' => classBTypeFromParsedClassfile(desc.substring(1, desc.length - 1))
-    case _                       => classBTypeFromParsedClassfile(desc)
+    case _                       => throw new IllegalArgumentException(s"Not a descriptor: $desc")
   }
 
   /**
-   * Parse the classfile for `internalName` and construct the [[ClassBType]]. If the classfile cannot
+   * Parse the classfile for `internalName` and construct the [[BTypes.ClassBType]]. If the classfile cannot
    * be found in the `byteCodeRepository`, the `info` of the resulting ClassBType is undefined.
    */
   def classBTypeFromParsedClassfile(internalName: InternalName): ClassBType = {
-    cachedClassBType(internalName).getOrElse{
-      ClassBType(internalName, false){ res:ClassBType =>
-        byteCodeRepository.classNode(internalName) match {
-          case Left(msg) => Left(NoClassBTypeInfoMissingBytecode(msg))
-          case Right(c) => computeClassInfoFromClassNode(c, res)
-        }
+    ClassBType(internalName, internalName, fromSymbol = false) { (res: ClassBType, internalName) =>
+      byteCodeRepository.classNode(internalName) match {
+        case Left(msg) => Left(NoClassBTypeInfoMissingBytecode(msg))
+        case Right(c) => computeClassInfoFromClassNode(c, res)
       }
     }
   }
 
   /**
-   * Construct the [[ClassBType]] for a parsed classfile.
+   * Construct the [[BTypes.ClassBType]] for a parsed classfile.
    */
   def classBTypeFromClassNode(classNode: ClassNode): ClassBType = {
-    cachedClassBType(classNode.name).getOrElse {
-      ClassBType(classNode.name, false) { res: ClassBType =>
-        computeClassInfoFromClassNode(classNode, res)
-      }
+    ClassBType(classNode.name, classNode, fromSymbol = false) { (res: ClassBType, classNode) =>
+      computeClassInfoFromClassNode(classNode, res)
     }
   }
 
@@ -78,7 +93,7 @@ abstract class BTypesFromClassfile {
 
     val flags = classNode.access
 
-    /**
+    /*
      * Find all nested classes of classNode. The innerClasses attribute contains all nested classes
      * that are declared inside classNode or used in the bytecode of classNode. So some of them are
      * nested in some other class than classNode, and we need to filter them.
@@ -115,7 +130,8 @@ abstract class BTypesFromClassfile {
             classBTypeFromParsedClassfile(classNode.outerClass)
           }
         val staticFlag = (innerEntry.access & Opcodes.ACC_STATIC) != 0
-        NestedInfo(enclosingClass, Option(innerEntry.outerName), Option(innerEntry.innerName), staticFlag)
+        NestedInfo(enclosingClass, Option(innerEntry.outerName), Option(innerEntry.innerName), staticFlag,
+          (flags & Opcodes.ACC_PRIVATE) == Opcodes.ACC_PRIVATE)
     }
 
     val inlineInfo = inlineInfoFromClassfile(classNode)
@@ -147,13 +163,15 @@ abstract class BTypesFromClassfile {
       // require special handling. Excluding is OK because they are never inlined.
       // Here we are parsing from a classfile and we don't need to do anything special. Many of these
       // primitives don't even exist, for example Any.isInstanceOf.
-      val methodInfos:Map[String,MethodInlineInfo] = classNode.methods.asScala.iterator.map(methodNode => {
+      val methodInfos = new mutable.TreeMap[(String, String), MethodInlineInfo]()
+      classNode.methods.forEach(methodNode => {
         val info = MethodInlineInfo(
           effectivelyFinal                    = BytecodeUtils.isFinalMethod(methodNode),
           annotatedInline                     = false,
           annotatedNoInline                   = false)
-        (methodNode.name + methodNode.desc, info)
-      }).toMap
+        methodInfos((methodNode.name, methodNode.desc)) = info
+      })
+
       InlineInfo(
         isEffectivelyFinal = BytecodeUtils.isFinalClass(classNode),
         sam = inlinerHeuristics.javaSam(classNode.name),

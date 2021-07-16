@@ -1,25 +1,27 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.collection
 package immutable
 
-import java.io.{ObjectInputStream, ObjectOutputStream}
 import java.lang.IllegalStateException
 
 import scala.collection.generic.{BitOperations, DefaultSerializationProxy}
 import scala.collection.mutable.{Builder, ImmutableBuilder, ListBuffer}
 import scala.annotation.tailrec
-import scala.annotation.tailrec
 import scala.annotation.unchecked.uncheckedVariance
+import scala.language.implicitConversions
 
 /** Utility class for long maps.
-  *  @author David MacIver
   */
 private[immutable] object LongMapUtils extends BitOperations.Long {
   def branchMask(i: Long, j: Long) = highestOneBit(i ^ j)
@@ -43,7 +45,6 @@ import LongMapUtils._
 /** A companion object for long maps.
   *
   *  @define Coll  `LongMap`
-  *  @since 2.7
   */
 object LongMap {
   def empty[T]: LongMap[T]  = LongMap.Nil
@@ -62,9 +63,9 @@ object LongMap {
   private[immutable] case object Nil extends LongMap[Nothing] {
     // Important, don't remove this! See IntMap for explanation.
     override def equals(that : Any) = that match {
-      case (that: AnyRef) if (this eq that) => true
-      case (that: LongMap[_]) => false // The only empty LongMaps are eq Nil
-      case that => super.equals(that)
+      case _: this.type  => true
+      case _: LongMap[_] => false // The only empty LongMaps are eq Nil
+      case _             => super.equals(that)
     }
   }
 
@@ -91,14 +92,12 @@ object LongMap {
 
   implicit def toBuildFrom[V](factory: LongMap.type): BuildFrom[Any, (Long, V), LongMap[V]] = ToBuildFrom.asInstanceOf[BuildFrom[Any, (Long, V), LongMap[V]]]
   private[this] object ToBuildFrom extends BuildFrom[Any, (Long, AnyRef), LongMap[AnyRef]] {
-    def fromSpecificIterable(from: Any)(it: scala.collection.Iterable[(Long, AnyRef)]) = LongMap.from(it)
+    def fromSpecific(from: Any)(it: IterableOnce[(Long, AnyRef)]) = LongMap.from(it)
     def newBuilder(from: Any) = LongMap.newBuilder[AnyRef]
   }
 
-  // scalac generates a `readReplace` method to discard the deserialized state (see https://github.com/scala/bug/issues/10412).
-  // This prevents it from serializing it in the first place:
-  private[this] def writeObject(out: ObjectOutputStream): Unit = ()
-  private[this] def readObject(in: ObjectInputStream): Unit = ()
+  implicit def iterableFactory[V]: Factory[(Long, V), LongMap[V]] = toFactory(this)
+  implicit def buildFromLongMap[V]: BuildFrom[LongMap[_], (Long, V), LongMap[V]] = toBuildFrom(this)
 }
 
 // Iterator over a non-empty LongMap.
@@ -128,6 +127,7 @@ private[immutable] abstract class LongMapIterator[V, T](it: LongMap[V]) extends 
   def valueOf(tip: LongMap.Tip[V]): T
 
   def hasNext = index != 0
+  @tailrec
   final def next(): T =
     pop() match {
       case LongMap.Bin(_,_, t@LongMap.Tip(_, _), right) => {
@@ -160,24 +160,23 @@ private[immutable] class LongMapKeyIterator[V](it: LongMap[V]) extends LongMapIt
 
 /**
   *  Specialised immutable map structure for long keys, based on
-  *  [[http://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.37.5452 Fast Mergeable Long Maps]]
+  *  [[https://citeseerx.ist.psu.edu/viewdoc/summary?doi=10.1.1.37.5452 Fast Mergeable Long Maps]]
   *  by Okasaki and Gill. Essentially a trie based on binary digits of the integers.
   *
   *  Note: This class is as of 2.8 largely superseded by HashMap.
   *
   *  @tparam T      type of the values associated with the long keys.
   *
-  *  @since 2.7
   *  @define Coll `immutable.LongMap`
   *  @define coll immutable long integer map
   *  @define mayNotTerminateInf
   *  @define willNotTerminateInf
   */
 sealed abstract class LongMap[+T] extends AbstractMap[Long, T]
-  with MapOps[Long, T, Map, LongMap[T]]
-  with StrictOptimizedIterableOps[(Long, T), Iterable, LongMap[T]] {
+  with StrictOptimizedMapOps[Long, T, Map, LongMap[T]]
+  with Serializable {
 
-  override protected def fromSpecificIterable(coll: scala.collection.Iterable[(Long, T)] @uncheckedVariance): LongMap[T] = {
+  override protected def fromSpecific(coll: scala.collection.IterableOnce[(Long, T)] @uncheckedVariance): LongMap[T] = {
     //TODO should this be the default implementation of this method in StrictOptimizedIterableOps?
     val b = newSpecificBuilder
     b.sizeHint(coll)
@@ -216,6 +215,12 @@ sealed abstract class LongMap[+T] extends AbstractMap[Long, T]
     case LongMap.Nil =>
   }
 
+  override final def foreachEntry[U](f: (Long, T) => U): Unit = this match {
+    case LongMap.Bin(_, _, left, right) => { left.foreachEntry(f); right.foreachEntry(f) }
+    case LongMap.Tip(key, value) => f(key, value)
+    case LongMap.Nil =>
+  }
+
   override def keysIterator: Iterator[Long] = this match {
     case LongMap.Nil => Iterator.empty
     case _ => new LongMapKeyIterator(this)
@@ -227,7 +232,7 @@ sealed abstract class LongMap[+T] extends AbstractMap[Long, T]
     *
     * @param f The loop body
     */
-  final def foreachKey(f: Long => Unit): Unit = this match {
+  final def foreachKey[U](f: Long => U): Unit = this match {
     case LongMap.Bin(_, _, left, right) => { left.foreachKey(f); right.foreachKey(f) }
     case LongMap.Tip(key, _) => f(key)
     case LongMap.Nil =>
@@ -244,16 +249,16 @@ sealed abstract class LongMap[+T] extends AbstractMap[Long, T]
     *
     * @param f The loop body
     */
-  final def foreachValue(f: T => Unit): Unit = this match {
+  final def foreachValue[U](f: T => U): Unit = this match {
     case LongMap.Bin(_, _, left, right) => { left.foreachValue(f); right.foreachValue(f) }
     case LongMap.Tip(_, value) => f(value)
     case LongMap.Nil =>
   }
 
-  override def className = "LongMap"
+  override protected[this] def className = "LongMap"
 
-  override def isEmpty = this == LongMap.Nil
-
+  override def isEmpty = this eq LongMap.Nil
+  override def knownSize: Int = if (isEmpty) 0 else super.knownSize
   override def filter(f: ((Long, T)) => Boolean): LongMap[T] = this match {
     case LongMap.Bin(prefix, mask, left, right) => {
       val (newleft, newright) = (left.filter(f), right.filter(f))
@@ -278,12 +283,14 @@ sealed abstract class LongMap[+T] extends AbstractMap[Long, T]
     case LongMap.Bin(_, _, left, right) => left.size + right.size
   }
 
+  @tailrec
   final def get(key: Long): Option[T] = this match {
     case LongMap.Bin(prefix, mask, left, right) => if (zero(key, mask)) left.get(key) else right.get(key)
     case LongMap.Tip(key2, value) => if (key == key2) Some(value) else None
     case LongMap.Nil => None
   }
 
+  @tailrec
   final override def getOrElse[S >: T](key: Long, default: => S): S = this match {
     case LongMap.Nil => default
     case LongMap.Tip(key2, value) => if (key == key2) value else default
@@ -291,6 +298,7 @@ sealed abstract class LongMap[+T] extends AbstractMap[Long, T]
       if (zero(key, mask)) left.getOrElse(key, default) else right.getOrElse(key, default)
   }
 
+  @tailrec
   final override def apply(key: Long): T = this match {
     case LongMap.Bin(prefix, mask, left, right) => if (zero(key, mask)) left(key) else right(key)
     case LongMap.Tip(key2, value) => if (key == key2) value else throw new IllegalArgumentException("Key not found")
@@ -338,7 +346,7 @@ sealed abstract class LongMap[+T] extends AbstractMap[Long, T]
     case LongMap.Nil => LongMap.Tip(key, value)
   }
 
-  def remove(key: Long): LongMap[T] = this match {
+  def removed(key: Long): LongMap[T] = this match {
     case LongMap.Bin(prefix, mask, left, right) =>
       if (!hasMatch(key, prefix, mask)) this
       else if (zero(key, mask)) bin(prefix, mask, left - key, right)
@@ -470,13 +478,13 @@ sealed abstract class LongMap[+T] extends AbstractMap[Long, T]
 
   def flatMap[V2](f: ((Long, T)) => IterableOnce[(Long, V2)]): LongMap[V2] = LongMap.from(new View.FlatMap(coll, f))
 
-  override def concat[V1 >: T](that: scala.collection.Iterable[(Long, V1)]): LongMap[V1] =
-    super.concat(that).asInstanceOf[LongMap[V1]] // Already has corect type but not declared as such
+  override def concat[V1 >: T](that: scala.collection.IterableOnce[(Long, V1)]): LongMap[V1] =
+    super.concat(that).asInstanceOf[LongMap[V1]] // Already has correct type but not declared as such
 
-  override def ++ [V1 >: T](that: scala.collection.Iterable[(Long, V1)]): LongMap[V1] = concat(that)
+  override def ++ [V1 >: T](that: scala.collection.IterableOnce[(Long, V1)]): LongMap[V1] = concat(that)
 
   def collect[V2](pf: PartialFunction[(Long, T), (Long, V2)]): LongMap[V2] =
-    flatMap(kv => if (pf.isDefinedAt(kv)) new View.Single(pf(kv)) else View.Empty)
+    strictOptimizedCollect(LongMap.newBuilder[V2], pf)
 
-  override protected[this] def writeReplace(): AnyRef = new DefaultSerializationProxy(LongMap.toFactory[T](LongMap), this)
+  protected[this] def writeReplace(): AnyRef = new DefaultSerializationProxy(LongMap.toFactory[T](LongMap), this)
 }

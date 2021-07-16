@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -14,7 +18,7 @@ package scala
 trait Equals extends Any {
   /** A method that should be called from every well-designed equals method
    *  that is open to be overridden in a subclass. See
-   *  [[http://www.artima.com/pins1ed/object-equality.html Programming in Scala,
+   *  [[https://www.artima.com/pins1ed/object-equality.html Programming in Scala,
    *  Chapter 28]] for discussion and design.
    *
    *  @param    that    the value being probed for possible equality

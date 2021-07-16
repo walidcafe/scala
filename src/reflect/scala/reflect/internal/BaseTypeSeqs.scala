@@ -1,14 +1,22 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala
 package reflect
 package internal
 
 // todo implement in terms of BitSet
 import scala.collection.mutable
-import util.{Statistics, StatisticsStatics}
+import util.Statistics
 
 /** A base type sequence (BaseTypeSeq) is an ordered sequence spanning all the base types
  *  of a type. It characterized by the following two laws:
@@ -42,8 +50,8 @@ trait BaseTypeSeqs {
    */
   class BaseTypeSeq protected[reflect] (private[BaseTypeSeqs] val parents: List[Type], private[BaseTypeSeqs] val elems: Array[Type]) {
   self =>
-    if (StatisticsStatics.areSomeColdStatsEnabled) statistics.incCounter(baseTypeSeqCount)
-    if (StatisticsStatics.areSomeColdStatsEnabled) statistics.incCounter(baseTypeSeqLenTotal, elems.length)
+    if (settings.areStatisticsEnabled) statistics.incCounter(baseTypeSeqCount)
+    if (settings.areStatisticsEnabled) statistics.incCounter(baseTypeSeqLenTotal, elems.length)
     private[this] val typeSymbols = {
       val tmp = new Array[Int](elems.length)
       var i = 0
@@ -61,7 +69,7 @@ trait BaseTypeSeqs {
     // (while NoType is in there to indicate a cycle in this BTS, during the execution of
     //  the mergePrefixAndArgs below, the elems get copied without the pending map,
     //  so that NoType's are seen instead of the original type --> spurious compile error)
-    private val pending = new mutable.BitSet(length)
+    private[this] val pending = new mutable.BitSet(length)
 
     /** The type at i'th position in this sequence; lazy types are returned evaluated. */
     def apply(i: Int): Type =
@@ -70,8 +78,9 @@ trait BaseTypeSeqs {
         throw CyclicInheritance
       } else {
         def computeLazyType(rtp: RefinedType): Type = {
-          if (!isIntersectionTypeForLazyBaseType(rtp))
-            devWarning("unexpected RefinedType in base type seq, lazy BTS elements should be created via intersectionTypeForLazyBaseType: " + rtp)
+          devWarningIf(!isIntersectionTypeForLazyBaseType(rtp)) {
+            "unexpected RefinedType in base type seq, lazy BTS elements should be created via intersectionTypeForLazyBaseType: " + rtp
+          }
           val variants = rtp.parents
           // can't assert decls.isEmpty; see t0764
           //if (!decls.isEmpty) abort("computing closure of "+this+":"+this.isInstanceOf[RefinedType]+"/"+closureCache(j))
@@ -120,6 +129,9 @@ trait BaseTypeSeqs {
 
     /** Return all evaluated types in this sequence as a list */
     def toList: List[Type] = elems.toList
+
+    /** Return an iterator over all evaluated types in this sequence */
+    def toIterator: Iterator[Type] = elems.iterator
 
     def copy(head: Type, offset: Int): BaseTypeSeq = {
       val arr = new Array[Type](elems.length + offset)
@@ -220,8 +232,8 @@ trait BaseTypeSeqs {
         var minTypes: List[Type] = List()
         def alreadyInMinTypes(tp: Type): Boolean = {
           @annotation.tailrec def loop(tps: List[Type]): Boolean = tps match {
-            case Nil     => false
             case x :: xs => (tp =:= x) || loop(xs)
+            case _       => false
           }
           loop(minTypes)
         }

@@ -1,31 +1,30 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
-import scala.language.{ higherKinds, implicitConversions }
+import scala.language.implicitConversions
 
-import scala.collection.{ StringOps, StringView }
-import scala.collection.{ mutable, immutable, ArrayOps }
-import scala.collection.immutable.{ ArraySeq, WrappedString }
-import scala.annotation.{ elidable, implicitNotFound }
-import scala.annotation.elidable.ASSERTION
-import scala.annotation.meta.companionMethod
+import scala.collection.{mutable, immutable, ArrayOps, StringOps}, immutable.WrappedString
+import scala.annotation.{elidable, implicitNotFound}, elidable.ASSERTION
+import scala.annotation.meta.{ companionClass, companionMethod }
 
 /** The `Predef` object provides definitions that are accessible in all Scala
  *  compilation units without explicit qualification.
  *
  *  === Commonly Used Types ===
  *  Predef provides type aliases for types which are commonly used, such as
- *  the immutable collection types [[scala.collection.immutable.Map]],
- *  [[scala.collection.immutable.Set]], and the [[scala.collection.immutable.List]]
- *  constructors ([[scala.collection.immutable.::]] and
- *  [[scala.collection.immutable.Nil]]).
+ *  the immutable collection types [[scala.collection.immutable.Map]] and
+ *  [[scala.collection.immutable.Set]].
  *
  *  === Console Output ===
  *  For basic console output, `Predef` provides convenience methods [[print(x:Any* print]] and [[println(x:Any* println]],
@@ -76,25 +75,21 @@ import scala.annotation.meta.companionMethod
  * @groupprio console-output 30
  * @groupdesc console-output These methods provide output via the console.
  *
- * @groupname type-constraints Type Constraints
- * @groupprio type-constraints 40
- * @groupdesc type-constraints These entities allows constraints between types to be stipulated.
- *
  * @groupname aliases Aliases
  * @groupprio aliases 50
  * @groupdesc aliases These aliases bring selected immutable types into scope without any imports.
  *
  * @groupname conversions-string String Conversions
  * @groupprio conversions-string 60
- * @groupdesc conversions-string Conversions to and from String and StringOps.
+ * @groupdesc conversions-string Conversions from String to StringOps or WrappedString.
  *
  * @groupname implicit-classes-any Implicit Classes
  * @groupprio implicit-classes-any 70
  * @groupdesc implicit-classes-any These implicit classes add useful extension methods to every type.
  *
- * @groupname implicit-classes-char CharSequence Conversions
- * @groupprio implicit-classes-char 80
- * @groupdesc implicit-classes-char These implicit classes add CharSequence methods to Array[Char] and IndexedSeq[Char] instances.
+ * @groupname char-sequence-wrappers CharSequence Wrappers
+ * @groupprio char-sequence-wrappers 80
+ * @groupdesc char-sequence-wrappers Wrappers that implements CharSequence and were implicit classes.
  *
  * @groupname conversions-java-to-anyval Java to Scala
  * @groupprio conversions-java-to-anyval 90
@@ -120,6 +115,8 @@ object Predef extends LowPriorityImplicits {
    * val mapIntString = classOf[Map[Int,String]]
    * // mapIntString is java.lang.Class[Map[Int,String]] = interface scala.collection.immutable.Map
    * }}}
+   *
+   * @return The runtime [[Class]] representation of type `T`.
    * @group utilities
    */
   def classOf[T]: Class[T] = null // This is a stub method. The actual implementation is filled in by the compiler.
@@ -139,10 +136,11 @@ object Predef extends LowPriorityImplicits {
    */
   @inline def valueOf[T](implicit vt: ValueOf[T]): T = vt.value
 
-  /** The `String` type in Scala has methods that come either from the underlying
-   *  Java String (see the documentation corresponding to your Java version, for
-   *  example [[http://docs.oracle.com/javase/8/docs/api/java/lang/String.html]]) or
-   *  are added implicitly through [[scala.collection.immutable.StringOps]].
+  /** The `String` type in Scala has all the methods of the underlying
+   *  [[java.lang.String]], of which it is just an alias.
+   *
+   *  In addition, extension methods in [[scala.collection.StringOps]]
+   *  are added implicitly through the conversion [[augmentString]].
    *  @group aliases
    */
   type String        = java.lang.String
@@ -157,7 +155,7 @@ object Predef extends LowPriorityImplicits {
   type Function[-A, +B] = Function1[A, B]
 
   /**  @group aliases */
-  type Map[A, +B] = immutable.Map[A, B]
+  type Map[K, +V] = immutable.Map[K, V]
   /**  @group aliases */
   type Set[A]     = immutable.Set[A]
   /**  @group aliases */
@@ -196,14 +194,19 @@ object Predef extends LowPriorityImplicits {
 
   // TODO undeprecated until Scala reflection becomes non-experimental
   // @deprecated("use scala.reflect.classTag[T] and scala.reflect.runtime.universe.typeTag[T] instead", "2.10.0")
-  def manifest[T](implicit m: Manifest[T])           = m
+  def manifest[T](implicit m: Manifest[T]): Manifest[T]          = m
   // TODO undeprecated until Scala reflection becomes non-experimental
   // @deprecated("this notion doesn't have a corresponding concept in 2.10, because scala.reflect.runtime.universe.TypeTag can capture arbitrary types. Use type tags instead of manifests, and there will be no need in opt manifests.", "2.10.0")
-  def optManifest[T](implicit m: OptManifest[T])     = m
+  def optManifest[T](implicit m: OptManifest[T]): OptManifest[T] = m
 
   // Minor variations on identity functions
 
-  /** @group utilities */
+  /**
+   * A method that returns its input value.
+   * @tparam A type of the input value x.
+   * @param x the value of type `A` to be returned.
+   * @return the value `x`.
+   * @group utilities */
   @inline def identity[A](x: A): A = x // see `$conforms` for the implicit version
 
   /** Summon an implicit value of type `T`. Usually, the argument is not passed explicitly.
@@ -212,7 +215,7 @@ object Predef extends LowPriorityImplicits {
    *  @return the implicit value of type `T`
    *  @group utilities
    */
-  @inline def implicitly[T](implicit e: T) = e // TODO: when dependent method types are on by default, give this result type `e.type`, so that inliner has better chance of knowing which method to inline in calls like `implicitly[MatchingStrategy[Option]].zero`
+  @inline def implicitly[T](implicit e: T): T = e // TODO: when dependent method types are on by default, give this result type `e.type`, so that inliner has better chance of knowing which method to inline in calls like `implicitly[MatchingStrategy[Option]].zero`
 
   /** Used to mark code blocks as being expressions, instead of being taken as part of anonymous classes and the like.
    *  This is just a different name for [[identity]].
@@ -243,7 +246,7 @@ object Predef extends LowPriorityImplicits {
    *           }}}
    *  @group utilities
    */
-  @inline def locally[T](x: T): T = x
+  @inline def locally[T](@deprecatedName("x") x: T): T = x
 
   // assertions ---------------------------------------------------------
 
@@ -335,7 +338,7 @@ object Predef extends LowPriorityImplicits {
   }
 
   /** `???` can be used for marking methods that remain to be implemented.
-   *  @throws NotImplementedError
+   *  @throws NotImplementedError when `???` is invoked.
    *  @group utilities
    */
   def ??? : Nothing = throw new NotImplementedError
@@ -344,8 +347,9 @@ object Predef extends LowPriorityImplicits {
 
   /** @group implicit-classes-any */
   implicit final class ArrowAssoc[A](private val self: A) extends AnyVal {
-    @inline def -> [B](y: B): Tuple2[A, B] = Tuple2(self, y)
-    def →[B](y: B): Tuple2[A, B] = ->(y)
+    @inline def -> [B](y: B): (A, B) = (self, y)
+    @deprecated("Use `->` instead. If you still wish to display it as one character, consider using a font with programming ligatures such as Fira Code.", "2.13.0")
+    def →[B](y: B): (A, B) = ->(y)
   }
 
   /** @group implicit-classes-any */
@@ -365,27 +369,37 @@ object Predef extends LowPriorityImplicits {
     @inline def formatted(fmtstr: String): String = fmtstr format self
   }
 
-  // scala/bug#8229 retaining the pre 2.11 name for source compatibility in shadowing this implicit
-  /** @group implicit-classes-any */
+  /** Injects String concatenation operator `+` to any classes. 
+   * @group implicit-classes-any
+   */
   @(deprecated @companionMethod)("Implicit injection of + is deprecated. Convert to String to call +", "2.13.0")
+  @(deprecated @companionClass)("Implicit injection of + is deprecated. Convert to String to call +", "2.13.0") // for Scaladoc
+  // scala/bug#8229 retaining the pre 2.11 name for source compatibility in shadowing this implicit
   implicit final class any2stringadd[A](private val self: A) extends AnyVal {
     def +(other: String): String = String.valueOf(self) + other
   }
 
-  implicit final class SeqCharSequence(sequenceOfChars: scala.collection.IndexedSeq[Char]) extends CharSequence {
+  /** @group char-sequence-wrappers */
+  final class SeqCharSequence(sequenceOfChars: scala.collection.IndexedSeq[Char]) extends CharSequence {
     def length: Int                                     = sequenceOfChars.length
     def charAt(index: Int): Char                        = sequenceOfChars(index)
     def subSequence(start: Int, end: Int): CharSequence = new SeqCharSequence(sequenceOfChars.slice(start, end))
-    override def toString                               = sequenceOfChars mkString ""
+    override def toString                               = sequenceOfChars.mkString
   }
 
-  /** @group implicit-classes-char */
-  implicit final class ArrayCharSequence(arrayOfChars: Array[Char]) extends CharSequence {
+  /** @group char-sequence-wrappers */
+  def SeqCharSequence(sequenceOfChars: scala.collection.IndexedSeq[Char]): SeqCharSequence = new SeqCharSequence(sequenceOfChars)
+
+  /** @group char-sequence-wrappers */
+  final class ArrayCharSequence(arrayOfChars: Array[Char]) extends CharSequence {
     def length: Int                                     = arrayOfChars.length
     def charAt(index: Int): Char                        = arrayOfChars(index)
     def subSequence(start: Int, end: Int): CharSequence = new runtime.ArrayCharSequence(arrayOfChars, start, end)
-    override def toString                               = arrayOfChars mkString ""
+    override def toString                               = arrayOfChars.mkString
   }
+
+  /** @group char-sequence-wrappers */
+  def ArrayCharSequence(arrayOfChars: Array[Char]): ArrayCharSequence = new ArrayCharSequence(arrayOfChars)
 
   /** @group conversions-string */
   @inline implicit def augmentString(x: String): StringOps = new StringOps(x)
@@ -397,19 +411,19 @@ object Predef extends LowPriorityImplicits {
    *  @param x the object to print; may be null.
    *  @group console-output
    */
-  def print(x: Any) = Console.print(x)
+  def print(x: Any): Unit = Console.print(x)
 
   /** Prints a newline character on the default output.
    *  @group console-output
    */
-  def println() = Console.println()
+  def println(): Unit = Console.println()
 
   /** Prints out an object to the default output, followed by a newline character.
    *
    *  @param x the object to print.
    *  @group console-output
    */
-  def println(x: Any) = Console.println(x)
+  def println(x: Any): Unit = Console.println(x)
 
   /** Prints its arguments as a formatted string to the default output,
    *  based on a string pattern (in a fashion similar to printf in C).
@@ -420,32 +434,35 @@ object Predef extends LowPriorityImplicits {
    *  Consider using the [[scala.StringContext.f f interpolator]] as more type safe and idiomatic.
    *
    *  @param text the pattern for formatting the arguments.
-   *  @param args the arguments used to instantiating the pattern.
+   *  @param xs   the arguments used to instantiate the pattern.
    *  @throws java.lang.IllegalArgumentException if there was a problem with the format string or arguments
    *
    *  @see [[scala.StringContext.f StringContext.f]]
    *  @group console-output
    */
-  def printf(text: String, xs: Any*) = Console.print(text.format(xs: _*))
+  def printf(text: String, xs: Any*): Unit = Console.print(text.format(xs: _*))
 
   // views --------------------------------------------------------------
 
-  implicit def tuple2ToZippedOps[T1, T2](x: (T1, T2))                           = new runtime.Tuple2Zipped.Ops(x)
-  implicit def tuple3ToZippedOps[T1, T2, T3](x: (T1, T2, T3))                   = new runtime.Tuple3Zipped.Ops(x)
+  // these two are morally deprecated but the @deprecated annotation has been moved to the extension method themselves,
+  // in order to provide a more specific deprecation method.
+  implicit def tuple2ToZippedOps[T1, T2](x: (T1, T2)): runtime.Tuple2Zipped.Ops[T1, T2]             = new runtime.Tuple2Zipped.Ops(x)
+  implicit def tuple3ToZippedOps[T1, T2, T3](x: (T1, T2, T3)): runtime.Tuple3Zipped.Ops[T1, T2, T3] = new runtime.Tuple3Zipped.Ops(x)
 
   // Not specialized anymore since 2.13 but we still need separate methods
   // to avoid https://github.com/scala/bug/issues/10746
-  implicit def genericArrayOps[T](xs: Array[T]): ArrayOps[T]          = new ArrayOps(xs)
-  implicit def booleanArrayOps(xs: Array[Boolean]): ArrayOps[Boolean] = new ArrayOps(xs)
-  implicit def byteArrayOps(xs: Array[Byte]): ArrayOps[Byte]          = new ArrayOps(xs)
-  implicit def charArrayOps(xs: Array[Char]): ArrayOps[Char]          = new ArrayOps(xs)
-  implicit def doubleArrayOps(xs: Array[Double]): ArrayOps[Double]    = new ArrayOps(xs)
-  implicit def floatArrayOps(xs: Array[Float]): ArrayOps[Float]       = new ArrayOps(xs)
-  implicit def intArrayOps(xs: Array[Int]): ArrayOps[Int]             = new ArrayOps(xs)
-  implicit def longArrayOps(xs: Array[Long]): ArrayOps[Long]          = new ArrayOps(xs)
-  implicit def refArrayOps[T <: AnyRef](xs: Array[T]): ArrayOps[T]    = new ArrayOps(xs)
-  implicit def shortArrayOps(xs: Array[Short]): ArrayOps[Short]       = new ArrayOps(xs)
-  implicit def unitArrayOps(xs: Array[Unit]): ArrayOps[Unit]          = new ArrayOps(xs)
+  // TODO: should not need @inline. add heuristic to inline factories for value classes.
+  @inline implicit def genericArrayOps[T](xs: Array[T]): ArrayOps[T]          = new ArrayOps(xs)
+  @inline implicit def booleanArrayOps(xs: Array[Boolean]): ArrayOps[Boolean] = new ArrayOps(xs)
+  @inline implicit def byteArrayOps(xs: Array[Byte]): ArrayOps[Byte]          = new ArrayOps(xs)
+  @inline implicit def charArrayOps(xs: Array[Char]): ArrayOps[Char]          = new ArrayOps(xs)
+  @inline implicit def doubleArrayOps(xs: Array[Double]): ArrayOps[Double]    = new ArrayOps(xs)
+  @inline implicit def floatArrayOps(xs: Array[Float]): ArrayOps[Float]       = new ArrayOps(xs)
+  @inline implicit def intArrayOps(xs: Array[Int]): ArrayOps[Int]             = new ArrayOps(xs)
+  @inline implicit def longArrayOps(xs: Array[Long]): ArrayOps[Long]          = new ArrayOps(xs)
+  @inline implicit def refArrayOps[T <: AnyRef](xs: Array[T]): ArrayOps[T]    = new ArrayOps(xs)
+  @inline implicit def shortArrayOps(xs: Array[Short]): ArrayOps[Short]       = new ArrayOps(xs)
+  @inline implicit def unitArrayOps(xs: Array[Unit]): ArrayOps[Unit]          = new ArrayOps(xs)
 
   // "Autoboxing" and "Autounboxing" ---------------------------------------------------
 
@@ -483,270 +500,25 @@ object Predef extends LowPriorityImplicits {
   /** @group conversions-java-to-anyval */
   implicit def Boolean2boolean(x: java.lang.Boolean): Boolean = x.asInstanceOf[Boolean]
 
-  // Type Constraints --------------------------------------------------------------
-
-  /** An instance of `A <:< B` witnesses that `A` is a subtype of `B`.
-   *  Requiring an implicit argument of the type `A <:< B` encodes
-   *  the generalized constraint `A <: B`.
-   *
-   *  To constrain any abstract type `T` that's in scope in a method's
-   *  argument list (not just the method's own type parameters) simply
-   *  add an implicit argument of type `T <:< U`, where `U` is the required
-   *  upper bound; or for lower-bounds, use: `L <:< T`, where `L` is the
-   *  required lower bound.
-   *
-   *  In case of any confusion over which method goes in what direction, all the "Co" methods (including
-   *  [[apply]]) go from left to right in the type ("with" the type), and all the "Contra" methods go
-   *  from right to left ("against" the type). E.g., [[apply]] turns a `From` into a `To`, and
-   *  [[substituteContra]] replaces the `To`s in a type with `From`s.
-   *
-   *  In part contributed by Jason Zaugg.
-   *
-   *  @tparam From a type which is proved a subtype of `To`
-   *  @tparam To a type which is proved a supertype of `From`
-   *
-   *  @example [[scala.Option#flatten]]
-   *           {{{
-   *            sealed trait Option[+A] {
-   *              // def flatten[B, A <: Option[B]]: Option[B] = ...
-   *              // won't work, since the A in flatten shadows the class-scoped A.
-   *              def flatten[B](implicit ev: A <:< Option[B]): Option[B]
-   *                = if(isEmpty) None else ev(get)
-   *              // Because (A <:< Option[B]) <: (A => Option[B]), ev can be called to turn the
-   *              // A from get into an Option[B], and because ev is implicit, that call can be
-   *              // left out and inserted automatically.
-   *            }
-   *           }}}
-   *
-   *  @see [[=:=]] for expressing equality constraints
-   *  @group type-constraints
-   *  @define isProof This method is impossible to implement without `throw`ing or otherwise "cheating" unless
-   *                  `From <: To`, so it ensures that this really represents a subtyping relationship.
-   *  @define contraCo contravariant in the first argument and covariant in the second
-   *  @define contraCon a contravariant type constructor
-   *  @define coCon a covariant type constructor
-   *  @define sameDiff but with a (potentially) different type
-   *  @define tp <:<
-   */
-  // All of these methods are reimplemented unsafely in =:=.singleton to avoid any indirection.
-  // They are here simply for reference as the "correct", safe implementations.
-  @implicitNotFound(msg = "Cannot prove that ${From} <:< ${To}.")
-  sealed abstract class <:<[-From, +To] extends (From => To) with Serializable {
-    /** Substitute `To` for `From` and `From` for `To` in the type `F[To, From]`, given that `F` is $contraCo.
-     *  Essentially swaps `To` and `From` in `ftf`'s type.
-     *
-     *  Equivalent in power to each of [[substituteCo]] and [[substituteContra]].
-     *
-     *  $isProof
-     *
-     *  @return `ftf`, $sameDiff
-     */
-    def substituteBoth[F[-_, +_]](ftf: F[To, From]): F[From, To]
-    // = substituteCo[({type G[+T] = F[From, T]})#G](substituteContra[({type G[-T] = F[T, From})#G](ftf))
-    // = substituteContra[({type G[-T] = F[T, To]})#G](substituteCo[({type G[+T] = F[From, T]})#G](ftf))
-    /** Substitute the `From` in the type `F[From]`, where `F` is $coCon, for `To`.
-     *
-     *  Equivalent in power to each of [[substituteBoth]] and [[substituteContra]].
-     *
-     *  $isProof
-     *
-     *  @return `ff`, $sameDiff
-     */
-    def substituteCo[F[+_]](ff: F[From]): F[To] = {
-      type G[-_, +T] = F[T]
-      substituteBoth[G](ff)
-    }
-    // = substituteContra[({type G[-T] = F[T] => F[To]})#G](identity)(ff)
-    /** Substitute the `To` in the type `F[To]`, where `F` is $contraCon, for `From`.
-     *
-     *  Equivalent in power to each of [[substituteBoth]] and [[substituteCo]].
-     *
-     *  $isProof
-     *
-     *  @return `ft`, $sameDiff
-     */
-    def substituteContra[F[-_]](ft: F[To]): F[From] = {
-      type G[-T, +_] = F[T]
-      substituteBoth[G](ft)
-    }
-    // = substituteCo[({type G[+T] = F[T] => F[From]})#G](identity)(ft)
-
-    /** Coerce a `From` into a `To`. This is guaranteed to be the identity function.
-     *
-     *  This method is often called implicitly as an implicit `A $tp B` doubles as an implicit view `A => B`.
-     *
-     *  @param f some value of type `From`
-     *  @return `f`, $sameDiff
-     */
-    override def apply(f: From): To = {
-      type Id[+X] = X
-      substituteCo[Id](f)
-    }
-
-    override def compose[C](r: C => From): C => To = {
-      type G[+T] = C => T
-      substituteCo[G](r)
-    }
-    /** If `From <: To` and `C <: From`, then `C <: To` (subtyping is transitive) */
-    def compose[C](r: C <:< From): C <:< To = {
-      type G[+T] = C <:< T
-      substituteCo[G](r)
-    }
-    override def andThen[C](r: To => C): From => C = {
-      type G[-T] = T => C
-      substituteContra[G](r)
-    }
-    /** If `From <: To` and `To <: C`, then `From <: C` (subtyping is transitive) */
-    def andThen[C](r: To <:< C): From <:< C = {
-      type G[-T] = T <:< C
-      substituteContra[G](r)
-    }
-
-    /** Lift this evidence over $coCon `F`. */
-    def liftCo[F[+_]]: F[From] <:< F[To] = {
-      type G[+T] = F[From] <:< F[T]
-      substituteCo[G](implicitly[G[From]])
-    }
-    /** Lift this evidence over $contraCon `F`. */
-    def liftContra[F[-_]]: F[To] <:< F[From] = {
-      type G[-T] = F[To] <:< F[T]
-      substituteContra[G](implicitly[G[To]])
-    }
-  }
-  /** @group type-constraints */
-  object <:< {
-    /** If `A <: B` and `B <: A`, then `A = B` (subtyping is antisymmetric) */
-    def antisymm[A, B](implicit l: A <:< B, r: B <:< A): A =:= B = =:=.singleton.asInstanceOf[A =:= B]
-    // = ??? (I don't think this is possible to implement "safely")
-  }
-  /** `A <: A` for all `A` (subtyping is reflexive). This also provides implicit views `A => B`
-   *  when `A <: B`, because `(A <:< A) <: (A <:< B) <: (A => B)`.
-   *
-   *  @group type-constraints
+  /** An implicit of type `A => A` is available for all `A` because it can always
+   *  be implemented using the identity function. This also means that an
+   *  implicit of type `A => B` is always available when `A <: B`, because
+   *  `(A => A) <: (A => B)`.
    */
   // $ to avoid accidental shadowing (e.g. scala/bug#7788)
-  // ideally implicit def $conforms[A]: A => A, with a <:< implicit in the companion
-  // but $conforms is a bit too magic for that
-  implicit def $conforms[A]: A <:< A = =:=.refl
-
-  /** An instance of `A =:= B` witnesses that the types `A` and `B` are equal. It also acts as a `A <:< B`,
-   *  but not a `B <:< A` (directly) due to restrictions on subclassing.
-   *
-   *  In case of any confusion over which method goes in what direction, all the "Co" methods (including
-   *  [[apply]]) go from left to right in the type ("with" the type), and all the "Contra" methods go
-   *  from right to left ("against" the type). E.g., [[apply]] turns a `From` into a `To`, and
-   *  [[substituteContra]] replaces the `To`s in a type with `From`s.
-   *
-   *  @tparam From a type which is proved equal to `To`
-   *  @tparam To a type which is proved equal to `From`
-   *
-   *  @example An in-place variant of [[scala.collection.mutable.ArrayBuffer#transpose]] {{{
-   *            implicit class BufOps[A](private val buf: ArrayBuffer[A]) extends AnyVal {
-   *              def inPlaceTranspose[E]()(implicit ev: A =:= ArrayBuffer[E]) = ???
-   *              // Because ArrayBuffer is invariant, we can't make do with just a A <:< ArrayBuffer[E]
-   *              // Getting buffers *out* from buf would work, but adding them back *in* wouldn't.
-   *            }
-   *           }}}
-   *  @see [[<:<]] for expressing subtyping constraints
-   *  @group type-constraints
-   *  @define isProof This method is impossible to implement without `throw`ing or otherwise "cheating" unless
-   *                  `From = To`, so it ensures that this really represents a type equality.
-   *  @define contraCo a type constructor of two arguments
-   *  @define contraCon any type constructor
-   *  @define coCon any type constructor
-   *  @define tp =:=
-   */
-  // Most of the notes on <:< above apply to =:= as well
-  @implicitNotFound(msg = "Cannot prove that ${From} =:= ${To}.")
-  sealed abstract class =:=[From, To] extends (From <:< To) with Serializable {
-    override def substituteBoth[F[_, _]](ftf: F[To, From]): F[From, To]
-    override def substituteCo[F[_]](ff: F[From]): F[To] = {
-      type G[_, T] = F[T]
-      substituteBoth[G](ff)
-    }
-    // = substituteContra[({type G[T] = F[T] => F[To]})#G](identity)(ff)
-    override def substituteContra[F[_]](ft: F[To]): F[From] = {
-      type G[T, _] = F[T]
-      substituteBoth[G](ft)
-    }
-    // = substituteCo[({type G[T] = F[T] => F[From]})#G](identity)(ft)
-
-    /** @inheritdoc */ override def apply(f: From) = super.apply(f)
-
-    /** If `From = To` then `To = From` (equality is symmetric) */
-    def flip: To =:= From = {
-      type G[T, F] = F =:= T
-      substituteBoth[G](this)
-    }
-
-    /** If `From = To` and `C = From`, then `C = To` (equality is transitive) */
-    def compose[C](r: C =:= From): C =:= To = {
-      type G[T] = C =:= T
-      substituteCo[G](r)
-    }
-    /** If `From = To` and `To = C`, then `From = C` (equality is transitive) */
-    def andThen[C](r: To =:= C): From =:= C = {
-      type G[T] = T =:= C
-      substituteContra[G](r)
-    }
-
-    override def liftCo[F[_]]: F[From] =:= F[To] = {
-      type G[T] = F[T] =:= F[To]
-      substituteContra[G](implicitly[G[To]])
-    }
-    /** Lift this evidence over the type constructor `F`, but flipped. */
-    override def liftContra[F[_]]: F[To] =:= F[From] = liftCo[F].flip
-  }
-  /** @group type-constraints */
-  object =:= {
-    // the only instance for <:< and =:=, used to avoid overhead
-    private[Predef] final val singleton = new =:=[Any,Any] {
-      override def substituteBoth[F[_, _]](ftf: F[Any, Any]) = ftf
-      override def substituteCo    [F[_]](ff: F[Any]) = ff
-      override def substituteContra[F[_]](ff: F[Any]) = ff
-      override def apply(x: Any) = x
-      override def flip = this
-      override def compose[C](r: C =>  Any) = r
-      override def compose[C](r: C <:< Any) = r
-      override def compose[C](r: C =:= Any) = r
-      override def andThen[C](r: Any =>  C) = r
-      override def andThen[C](r: Any <:< C) = r
-      override def andThen[C](r: Any =:= C) = r
-      override def liftCo    [F[_]] = asInstanceOf[F[Any] =:= F[Any]]
-      override def liftContra[F[_]] = asInstanceOf[F[Any] =:= F[Any]]
-      override def toString = "generalized constraint"
-    }
-    /** `A = A` for all `A` (equality is reflexive) */
-    implicit def refl[A]: A =:= A = singleton.asInstanceOf[A =:= A]
-    // = new =:=[A, A] { override def substituteBoth[F[_, _]](faa: F[A, A]): F[A, A] = faa }
-  }
-
-  /** A type for which there is always an implicit value.
-   */
-  class DummyImplicit
-
-  object DummyImplicit {
-
-    /** An implicit value yielding a `DummyImplicit`.
-     */
-    implicit def dummyImplicit: DummyImplicit = new DummyImplicit
-  }
+  implicit def $conforms[A]: A => A = <:<.refl
 }
 
 /** The `LowPriorityImplicits` class provides implicit values that
 *  are valid in all Scala compilation units without explicit qualification,
 *  but that are partially overridden by higher-priority conversions in object
 *  `Predef`.
-*
-*  @author  Martin Odersky
-*  @since 2.8
 */
 // scala/bug#7335 Parents of Predef are defined in the same compilation unit to avoid
 // cyclic reference errors compiling the standard library *without* a previously
 // compiled copy on the classpath.
 private[scala] abstract class LowPriorityImplicits extends LowPriorityImplicits2 {
   import mutable.ArraySeq
-  //import immutable.WrappedString
 
   /** We prefer the java.lang.* boxed types to these wrappers in
    *  any potential conflicts.  Conflicts do exist because the wrappers
@@ -758,14 +530,14 @@ private[scala] abstract class LowPriorityImplicits extends LowPriorityImplicits2
    *  Even inlined, every call site does a no-op retrieval of Predef's MODULE$
    *  because maybe loading Predef has side effects!
    */
-  @inline implicit def byteWrapper(x: Byte)       = new runtime.RichByte(x)
-  @inline implicit def shortWrapper(x: Short)     = new runtime.RichShort(x)
-  @inline implicit def intWrapper(x: Int)         = new runtime.RichInt(x)
-  @inline implicit def charWrapper(c: Char)       = new runtime.RichChar(c)
-  @inline implicit def longWrapper(x: Long)       = new runtime.RichLong(x)
-  @inline implicit def floatWrapper(x: Float)     = new runtime.RichFloat(x)
-  @inline implicit def doubleWrapper(x: Double)   = new runtime.RichDouble(x)
-  @inline implicit def booleanWrapper(x: Boolean) = new runtime.RichBoolean(x)
+  @inline implicit def byteWrapper(x: Byte): runtime.RichByte          = new runtime.RichByte(x)
+  @inline implicit def shortWrapper(x: Short): runtime.RichShort       = new runtime.RichShort(x)
+  @inline implicit def intWrapper(x: Int): runtime.RichInt             = new runtime.RichInt(x)
+  @inline implicit def charWrapper(c: Char): runtime.RichChar          = new runtime.RichChar(c)
+  @inline implicit def longWrapper(x: Long): runtime.RichLong          = new runtime.RichLong(x)
+  @inline implicit def floatWrapper(x: Float): runtime.RichFloat       = new runtime.RichFloat(x)
+  @inline implicit def doubleWrapper(x: Double): runtime.RichDouble    = new runtime.RichDouble(x)
+  @inline implicit def booleanWrapper(x: Boolean): runtime.RichBoolean = new runtime.RichBoolean(x)
 
   /** @group conversions-array-to-wrapped-array */
   implicit def genericWrapArray[T](xs: Array[T]): ArraySeq[T] =

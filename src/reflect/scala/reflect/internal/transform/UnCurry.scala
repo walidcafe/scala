@@ -1,13 +1,30 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package internal
 package transform
 
 import Flags._
+import scala.annotation.tailrec
 import scala.collection.mutable
 
 trait UnCurry {
 
+  // FIXME: With `global` as a `val`, implementers must use early initializers, which
+  //        are deprecated and will not be supported in 3.0. Please change the design,
+  //        remove the early initializers from implementers, and then remove the
+  //        `@nowarn` annotations from implementers.
   val global: SymbolTable
   import global._
   import definitions._
@@ -29,6 +46,7 @@ trait UnCurry {
   private def expandAlias(tp: Type): Type = if (!tp.isHigherKinded) tp.normalize else tp
 
   val uncurry: TypeMap = new TypeMap {
+    @tailrec
     def apply(tp0: Type): Type = {
       val tp = expandAlias(tp0)
       tp match {
@@ -62,13 +80,13 @@ trait UnCurry {
       case TypeRef(pre, RepeatedParamClass, arg :: Nil) =>
         Some(seqType(arg))
       case TypeRef(pre, JavaRepeatedParamClass, arg :: Nil) =>
-        Some(arrayType(if (isUnboundedGeneric(arg)) ObjectTpe else arg))
+        Some(arrayType(if (isUnboundedGeneric(arg)) ObjectTpeJava else arg))
       case _ =>
         None
       }
   }
 
-  private val uncurryType = new TypeMap {
+  private[this] val uncurryType = new TypeMap {
     def apply(tp0: Type): Type = {
       val tp = expandAlias(tp0)
       tp match {
@@ -107,8 +125,6 @@ trait UnCurry {
 
     // we are using `origSym.info`, which contains the type *before* the transformation
     // so we still see repeated parameter types (uncurry replaces them with Seq)
-    val isRepeated = origSym.info.paramss.flatten.map(sym => definitions.isRepeatedParamType(sym.tpe))
-    val oldPs = newInfo.paramss.head
     def toArrayType(tp: Type, newParam: Symbol): Type = {
       val arg = elementType(SeqClass, tp)
       val elem = if (arg.typeSymbol.isTypeParameterOrSkolem && !(arg <:< AnyRefTpe)) {
@@ -130,11 +146,12 @@ trait UnCurry {
       arrayType(elem)
     }
 
-    foreach2(forwSym.paramss.flatten, isRepeated)((p, isRep) =>
-      if (isRep) {
-        p.setInfo(toArrayType(p.info, p))
+    foreach2(forwSym.paramss, origSym.info.paramss){ (fsps, origPs) =>
+      foreach2(fsps, origPs){ (p, sym) =>
+        if (definitions.isRepeatedParamType(sym.tpe))
+          p.setInfo(toArrayType(p.info, p))
       }
-    )
+    }
 
     origSym.updateAttachment(VarargsSymbolAttachment(forwSym))
     forwSym

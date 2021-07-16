@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package util.control
@@ -29,14 +33,14 @@ package util.control
  * }}}
  */
 object NonFatal {
-   /**
-    * Returns true if the provided `Throwable` is to be considered non-fatal, or false if it is to be considered fatal
-    */
-   def apply(t: Throwable): Boolean = t match {
-     // VirtualMachineError includes OutOfMemoryError and other fatal errors
-     case _: VirtualMachineError | _: ThreadDeath | _: InterruptedException | _: LinkageError | _: ControlThrowable => false
-     case _ => true
-   }
+  /**
+   * Returns true if the provided `Throwable` is to be considered non-fatal, or false if it is to be considered fatal
+   */
+  def apply(t: Throwable): Boolean = t match {
+    // VirtualMachineError includes OutOfMemoryError and other fatal errors
+    case _: VirtualMachineError | _: ThreadDeath | _: InterruptedException | _: LinkageError | _: ControlThrowable => false
+    case _ => true
+  }
   /**
    * Returns Some(t) if NonFatal(t) == true, otherwise None
    */

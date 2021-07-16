@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.concurrent
 
@@ -13,20 +17,21 @@ import scala.language.implicitConversions
 
 /** The `JavaConversions` object provides implicit conversions supporting
  *  interoperability between Scala and Java concurrency classes.
- *
- *  @author Philipp Haller
  */
+@deprecated("Use the factory methods in `ExecutionContext` instead", "2.13.0")
 object JavaConversions {
 
   /**
    * Creates a new `ExecutionContext` which uses the provided `ExecutorService`.
    */
+  @deprecated("Use `ExecutionContext.fromExecutorService` instead", "2.13.0")
   implicit def asExecutionContext(exec: ExecutorService): ExecutionContextExecutorService =
     ExecutionContext.fromExecutorService(exec)
 
   /**
    * Creates a new `ExecutionContext` which uses the provided `Executor`.
    */
+  @deprecated("Use `ExecutionContext.fromExecutor` instead", "2.13.0")
   implicit def asExecutionContext(exec: Executor): ExecutionContextExecutor =
     ExecutionContext.fromExecutor(exec)
 

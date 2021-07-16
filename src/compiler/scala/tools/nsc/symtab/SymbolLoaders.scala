@@ -1,23 +1,30 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package symtab
 
-import classfile.ClassfileParser
+import classfile.{ClassfileParser, ReusableDataReader}
 import java.io.IOException
+
 import scala.reflect.internal.MissingRequirementError
 import scala.reflect.io.{AbstractFile, NoAbstractFile}
 import scala.tools.nsc.util.{ClassPath, ClassRepresentation}
-import scala.reflect.internal.TypesStats
-import scala.reflect.internal.util.StatisticsStatics
+import scala.reflect.internal.util.ReusableInstance
+import scala.tools.nsc.Reporting.WarningCategory
 
 /** This class ...
  *
  *  @author  Martin Odersky
- *  @version 1.0
  */
 abstract class SymbolLoaders {
   val symbolTable: symtab.SymbolTable {
@@ -40,6 +47,9 @@ abstract class SymbolLoaders {
    */
   protected def compileLate(srcfile: AbstractFile): Unit
 
+  // forwards to runReporting.warning, but we don't have global in scope here
+  def warning(pos: Position, msg: String, category: WarningCategory, site: String): Unit
+
   protected def enterIfNew(owner: Symbol, member: Symbol, completer: SymbolLoader): Symbol = {
     assert(owner.info.decls.lookup(member.name) == NoSymbol, owner.fullName + "." + member.name)
     owner.info.decls enter member
@@ -47,7 +57,7 @@ abstract class SymbolLoaders {
   }
 
   protected def signalError(root: Symbol, ex: Throwable): Unit = {
-    if (settings.debug) ex.printStackTrace()
+    if (settings.isDebug) ex.printStackTrace()
     globalError(ex.getMessage() match {
       case null => "i/o error while loading " + root.name
       case msg  => "error while loading " + root.name + ", " + msg
@@ -99,16 +109,20 @@ abstract class SymbolLoaders {
         )
       else if (settings.termConflict.value == "package") {
         warning(
+          NoPosition,
           "Resolving package/object name conflict in favor of package " +
-          preExisting.fullName + ".  The object will be inaccessible."
-        )
+          preExisting.fullName + ".  The object will be inaccessible.",
+          WarningCategory.Other,
+          site = "")
         root.info.decls.unlink(preExisting)
       }
       else {
         warning(
+          NoPosition,
           "Resolving package/object name conflict in favor of object " +
-          preExisting.fullName + ".  The package will be inaccessible."
-        )
+          preExisting.fullName + ".  The package will be inaccessible.",
+          WarningCategory.Other,
+          site = "")
         return NoSymbol
       }
     }
@@ -123,9 +137,9 @@ abstract class SymbolLoaders {
   /** Enter class and module with given `name` into scope of `root`
    *  and give them `completer` as type.
    */
-  def enterClassAndModule(root: Symbol, name: String, getCompleter: (ClassSymbol, ModuleSymbol) => SymbolLoader): Unit = {
-    val clazz0 = newClass(root, name)
-    val module0 = newModule(root, name)
+  def enterClassAndModule(root: Symbol, name: TermName, getCompleter: (ClassSymbol, ModuleSymbol) => SymbolLoader): Unit = {
+    val clazz0 = root.newClass(name.toTypeName)
+    val module0 = root.newModule(name)
     val completer = getCompleter(clazz0, module0)
     // enterClass/Module may return an existing symbol instead of the ones we created above
     // this may happen when there's both sources and binaries on the classpath, but the class
@@ -153,7 +167,7 @@ abstract class SymbolLoaders {
    *  with source completer for given `src` as type.
    *  (overridden in interactive.Global).
    */
-  def enterToplevelsFromSource(root: Symbol, name: String, src: AbstractFile): Unit = {
+  def enterToplevelsFromSource(root: Symbol, name: TermName, src: AbstractFile): Unit = {
     enterClassAndModule(root, name, (_, _) => new SourcefileLoader(src))
   }
 
@@ -164,8 +178,8 @@ abstract class SymbolLoaders {
    *  Note: We do a name-base comparison here because the method is called before we even
    *  have ReflectPackage defined.
    */
-  def binaryOnly(owner: Symbol, name: String): Boolean =
-    name == "package" &&
+  def binaryOnly(owner: Symbol, name: TermName): Boolean =
+    name == nme.PACKAGE &&
     (owner.fullName == "scala" || owner.fullName == "scala.reflect")
 
   /** Initialize toplevel class and module symbols in `owner` from class path representation `classRep`
@@ -173,16 +187,27 @@ abstract class SymbolLoaders {
   def initializeFromClassPath(owner: Symbol, classRep: ClassRepresentation): Unit = {
     ((classRep.binary, classRep.source) : @unchecked) match {
       case (Some(bin), Some(src))
-      if platform.needCompile(bin, src) && !binaryOnly(owner, classRep.name) =>
+      if platform.needCompile(bin, src) && !binaryOnly(owner, nameOf(classRep)) =>
         if (settings.verbose) inform("[symloader] picked up newer source file for " + src.path)
-        enterToplevelsFromSource(owner, classRep.name, src)
+        enterToplevelsFromSource(owner, nameOf(classRep), src)
       case (None, Some(src)) =>
         if (settings.verbose) inform("[symloader] no class, picked up source file for " + src.path)
-        enterToplevelsFromSource(owner, classRep.name, src)
+        enterToplevelsFromSource(owner, nameOf(classRep), src)
       case (Some(bin), _) =>
-        enterClassAndModule(owner, classRep.name, new ClassfileLoader(bin, _, _))
+        enterClassAndModule(owner, nameOf(classRep), new ClassfileLoader(bin, _, _))
     }
   }
+  private def nameOf(classRep: ClassRepresentation): TermName = {
+    val name = classRep.name
+    val nameLength = name.length
+    if (nameLength <= nameCharBuffer.length) {
+      name.getChars(0, nameLength, nameCharBuffer, 0)
+      newTermName(nameCharBuffer, 0, nameLength)
+    } else {
+      newTermName(name)
+    }
+  }
+  private val nameCharBuffer = new Array[Char](512)
 
   /**
    * A lazy type that completes itself by calling parameter doComplete.
@@ -196,6 +221,7 @@ abstract class SymbolLoaders {
     protected def doComplete(root: Symbol): Unit
 
     def sourcefile: Option[AbstractFile] = None
+    def associatedFile(self: Symbol): AbstractFile = NoAbstractFile
 
     /**
      * Description of the resource (ClassPath, AbstractFile)
@@ -214,23 +240,29 @@ abstract class SymbolLoaders {
     }
 
     override def complete(root: Symbol): Unit = {
+      val assocFile = associatedFile(root)
+      currentRunProfilerBeforeCompletion(root, assocFile)
       try {
-        val start = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime())
-        val currentphase = phase
-        doComplete(root)
-        phase = currentphase
-        informTime("loaded " + description, start)
-        ok = true
-        setSource(root)
-        setSource(root.companionSymbol) // module -> class, class -> module
+        try {
+          informingProgress("loaded " + description) {
+            val currentphase = phase
+            try doComplete(root)
+            finally phase = currentphase
+          }
+          ok = true
+          setSource(root)
+          setSource(root.companionSymbol) // module -> class, class -> module
+        }
+        catch {
+          case ex@(_: IOException | _: MissingRequirementError) =>
+            ok = false
+            signalError(root, ex)
+        }
+        initRoot(root)
+        if (!root.isPackageClass) initRoot(root.companionSymbol)
+      } finally {
+        currentRunProfilerAfterCompletion(root, assocFile)
       }
-      catch {
-        case ex @ (_: IOException | _: MissingRequirementError) =>
-          ok = false
-          signalError(root, ex)
-      }
-      initRoot(root)
-      if (!root.isPackageClass) initRoot(root.companionSymbol)
     }
 
     override def load(root: Symbol): Unit = { complete(root) }
@@ -247,12 +279,6 @@ abstract class SymbolLoaders {
       else if (root.isClass && !root.isModuleClass)
         root.rawInfo.load(root)
     }
-  }
-
-  private def phaseBeforeRefchecks: Phase = {
-    var resPhase = phase
-    while (resPhase.refChecked) resPhase = resPhase.prev
-    resPhase
   }
 
   /**
@@ -287,11 +313,11 @@ abstract class SymbolLoaders {
       }
     }
   }
-
+  private lazy val classFileDataReader: ReusableInstance[ReusableDataReader] = ReusableInstance[ReusableDataReader](new ReusableDataReader(), initialSize = 1, enabled = isCompilerUniverse)
   class ClassfileLoader(val classfile: AbstractFile, clazz: ClassSymbol, module: ModuleSymbol) extends SymbolLoader with FlagAssigningCompleter {
     private object classfileParser extends {
       val symbolTable: SymbolLoaders.this.symbolTable.type = SymbolLoaders.this.symbolTable
-    } with ClassfileParser {
+    } with ClassfileParser(classFileDataReader) {
       override protected def lookupMemberAtTyperPhaseIfPossible(sym: Symbol, name: Name): Symbol =
         SymbolLoaders.this.lookupMemberAtTyperPhaseIfPossible(sym, name)
       /*
@@ -312,33 +338,34 @@ abstract class SymbolLoaders {
     protected def description = "class file "+ classfile.toString
 
     protected def doComplete(root: Symbol): Unit = {
-      val start = if (StatisticsStatics.areSomeColdStatsEnabled) statistics.startTimer(statistics.classReadNanos) else null
+      val start = if (settings.areStatisticsEnabled) statistics.startTimer(statistics.classReadNanos) else null
       classfileParser.parse(classfile, clazz, module)
-      if (root.associatedFile eq NoAbstractFile) {
-        root match {
-          // In fact, the ModuleSymbol forwards its setter to the module class
-          case _: ClassSymbol | _: ModuleSymbol =>
-            debuglog("ClassfileLoader setting %s.associatedFile = %s".format(root.name, classfile))
-            root.associatedFile = classfile
-          case _ =>
-            debuglog("Not setting associatedFile to %s because %s is a %s".format(classfile, root.name, root.shortSymbolClass))
-        }
-      }
-      if (StatisticsStatics.areSomeColdStatsEnabled) statistics.stopTimer(statistics.classReadNanos, start)
+      if (clazz.associatedFile eq NoAbstractFile) clazz.associatedFile = classfile
+      if (module.associatedFile eq NoAbstractFile) module.associatedFile = classfile
+      if (settings.areStatisticsEnabled) statistics.stopTimer(statistics.classReadNanos, start)
     }
     override def sourcefile: Option[AbstractFile] = classfileParser.srcfile
+    override def associatedFile(self: Symbol): AbstractFile = classfile
   }
 
   class SourcefileLoader(val srcfile: AbstractFile) extends SymbolLoader with FlagAssigningCompleter {
     protected def description = "source file "+ srcfile.toString
     override def fromSource = true
     override def sourcefile = Some(srcfile)
+    override def associatedFile(self: Symbol): AbstractFile = srcfile
     protected def doComplete(root: Symbol): Unit = compileLate(srcfile)
   }
 
   object moduleClassLoader extends SymbolLoader with FlagAssigningCompleter {
     protected def description = "module class loader"
     protected def doComplete(root: Symbol): Unit = { root.sourceModule.initialize }
+    override def associatedFile(self: Symbol): AbstractFile = {
+      val sourceModule = self.sourceModule
+      sourceModule.rawInfo match {
+        case loader: SymbolLoader => loader.associatedFile(sourceModule)
+        case _ => super.associatedFile(self)
+      }
+    }
   }
 
   /** used from classfile parser to avoid cycles */

@@ -70,9 +70,9 @@ object EmitManPage {
           for (d <- definitions) {
             out println ".TP"
             emitText(d.term)
-            out.println
+            out.println()
             emitText(d.description)
-            if (n > 1) { out.println; n -= 1 }
+            if (n > 1) { out.println(); n -= 1 }
           }
 
         case Link(label, url) =>
@@ -88,12 +88,12 @@ object EmitManPage {
         case TextParagraph(text) =>
           out println ".PP"
           emitText(text)
-          out.println
+          out.println()
 
         case BlockQuote(text) =>
           out println ".TP"
           emitText(text)
-          out.println
+          out.println()
 
         case CodeSample(text) =>
           out println "\n.nf"
@@ -104,7 +104,7 @@ object EmitManPage {
           for (item <- lst.items) {
             out println ".IP"
             emitText(item)
-            out.println
+            out.println()
           }
 
         case lst:NumberedList =>
@@ -114,7 +114,7 @@ object EmitManPage {
             val item = lst.items(idx)
             out.println(".IP \"   " + (idx+1) + ".\"")
             emitText(item)
-            out.println
+            out.println()
           }
 
         case TitledPara(title, text) =>
@@ -150,7 +150,7 @@ object EmitManPage {
     out println ".\\\" #      ________ ___   / /  ___     Scala 2 On-line Manual Pages          #"
     out println ".\\\" #     / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL              #"
     out println ".\\\" #   __\\ \\/ /__/ __ |/ /__/ __ |                                          #"
-    out println ".\\\" #  /____/\\___/_/ |_/____/_/ | |    http://scala-lang.org/                #"
+    out println ".\\\" #  /____/\\___/_/ |_/____/_/ | |    https://scala-lang.org/                #"
     out println ".\\\" #                           |/                                           #"
     out println ".\\\" ##########################################################################"
     out println ".\\\""

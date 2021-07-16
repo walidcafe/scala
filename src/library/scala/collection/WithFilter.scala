@@ -1,6 +1,16 @@
-package scala.collection
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
-import scala.language.higherKinds
+package scala.collection
 
 /** A template trait that contains just the `map`, `flatMap`, `foreach` and `withFilter` methods
   * of trait `Iterable`.
@@ -10,7 +20,8 @@ import scala.language.higherKinds
   *
   * @define coll collection
   */
-abstract class WithFilter[+A, +CC[_]] {
+@SerialVersionUID(3L)
+abstract class WithFilter[+A, +CC[_]] extends Serializable {
 
   /** Builds a new collection by applying a function to all elements of the
     * `filtered` outer $coll.

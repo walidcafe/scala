@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -9,10 +16,11 @@ package typechecker
 
 import java.lang.ArithmeticException
 
+import scala.tools.nsc.Reporting.WarningCategory
+
 /** This class ...
  *
  *  @author Martin Odersky
- *  @version 1.0
  */
 abstract class ConstantFolder {
 
@@ -21,11 +29,12 @@ abstract class ConstantFolder {
 
   // We can fold side effect free terms and their types
   object FoldableTerm {
+    @inline private def effectless(sym: Symbol): Boolean = sym != null && !sym.isLazy && (sym.isVal || sym.isGetter && sym.accessed.isVal)
+
     def unapply(tree: Tree): Option[Constant] = tree match {
-      case Literal(x) => Some(x)
-      case term if term.symbol != null && !term.symbol.isLazy && (term.symbol.isVal || (term.symbol.isGetter && term.symbol.accessed.isVal)) =>
-        extractConstant(term.tpe)
-      case _ => None
+      case Literal(x)                      => Some(x)
+      case term if effectless(term.symbol) => extractConstant(term.tpe)
+      case _                               => None
     }
   }
 
@@ -46,7 +55,7 @@ abstract class ConstantFolder {
     }
 
   /** If tree is a constant operation, replace with result. */
-  def apply(tree: Tree): Tree = {
+  def apply(tree: Tree, site: Symbol): Tree = {
     try {
       tree match {
         case Apply(Select(FoldableTerm(x), op), List(FoldableTerm(y))) => fold(tree, foldBinop(op, x, y), true)
@@ -58,7 +67,7 @@ abstract class ConstantFolder {
     } catch {
       case e: ArithmeticException =>
         if (settings.warnConstant)
-          warning(tree.pos, s"Evaluation of a constant expression results in an arithmetic error: ${e.getMessage}")
+          runReporting.warning(tree.pos, s"Evaluation of a constant expression results in an arithmetic error: ${e.getMessage}", WarningCategory.LintConstant, site)
         tree
     }
   }
@@ -66,8 +75,8 @@ abstract class ConstantFolder {
   /** If tree is a constant value that can be converted to type `pt`, perform
    *  the conversion.
    */
-  def apply(tree: Tree, pt: Type): Tree = {
-    val orig = apply(tree)
+  def apply(tree: Tree, pt: Type, site: Symbol): Tree = {
+    val orig = apply(tree, site)
     orig.tpe match {
       case tp@ConstantType(x) => fold(orig, x convertTo pt, isConstantType(tp))
       case _ => orig
@@ -136,13 +145,13 @@ abstract class ConstantFolder {
     case nme.XOR => Constant(x.longValue ^ y.longValue)
     case nme.AND => Constant(x.longValue & y.longValue)
     case nme.LSL if x.tag <= IntTag
-                 => Constant(x.intValue << y.longValue)
+                 => Constant(x.intValue << y.longValue.toInt)
     case nme.LSL => Constant(x.longValue <<  y.longValue)
     case nme.LSR if x.tag <= IntTag
-                 => Constant(x.intValue >>> y.longValue)
+                 => Constant(x.intValue >>> y.longValue.toInt)
     case nme.LSR => Constant(x.longValue >>> y.longValue)
     case nme.ASR if x.tag <= IntTag
-                 => Constant(x.intValue >> y.longValue)
+                 => Constant(x.intValue >> y.longValue.toInt)
     case nme.ASR => Constant(x.longValue >> y.longValue)
     case nme.EQ  => Constant(x.longValue == y.longValue)
     case nme.NE  => Constant(x.longValue != y.longValue)

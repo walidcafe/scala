@@ -1,3 +1,5 @@
+// scalac: -Ystop-after:parser
+//
 object foo {
   val bar = "baz"
   val xml =
@@ -5,4 +7,7 @@ object foo {
       <![CDATA[]]>
       <![CDATA[{bar}]]>
     </root>
+  val pcdata =
+      <![CDATA[]]>
+      <![CDATA[{bar}]]>
 }

@@ -1,9 +1,7 @@
 object Test {
   abstract class A1
   case class C1(x: Int) extends A1
-  class C2(x: Int) extends C1(x) {
-    override def productPrefix = "Shazbot!"
-  }
+  class C2(x: Int) extends C1(x)
   class C3(x: Int) extends C1(x) {
     override def canEqual(other: Any) = other.isInstanceOf[C3]
     override def equals(other: Any) = other match {

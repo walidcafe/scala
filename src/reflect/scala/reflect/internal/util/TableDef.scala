@@ -1,9 +1,20 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect.internal.util
 
 import TableDef._
 import scala.collection.immutable.AbstractSeq
-import scala.language.postfixOps
 
 /** A class for representing tabular data in a way that preserves
  *  its inner beauty.
@@ -17,7 +28,7 @@ class TableDef[T](_cols: Column[T]*) {
   def ~(next: Column[T])            = retThis(cols :+= next)
 
   // Below this point should all be considered private/internal.
-  private var cols: List[Column[T]] = _cols.toList
+  private[this] var cols: List[Column[T]] = _cols.toList
 
   def defaultSep(index: Int)   = if (index > (cols.size - 2)) "" else " "
   def sepAfter(i: Int): String = defaultSep(i)
@@ -33,7 +44,7 @@ class TableDef[T](_cols: Column[T]*) {
     def apply(index: Int) = rows(index)
     def length            = rows.length
 
-    def maxColWidth(col: Column[T]) = col.name +: (rows map col.f) map (_.toString.length) max
+    def maxColWidth(col: Column[T]) = (col.name +: rows.map(col.f)).map(_.toString.length).max
     def specs = cols map (_ formatSpec rows)
 
     val colWidths   = cols map maxColWidth
@@ -43,11 +54,11 @@ class TableDef[T](_cols: Column[T]*) {
 
     val headers = List(
       headFormat.format(colNames: _*),
-      (colWidths, sepWidths).zipped map ((w1, w2) => "-" * w1 + " " * w2) mkString
+      colWidths.lazyZip(sepWidths).map((w1, w2) => "-" * w1 + " " * w2).mkString
     )
 
     def mkFormatString(sepf: Int => String): String =
-      specs.zipWithIndex map { case (c, i) => c + sepf(i) } mkString
+      specs.zipWithIndex.map { case (c, i) => c + sepf(i) }.mkString
 
     def toFormattedSeq = argLists map (xs => rowFormat.format(xs: _*))
     def allToSeq = headers ++ toFormattedSeq
@@ -62,7 +73,7 @@ class TableDef[T](_cols: Column[T]*) {
 
 object TableDef {
   case class Column[-T](name: String, f: T => Any, left: Boolean) {
-    def maxWidth(elems: Seq[T]): Int = name +: (elems map f) map (_.toString.length) max
+    def maxWidth(elems: Seq[T]): Int = (name +: elems.map(f)).map(_.toString.length).max
     def formatSpec(elems: Seq[T]): String = {
       val justify = if (left) "-" else ""
       "%" + justify + maxWidth(elems) + "s"

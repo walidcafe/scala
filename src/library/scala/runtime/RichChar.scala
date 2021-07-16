@@ -1,34 +1,37 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2006-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package runtime
-
-
-import java.lang.Character
 
 final class RichChar(val self: Char) extends AnyVal with IntegralProxy[Char] {
   protected def num = scala.math.Numeric.CharIsIntegral
   protected def ord = scala.math.Ordering.Char
 
-  override def doubleValue() = self.toDouble
-  override def floatValue()  = self.toFloat
-  override def longValue()   = self.toLong
-  override def intValue()    = self.toInt
-  override def byteValue()   = self.toByte
-  override def shortValue()  = self.toShort
+  override def doubleValue = self.toDouble
+  override def floatValue  = self.toFloat
+  override def longValue   = self.toLong
+  override def intValue    = self.toInt
+  override def byteValue   = self.toByte
+  override def shortValue  = self.toShort
 
   override def isValidChar   = true
 
+  // These method are all overridden and redefined to call out to scala.math to avoid 3 allocations:
+  // the primitive boxing, the value class boxing and instantiation of the Numeric num.
+  // We'd like to redefine signum and sign too but forwards binary compatibility doesn't allow us to.
   override def abs: Char             = self
   override def max(that: Char): Char = math.max(self.toInt, that.toInt).toChar
   override def min(that: Char): Char = math.min(self.toInt, that.toInt).toChar
-  override def signum: Int           = math.signum(self.toInt)
 
   def asDigit: Int                      = Character.digit(self, Character.MAX_RADIX)
 

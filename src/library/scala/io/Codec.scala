@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package io
@@ -85,9 +89,9 @@ object Codec extends LowPriorityCodecImplicits {
    *  the fact that you can influence anything at all via -Dfile.encoding
    *  as an accident, with any anomalies considered "not a bug".
    */
-  def defaultCharsetCodec = apply(Charset.defaultCharset)
-  def fileEncodingCodec   = apply(scala.util.Properties.encodingString)
-  def default             = defaultCharsetCodec
+  def defaultCharsetCodec: Codec = apply(Charset.defaultCharset)
+  def fileEncodingCodec: Codec = apply(scala.util.Properties.encodingString)
+  def default: Codec = defaultCharsetCodec
 
   def apply(encoding: String): Codec        = new Codec(Charset forName encoding)
   def apply(charSet: Charset): Codec        = new Codec(charSet)

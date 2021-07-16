@@ -1,8 +1,19 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.reflect
 
 import scala.reflect.macros.runtime.Context
 import scala.collection.mutable.{ ListBuffer, Stack }
-import scala.reflect.internal.util.Position
 import scala.PartialFunction.cond
 import scala.util.matching.Regex.Match
 
@@ -21,15 +32,15 @@ abstract class FormatInterpolator {
 
   private def bail(msg: String) = global.abort(msg)
 
-  def interpolate: Tree = c.macroApplication match {
+  def interpolateF: Tree = c.macroApplication match {
     //case q"$_(..$parts).f(..$args)" =>
     case Applied(Select(Apply(_, parts), _), _, argss) =>
       val args = argss.flatten
-      def badlyInvoked = (parts.length != args.length + 1) && truly {
+      def badlyInvoked = (parts.lengthIs != (args.length + 1)) && truly {
         def because(s: String) = s"too $s arguments for interpolated string"
         val (p, msg) =
-          if (parts.length == 0) (c.prefix.tree.pos, "there are no parts")
-          else if (args.length + 1 < parts.length)
+          if (parts.isEmpty) (c.prefix.tree.pos, "there are no parts")
+          else if (parts.lengthIs > (args.length + 1))
             (if (args.isEmpty) c.enclosingPosition else args.last.pos, because("few"))
           else (args(parts.length-1).pos, because("many"))
         c.abort(p, msg)
@@ -45,20 +56,20 @@ abstract class FormatInterpolator {
    *  is inserted.
    *
    *  In any other position, the only permissible conversions are
-   *  the literals (%% and %n) or an index reference (%1$ or %<).
+   *  the literals (%% and %n) or an index reference (%1\$ or %<).
    *
    *  A conversion specifier has the form:
    *
-   *  [index$][flags][width][.precision]conversion
+   *  [index\$][flags][width][.precision]conversion
    *
-   *  1) "...${smth}" => okay, equivalent to "...${smth}%s"
-   *  2) "...${smth}blahblah" => okay, equivalent to "...${smth}%sblahblah"
-   *  3) "...${smth}%" => error
-   *  4) "...${smth}%n" => okay, equivalent to "...${smth}%s%n"
-   *  5) "...${smth}%%" => okay, equivalent to "...${smth}%s%%"
-   *  6) "...${smth}[%legalJavaConversion]" => okay*
-   *  7) "...${smth}[%illegalJavaConversion]" => error
-   *  *Legal according to [[http://docs.oracle.com/javase/1.5.0/docs/api/java/util/Formatter.html]]
+   *  1) "...\${smth}" => okay, equivalent to "...\${smth}%s"
+   *  2) "...\${smth}blahblah" => okay, equivalent to "...\${smth}%sblahblah"
+   *  3) "...\${smth}%" => error
+   *  4) "...\${smth}%n" => okay, equivalent to "...\${smth}%s%n"
+   *  5) "...\${smth}%%" => okay, equivalent to "...\${smth}%s%%"
+   *  6) "...\${smth}[%legalJavaConversion]" => okay*
+   *  7) "...\${smth}[%illegalJavaConversion]" => error
+   *  *Legal according to [[java.util.Formatter]]
    */
   def interpolated(parts: List[Tree], args: List[Tree]) = {
     val fstring  = new StringBuilder
@@ -145,7 +156,7 @@ abstract class FormatInterpolator {
           }
         }
         if (ms.hasNext) {
-          Conversion(ms.next, part.pos, args.size) match {
+          Conversion(ms.next(), part.pos, args.size) match {
             case Some(op) if op.isLiteral => s_%()
             case Some(op) if op.indexed =>
               if (op.index map (_ == n) getOrElse true) accept(op)
@@ -161,7 +172,7 @@ abstract class FormatInterpolator {
       }
       // any remaining conversions must be either literals or indexed
       while (ms.hasNext) {
-        Conversion(ms.next, part.pos, args.size) match {
+        Conversion(ms.next(), part.pos, args.size) match {
           case Some(op) if first && op.hasFlag('<')   => op.badFlag('<', "No last arg")
           case Some(op) if op.isLiteral || op.indexed => // OK
           case Some(op) => errorLeading(op)

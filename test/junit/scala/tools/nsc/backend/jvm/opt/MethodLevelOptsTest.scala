@@ -7,13 +7,13 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.tools.asm.Opcodes._
 import scala.tools.asm.tree.ClassNode
 import scala.tools.nsc.backend.jvm.AsmUtils._
-import scala.tools.partest.ASMConverters._
-import scala.tools.testing.BytecodeTesting
-import scala.tools.testing.BytecodeTesting._
+import scala.tools.testkit.ASMConverters._
+import scala.tools.testkit.BytecodeTesting
+import scala.tools.testkit.BytecodeTesting._
 
 @RunWith(classOf[JUnit4])
 class MethodLevelOptsTest extends BytecodeTesting {
@@ -129,7 +129,8 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |    a = "met"     // since it's an ASTORE to a live variable, cannot elim the store (scala/bug#5313), but store null instead.
         |                  // so we get `LDC met; POP; ACONST_NULL; ASTORE 1`. the `LDC met; POP` is eliminated by push-pop.
         |    a = "zit"     // this store is live, so we get `LDC zit; ASOTRE 1; ALOAD 1; ARETURN`.
-        |                  // we cannot eliminated the store-load sequence, because the local is live (again scala/bug#5313).
+        |                  // we cannot eliminate the store-load sequence, because the local is live (again scala/bug#5313).
+        |    println()     // need a call instruction, otherwise trailing NULL stores are optimized away
         |    a
         |  }
         |}
@@ -140,7 +141,9 @@ class MethodLevelOptsTest extends BytecodeTesting {
       Ldc(LDC, "el"), VarOp(ASTORE, 1),
       Field(GETSTATIC, "scala/Predef$", "MODULE$", "Lscala/Predef$;"), VarOp(ALOAD, 1), Invoke(INVOKEVIRTUAL, "scala/Predef$", "println", "(Ljava/lang/Object;)V", false),
       Op(ACONST_NULL), VarOp(ASTORE, 1),
-      Ldc(LDC, "zit"), VarOp(ASTORE, 1), VarOp(ALOAD, 1), Op(ARETURN)))
+      Ldc(LDC, "zit"), VarOp(ASTORE, 1),
+      Field(GETSTATIC, "scala/Predef$", "MODULE$", "Lscala/Predef$;"), Invoke(INVOKEVIRTUAL, "scala/Predef$", "println", "()V", false),
+      VarOp(ALOAD, 1), Op(ARETURN)))
   }
 
   @Test
@@ -158,7 +161,7 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |  }
         |}
       """.stripMargin
-    val c = compileClass(code)
+    val c = compileClass(code, allowMessage = ignoreDeprecations)
     assertSameCode(getMethod(c, "t"), List(
       IntOp(BIPUSH, 23), IntOp(NEWARRAY, 5), Op(POP), VarOp(ILOAD, 1), VarOp(ILOAD, 2), Op(IADD), Op(IRETURN)))
   }
@@ -173,7 +176,7 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |  }
         |}
       """.stripMargin
-    val c = compileClass(code)
+    val c = compileClass(code, allowMessage = ignoreDeprecations)
     assertSameCode(getMethod(c, "t"), List(
       TypeOp(NEW, "java/lang/Integer"), Ldc(LDC, "nono"), Invoke(INVOKESPECIAL, "java/lang/Integer", "<init>", "(Ljava/lang/String;)V", false),
       VarOp(ILOAD, 1), VarOp(ILOAD, 2), Op(IADD), Op(IRETURN)))
@@ -290,10 +293,32 @@ class MethodLevelOptsTest extends BytecodeTesting {
   }
 
   @Test
+  def branchSensitiveNullness(): Unit = {
+    val code =
+      """class C {
+        |  def t1(x: Object) = {
+        |    if (x != null)
+        |      if (x == null) println() // eliminated
+        |    0
+        |  }
+        |
+        |  def t2(x: String) = {
+        |    x.trim
+        |    if (x == null) println() // eliminated
+        |    0
+        |  }
+        |}
+      """.stripMargin
+    val c = compileClass(code)
+    assertSameSummary(getMethod(c, "t1"), List(ICONST_0, IRETURN))
+    assertSameSummary(getMethod(c, "t2"), List(ALOAD, "trim", POP, ICONST_0, IRETURN))
+  }
+
+  @Test
   def t5313(): Unit = {
     val code =
       """class C {
-        |  def randomBoolean = scala.util.Random.nextInt % 2 == 0
+        |  def randomBoolean = scala.util.Random.nextInt() % 2 == 0
         |
         |  // 3 stores to kept1 (slot 1), 1 store to result (slot 2)
         |  def t1 = {
@@ -303,6 +328,7 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |                 // when the object has no more references. See scala/bug#5313
         |    kept1 = new Object // could eliminate this one with a more elaborate analysis (we know it contains null)
         |                       // however, such is not implemented: if a var is live, then stores are kept.
+        |    println()    // make stores non-trailing
         |    result
         |  }
         |
@@ -330,6 +356,7 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |    catch {
         |      case _ : Throwable => kept4 = null // have to keep, it clobbers kept4 which is used
         |    }
+        |    println() // make stores non-trailing
         |    0
         |  }
         |
@@ -339,6 +366,7 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |    kept5 = null // can't eliminate it's a clobber and it's used
         |    print(kept5)
         |    kept5 = null // eliminated by nullness analysis (store null to a local that is known to be null)
+        |    println()    // make stores non-trailing
         |    0
         |  }
         |
@@ -402,7 +430,7 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |    println(y)
         |  }
         |
-        |  def f = nextInt
+        |  def f = nextInt()
         |
         |  def t4 = {
         |    val x = f
@@ -411,11 +439,11 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |  }
         |
         |  def t5 = {
-        |    var x = nextInt
+        |    var x = nextInt()
         |    var y = x
         |    println(y)
         |
-        |    y = nextInt
+        |    y = nextInt()
         |    x = y
         |    println(x)
         |  }
@@ -427,7 +455,7 @@ class MethodLevelOptsTest extends BytecodeTesting {
 
     assertEquals(locals(c, "t2"), List(("this", 0), ("x", 1)))
     // we don't have constant propagation (yet).
-    // the local var can't be optimized as a store;laod sequence, there's a GETSTATIC between the two
+    // the local var can't be optimized as a store;load sequence, there's a GETSTATIC between the two
     assertSameSummary(getMethod(c, "t2"), List(
       ICONST_2, ISTORE, GETSTATIC, ILOAD, "boxToInteger", "println", RETURN))
 
@@ -508,7 +536,12 @@ class MethodLevelOptsTest extends BytecodeTesting {
         |trait T { def f(x: Int): Int }
       """.stripMargin
     val List(c, t) = compileClasses(code)
-    assertSameSummary(getMethod(c, "t1"), List(ILOAD, "$anonfun$t1$1", IRETURN))
+
+    // This test runs with an `-opt:l:method` compiler, so the inliner is not enabled. The invocation
+    // to `$anonfun$t1$1$adapted` is therefore not inlined. In reality, this doesn't matter. People
+    // would not allocate a closure just to invoke it within the same method. This optimization is
+    // useful in combination with inlining.
+    assertSameSummary(getMethod(c, "t1"), List(ILOAD, "$anonfun$t1$1$adapted", "unboxToInt", IRETURN))
     assertSameSummary(getMethod(c, "t2"), List(ILOAD, "$anonfun$t2$1", IRETURN))
   }
 }

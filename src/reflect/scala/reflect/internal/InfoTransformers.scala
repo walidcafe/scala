@@ -1,11 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect
 package internal
+
+import scala.annotation.tailrec
 
 trait InfoTransformers {
   self: SymbolTable =>
@@ -20,7 +29,8 @@ trait InfoTransformers {
     val changesBaseClasses: Boolean
     def transform(sym: Symbol, tpe: Type): Type
 
-    def insert(that: InfoTransformer): Unit = {
+    @tailrec
+    final def insert(that: InfoTransformer): Unit = {
       assert(this.pid != that.pid, this.pid)
 
       if (that.pid < this.pid) {
@@ -40,7 +50,8 @@ trait InfoTransformers {
      *  If no such exists, the InfoTransformer with the next
      *  higher pid.
      */
-    def nextFrom(from: Phase#Id): InfoTransformer =
+    @tailrec
+    final def nextFrom(from: Phase#Id): InfoTransformer =
       if (from == this.pid) this
       else if (from < this.pid)
         if (prev.pid < from) this

@@ -1,18 +1,18 @@
 import scala.language.implicitConversions
 import scala.math.Ordering
-import collection.{AnyConstr, BuildFrom, Iterable, IterableOps, SeqOps}
+import collection.{BuildFrom, Iterable, IterableOps, SeqOps}
 import collection.immutable.BitSet
 
 class QuickSort[Coll](a: Coll) {
-  //should be able to sort only something with defined order (someting like a Seq)
-  def quickSort[T](implicit ev0: Coll => SeqOps[T, AnyConstr, Iterable[T]],
+  //should be able to sort only something with defined order (something like a Seq)
+  def quickSort[T](implicit ev0: Coll => SeqOps[T, Any, Iterable[T]],
                    bf: BuildFrom[Coll, T, Coll],
                    n: Ordering[T]): Coll = {
     quickSortAnything(ev0, bf, n)
   }
 
   //we can even sort a Set, if we really want to
-  def quickSortAnything[T](implicit ev0: Coll => IterableOps[T, AnyConstr, Iterable[T]],
+  def quickSortAnything[T](implicit ev0: Coll => IterableOps[T, Any, Iterable[T]],
                            bf: BuildFrom[Coll, T, Coll],
                            n: Ordering[T]): Coll = {
     import n._
@@ -28,7 +28,7 @@ class QuickSort[Coll](a: Coll) {
       b ++= new QuickSort(lower).quickSortAnything
       b ++= same
       b ++= new QuickSort(upper).quickSortAnything
-      b.result
+      b.result()
     }
   }
 }
@@ -36,13 +36,13 @@ class QuickSort[Coll](a: Coll) {
 class FilterMap[Repr](a: Repr) {
   def filterMap[A, B, That](f: A => Option[B])(implicit ev0: Repr => IterableOps[A, Iterable, _],
                                                bf: BuildFrom[Repr, B, That]): That = {
-    bf.fromSpecificIterable(a)(a.flatMap(e => f(e).toSeq))
+    bf.fromSpecific(a)(a.flatMap(e => f(e)))
   }
 }
 
 class FilterMapFixed[A, Repr <% IterableOps[A, Iterable, _]](a: Repr) {
   def filterMap2[B, That](f: A => Option[B])(implicit bf: BuildFrom[Repr, B, That]): That = {
-    bf.fromSpecificIterable(a)(a.flatMap(e => f(e).toSeq))
+    bf.fromSpecific(a)(a.flatMap(e => f(e)))
   }
 }
 
@@ -68,7 +68,7 @@ object Test extends App {
   println("qwe".filterMap((c: Char) => Some(c.toInt)))
   println("qwe".filterMap((c: Char) => Some(c)))
   println(Array(2, 0).filterMap((c: Int) => Some(c.toInt)).toList)
-  println(Seq(2, 0).filterMap((c: Int) => if (c < 2) Some(c + "!") else None))
+  println(Seq(2, 0).filterMap((c: Int) => if (c < 2) Some(s"$c!") else None))
   def test(i:Int) = Option(i)
   println(BitSet(2,0).filterMap(test))
 

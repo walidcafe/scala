@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Burak Emir
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -20,7 +27,6 @@ import scala.reflect.internal.util.StringOps.splitWhere
  *  who understands this part better wants to give it a shot, please do!
  *
  *  @author  Burak Emir
- *  @version 1.0
  */
 abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
   val global: Global
@@ -29,32 +35,32 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
   private[parser] var isPattern: Boolean = _
 
   private object xmltypes extends TypeNames {
-    val _Comment: NameType             = "Comment"
-    val _Elem: NameType                = "Elem"
-    val _EntityRef: NameType           = "EntityRef"
-    val _Group: NameType               = "Group"
-    val _MetaData: NameType            = "MetaData"
-    val _NamespaceBinding: NameType    = "NamespaceBinding"
-    val _NodeBuffer: NameType          = "NodeBuffer"
-    val _PCData: NameType              = "PCData"
-    val _PrefixedAttribute: NameType   = "PrefixedAttribute"
-    val _ProcInstr: NameType           = "ProcInstr"
-    val _Text: NameType                = "Text"
-    val _Unparsed: NameType            = "Unparsed"
-    val _UnprefixedAttribute: NameType = "UnprefixedAttribute"
+    val _Comment: NameType             = nameType("Comment")
+    val _Elem: NameType                = nameType("Elem")
+    val _EntityRef: NameType           = nameType("EntityRef")
+    val _Group: NameType               = nameType("Group")
+    val _MetaData: NameType            = nameType("MetaData")
+    val _NamespaceBinding: NameType    = nameType("NamespaceBinding")
+    val _NodeBuffer: NameType          = nameType("NodeBuffer")
+    val _PCData: NameType              = nameType("PCData")
+    val _PrefixedAttribute: NameType   = nameType("PrefixedAttribute")
+    val _ProcInstr: NameType           = nameType("ProcInstr")
+    val _Text: NameType                = nameType("Text")
+    val _Unparsed: NameType            = nameType("Unparsed")
+    val _UnprefixedAttribute: NameType = nameType("UnprefixedAttribute")
   }
 
   private object xmlterms extends TermNames {
-    val _Null: NameType     = "Null"
-    val __Elem: NameType    = "Elem"
-    val _PCData: NameType   = "PCData"
-    val __Text: NameType    = "Text"
-    val _buf: NameType      = "$buf"
-    val _md: NameType       = "$md"
-    val _plus: NameType     = "$amp$plus"
-    val _scope: NameType    = "$scope"
-    val _tmpscope: NameType = "$tmpscope"
-    val _xml: NameType      = "xml"
+    val _Null: NameType     = nameType("Null")
+    val __Elem: NameType    = nameType("Elem")
+    val _PCData: NameType   = nameType("PCData")
+    val __Text: NameType    = nameType("Text")
+    val _buf: NameType      = nameType("$buf")
+    val _md: NameType       = nameType("$md")
+    val _plus: NameType     = nameType("$amp$plus")
+    val _scope: NameType    = nameType("$scope")
+    val _tmpscope: NameType = nameType("$tmpscope")
+    val _xml: NameType      = nameType("xml")
   }
 
   import xmltypes.{
@@ -137,7 +143,7 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
   protected def Comment(txt: Tree)                  = New(_scala_xml_Comment, LL(txt))
   protected def ProcInstr(target: Tree, txt: Tree)  = New(_scala_xml_ProcInstr, LL(target, txt))
 
-  /** @todo: attributes */
+  /** @todo attributes */
   def makeXMLpat(pos: Position, n: String, args: scala.collection.Seq[Tree]): Tree = {
     val (prepat, labpat) = splitPrefix(n) match {
       case (Some(pre), rest)  => (const(pre), const(rest))

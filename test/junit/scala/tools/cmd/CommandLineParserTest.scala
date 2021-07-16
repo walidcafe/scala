@@ -4,7 +4,7 @@ import org.junit.Assert._
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
-import scala.tools.testing.AssertUtil.assertThrows
+import scala.tools.testkit.AssertUtil.assertThrows
 
 @RunWith(classOf[JUnit4])
 class CommandLineParserTest {
@@ -42,4 +42,5 @@ class CommandLineParserTest {
     assertThrows[ParseException](tokenize(""""x"""))         // was assertEquals(List("\"x"), tokenize(""""x"""))
     assertThrows[ParseException](tokenize("""x'"""))
   }
+  @Test def leadingSpaces(): Unit = assertEquals(List("text"), tokenize(" text"))
 }

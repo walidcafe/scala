@@ -1,6 +1,7 @@
 package scala.reflect.quasiquotes
 
 import org.scalacheck._, Prop._, Gen._, Arbitrary._
+import scala.language.reflectiveCalls
 import scala.reflect.runtime.universe._, Flag._, internal.reificationSupport.ScalaDot
 
 object DefinitionConstructionProps
@@ -12,8 +13,10 @@ object DefinitionConstructionProps
     with PatDefConstruction
     with DefConstruction
     with PackageConstruction
-    with ImportConstruction {
+    with ImportConstruction
+    with QuasiquoteSliceTypeTests
 
+trait QuasiquoteSliceTypeTests { self: QuasiquoteProperties =>
   val x: Tree = q"val x: Int"
   property("scala/bug#6842 a1") = test { assertEqAst(q"def f($x) = 0", "def f(x: Int) = 0") }
   property("scala/bug#6842 a2") = test { assertEqAst(q"class C($x)", "class C(val x: Int)") }
@@ -29,13 +32,14 @@ object DefinitionConstructionProps
 
 trait ClassConstruction { self: QuasiquoteProperties =>
   val anyRef = ScalaDot(TypeName("AnyRef"))
-  val emtpyConstructor =
+  val emptyConstructor =
     DefDef(Modifiers(), termNames.CONSTRUCTOR, List(),
       List(List()), TypeTree(), Block(List(pendingSuperCall), Literal(Constant(()))))
+  @annotation.nowarn("cat=deprecation&msg=emptyValDef")
   def classWith(name: TypeName, parents: List[Tree] = List(anyRef), body: List[DefDef] = Nil) =
     ClassDef(
       Modifiers(), name, List(),
-      Template(parents, emptyValDef, emtpyConstructor :: body))
+      Template(parents, emptyValDef, emptyConstructor :: body))
 
   property("construct case class") = test {
     val params = q"val x: Int" :: q"val y: Int" :: Nil
@@ -229,7 +233,7 @@ trait ValDefConstruction { self: QuasiquoteProperties =>
     q"var $name: $tpt = $rhs" ≈ ValDef(Modifiers(MUTABLE), name, tpt, rhs)
   }
 
-  // left tree is not a pattern due to Si-8211
+  // left tree is not a pattern due to scala/bug#8211
   property("scala/bug#8202") = test {
     assertEqAst(q"val (x: Int) = 1", "val x: Int = 1")
   }

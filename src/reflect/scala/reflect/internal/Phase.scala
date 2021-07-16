@@ -1,13 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect
 package internal
 
-abstract class Phase(val prev: Phase) {
+abstract class Phase(val prev: Phase) extends Ordered[Phase] {
   if ((prev ne null) && (prev ne NoPhase))
     prev.nx = this
 
@@ -15,10 +22,10 @@ abstract class Phase(val prev: Phase) {
   val id: Id = if (prev eq null) 0 else prev.id + 1
 
   /** New flags visible after this phase has completed */
-  def nextFlags: Long = 0l
+  def nextFlags: Long = 0L
 
   /** New flags visible once this phase has started */
-  def newFlags: Long = 0l
+  def newFlags: Long = 0L
 
   val fmask = (
     if (prev eq null) Flags.InitialFlags
@@ -41,8 +48,7 @@ abstract class Phase(val prev: Phase) {
   def checkable: Boolean = true
 
   // NOTE: sbt injects its own phases which extend this class, and not GlobalPhase, so we must implement this logic here
-  private val _erasedTypes = ((prev ne null) && (prev ne NoPhase)) && (prev.name == "erasure" || prev.erasedTypes)
-  def erasedTypes: Boolean = _erasedTypes // overridden in back-end
+  final val erasedTypes: Boolean   = ((prev ne null) && (prev ne NoPhase)) && (prev.name == "erasure"    || prev.erasedTypes)
   final val flatClasses: Boolean   = ((prev ne null) && (prev ne NoPhase)) && (prev.name == "flatten"    || prev.flatClasses)
   final val specialized: Boolean   = ((prev ne null) && (prev ne NoPhase)) && (prev.name == "specialize" || prev.specialized)
   final val refChecked: Boolean    = ((prev ne null) && (prev ne NoPhase)) && (prev.name == "refchecks"  || prev.refChecked)
@@ -64,6 +70,7 @@ abstract class Phase(val prev: Phase) {
     case x: Phase   => id == x.id && name == x.name
     case _          => false
   }
+  override def compare(that: Phase): Id = this.id compare that.id
 }
 
 object NoPhase extends Phase(null) {

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package api
@@ -22,10 +34,24 @@ package api
  *  In this example, a [[scala.reflect.api.Types#TypeRef]] is returned, which corresponds to the type constructor `List`
  *  applied to the type argument `Int`.
  *
+ *  In the case of a generic type, you can also combine it with other types
+ *  using [[scala.reflect.api.Types#appliedType]]. For example:
+ *
+ *  {{{
+ *    scala> val intType = typeOf[Int]
+ *    intType: reflect.runtime.universe.Type = Int
+ *
+ *    scala> val listType = typeOf[List[_]]
+ *    listType: reflect.runtime.universe.Type = List[_]
+ *
+ *    scala> appliedType(listType.typeConstructor, intType)
+ *    res0: reflect.runtime.universe.Type = List[Int]
+ *  }}}
+ *
  *  ''Note:'' Method `typeOf` does not work for types with type parameters, such as `typeOf[List[A]]` where `A` is
  *  a type parameter. In this case, use [[scala.reflect.api.TypeTags#weakTypeOf]] instead.
  *
- *  For other ways to instantiate types, see the [[http://docs.scala-lang.org/overviews/reflection/symbols-trees-types.html corresponding section of the Reflection Guide]].
+ *  For other ways to instantiate types, see the [[https://docs.scala-lang.org/overviews/reflection/symbols-trees-types.html corresponding section of the Reflection Guide]].
  *
  *  === Common Operations on Types ===
  *
@@ -39,16 +65,15 @@ package api
  *  For example, to look up the `map` method of `List`, one can do:
  *
  *  {{{
- *     scala> typeOf[List[_]].member("map": TermName)
+ *     scala> typeOf[List[_]].member(TermName("map"))
  *     res1: reflect.runtime.universe.Symbol = method map
  *  }}}
  *
- * For more information about `Type`s, see the [[http://docs.scala-lang.org/overviews/reflection/symbols-trees-types.html Reflection Guide: Symbols, Trees, and Types]]
+ * For more information about `Type`s, see the [[https://docs.scala-lang.org/overviews/reflection/symbols-trees-types.html Reflection Guide: Symbols, Trees, and Types]]
  *
  *  @groupname TypeCreators Types - Creation
  *  @groupname TypeOps      Types - Operations
  *  @group ReflectionAPI
- *
  *  @contentDiagram hideNodes "*Api"
  */
 trait Types {
@@ -112,7 +137,7 @@ trait Types {
      *  Unlike `members` this method doesn't returns inherited members.
      *
      *  Members in the returned scope might appear in arbitrary order.
-     *  Use `declarations.sorted` to get an ordered list of members.
+     *  Use `decls.sorted` to get an ordered list of members.
      */
     def decls: MemberScope
 
@@ -125,7 +150,7 @@ trait Types {
      *  Unlike `declarations` this method also returns inherited members.
      *
      *  Members in the returned scope might appear in arbitrary order.
-     *  Use `declarations.sorted` to get an ordered list of members.
+     *  Use `members.sorted` to get an ordered list of members.
      */
     def members: MemberScope
 
@@ -282,7 +307,7 @@ trait Types {
      *
      *  {{{
      *  scala> class C { def foo[T](x: T)(y: T) = ??? }
-     *  defined class C
+     *  class C
      *
      *  scala> typeOf[C].member(TermName("foo")).asMethod
      *  res0: reflect.runtime.universe.MethodSymbol = method foo
@@ -312,10 +337,10 @@ trait Types {
      *
      *  {{{
      *  scala> class C {
-     *       | def foo[T](x: T)(y: T) = ???
-     *       | def bar: Int = ???
+     *       |   def foo[T](x: T)(y: T) = ???
+     *       |   def bar: Int = ???
      *       | }
-     *  defined class C
+     *  class C
      *
      *  scala> typeOf[C].member(TermName("foo")).asMethod
      *  res0: reflect.runtime.universe.MethodSymbol = method foo
@@ -338,7 +363,7 @@ trait Types {
      *  scala> typeOf[C].member(TermName("bar")).asMethod
      *  res6: reflect.runtime.universe.MethodSymbol = method bar
      *
-     *  scala> res6.info
+     *  scala> res6.info // vanilla NullaryMethodType
      *  res7: reflect.runtime.universe.Type = => scala.Int
      *
      *  scala> res6.info.resultType
@@ -429,7 +454,7 @@ trait Types {
   abstract class ThisTypeExtractor {
     def unapply(tpe: ThisType): Option[Symbol]
 
-    /** @see [[InternalApi.thisType]] */
+    /** @see [[Internals.InternalApi.thisType]] */
     @deprecated("use `internal.thisType` instead", "2.11.0")
     def apply(sym: Symbol)(implicit token: CompatToken): Type = internal.thisType(sym)
   }
@@ -468,7 +493,7 @@ trait Types {
   abstract class SingleTypeExtractor {
     def unapply(tpe: SingleType): Option[(Type, Symbol)]
 
-    /** @see [[InternalApi.singleType]] */
+    /** @see [[Internals.InternalApi.singleType]] */
     @deprecated("use `ClassSymbol.thisPrefix` or `internal.singleType` instead", "2.11.0")
     def apply(pre: Type, sym: Symbol)(implicit token: CompatToken): Type = internal.singleType(pre, sym)
   }
@@ -485,7 +510,7 @@ trait Types {
     def sym: Symbol
   }
   /** The `SuperType` type is not directly written, but arises when `C.super` is used
-   *  as a prefix in a `TypeRef` or `SingleType`. It's internal presentation is
+   *  as a prefix in a `TypeRef` or `SingleType`. Its internal presentation is
    *  {{{
    *     SuperType(thistpe, supertpe)
    *  }}}
@@ -502,13 +527,13 @@ trait Types {
    */
   val SuperType: SuperTypeExtractor
 
-  /** An extractor class to create and pattern match with syntax `SingleType(thistpe, supertpe)`
+  /** An extractor class to create and pattern match with syntax `SuperType(thistpe, supertpe)`
    *  @group Extractors
    */
   abstract class SuperTypeExtractor {
     def unapply(tpe: SuperType): Option[(Type, Type)]
 
-    /** @see [[InternalApi.superType]] */
+    /** @see [[Internals.InternalApi.superType]] */
     @deprecated("use `ClassSymbol.superPrefix` or `internal.superType` instead", "2.11.0")
     def apply(thistpe: Type, supertpe: Type)(implicit token: CompatToken): Type = internal.superType(thistpe, supertpe)
   }
@@ -556,7 +581,7 @@ trait Types {
   abstract class ConstantTypeExtractor {
     def unapply(tpe: ConstantType): Option[Constant]
 
-    /** @see [[InternalApi.constantType]] */
+    /** @see [[Internals.InternalApi.constantType]] */
     @deprecated("use `value.tpe` or `internal.constantType` instead", "2.11.0")
     def apply(value: Constant)(implicit token: CompatToken): ConstantType = internal.constantType(value)
   }
@@ -599,7 +624,7 @@ trait Types {
   abstract class TypeRefExtractor {
     def unapply(tpe: TypeRef): Option[(Type, Symbol, List[Type])]
 
-    /** @see [[InternalApi.typeRef]] */
+    /** @see [[Internals.InternalApi.typeRef]] */
     @deprecated("use `internal.typeRef` instead", "2.11.0")
     def apply(pre: Type, sym: Symbol, args: List[Type])(implicit token: CompatToken): Type = internal.typeRef(pre, sym, args)
   }
@@ -659,11 +684,11 @@ trait Types {
   abstract class RefinedTypeExtractor {
     def unapply(tpe: RefinedType): Option[(List[Type], Scope)]
 
-    /** @see [[InternalApi.refinedType]] */
+    /** @see [[Internals.InternalApi.refinedType]] */
     @deprecated("use `internal.refinedType` instead", "2.11.0")
     def apply(parents: List[Type], decls: Scope)(implicit token: CompatToken): RefinedType = internal.refinedType(parents, decls)
 
-    /** @see [[InternalApi.refinedType]] */
+    /** @see [[Internals.InternalApi.refinedType]] */
     @deprecated("use `internal.refinedType` instead", "2.11.0")
     def apply(parents: List[Type], decls: Scope, clazz: Symbol)(implicit token: CompatToken): RefinedType = internal.refinedType(parents, decls, clazz)
   }
@@ -708,7 +733,7 @@ trait Types {
   abstract class ClassInfoTypeExtractor {
     def unapply(tpe: ClassInfoType): Option[(List[Type], Scope, Symbol)]
 
-    /** @see [[InternalApi.classInfoType]] */
+    /** @see [[Internals.InternalApi.classInfoType]] */
     @deprecated("use `internal.classInfoType` instead", "2.11.0")
     def apply(parents: List[Type], decls: Scope, typeSymbol: Symbol)(implicit token: CompatToken): ClassInfoType = internal.classInfoType(parents, decls, typeSymbol)
   }
@@ -757,7 +782,7 @@ trait Types {
   abstract class MethodTypeExtractor {
     def unapply(tpe: MethodType): Option[(List[Symbol], Type)]
 
-    /** @see [[InternalApi.methodType]] */
+    /** @see [[Internals.InternalApi.methodType]] */
     @deprecated("use `internal.methodType` instead", "2.11.0")
     def apply(params: List[Symbol], resultType: Type)(implicit token: CompatToken): MethodType = internal.methodType(params, resultType)
   }
@@ -793,7 +818,7 @@ trait Types {
   abstract class NullaryMethodTypeExtractor {
     def unapply(tpe: NullaryMethodType): Option[(Type)]
 
-    /** @see [[InternalApi.nullaryMethodType]] */
+    /** @see [[Internals.InternalApi.nullaryMethodType]] */
     @deprecated("use `internal.nullaryMethodType` instead", "2.11.0")
     def apply(resultType: Type)(implicit token: CompatToken): NullaryMethodType = internal.nullaryMethodType(resultType)
   }
@@ -827,7 +852,7 @@ trait Types {
   abstract class PolyTypeExtractor {
     def unapply(tpe: PolyType): Option[(List[Symbol], Type)]
 
-    /** @see [[InternalApi.polyType]] */
+    /** @see [[Internals.InternalApi.polyType]] */
     @deprecated("use `internal.polyType` instead", "2.11.0")
     def apply(typeParams: List[Symbol], resultType: Type)(implicit token: CompatToken): PolyType = internal.polyType(typeParams, resultType)
   }
@@ -865,7 +890,7 @@ trait Types {
   abstract class ExistentialTypeExtractor {
     def unapply(tpe: ExistentialType): Option[(List[Symbol], Type)]
 
-    /** @see [[InternalApi.existentialType]] */
+    /** @see [[Internals.InternalApi.existentialType]] */
     @deprecated("use `internal.existentialType` instead", "2.11.0")
     def apply(quantified: List[Symbol], underlying: Type)(implicit token: CompatToken): ExistentialType = internal.existentialType(quantified, underlying)
   }
@@ -903,7 +928,7 @@ trait Types {
   abstract class AnnotatedTypeExtractor {
     def unapply(tpe: AnnotatedType): Option[(List[Annotation], Type)]
 
-    /** @see [[InternalApi.annotatedType]] */
+    /** @see [[Internals.InternalApi.annotatedType]] */
     @deprecated("use `internal.annotatedType` instead", "2.11.0")
     def apply(annotations: List[Annotation], underlying: Type)(implicit token: CompatToken): AnnotatedType = internal.annotatedType(annotations, underlying)
   }
@@ -947,7 +972,7 @@ trait Types {
   abstract class TypeBoundsExtractor {
     def unapply(tpe: TypeBounds): Option[(Type, Type)]
 
-    /** @see [[InternalApi.typeBounds]] */
+    /** @see [[Internals.InternalApi.typeBounds]] */
     @deprecated("use `internal.typeBounds` instead", "2.11.0")
     def apply(lo: Type, hi: Type)(implicit token: CompatToken): TypeBounds = internal.typeBounds(lo, hi)
   }
@@ -1000,7 +1025,7 @@ trait Types {
   abstract class BoundedWildcardTypeExtractor {
     def unapply(tpe: BoundedWildcardType): Option[TypeBounds]
 
-    /** @see [[InternalApi.boundedWildcardType]] */
+    /** @see [[Internals.InternalApi.boundedWildcardType]] */
     @deprecated("use `internal.boundedWildcardType` instead", "2.11.0")
     def apply(bounds: TypeBounds)(implicit token: CompatToken): BoundedWildcardType = internal.boundedWildcardType(bounds)
   }
@@ -1024,7 +1049,21 @@ trait Types {
    */
   def glb(ts: List[Type]): Type
 
-  /** A creator for type applications
+  /** A creator for type applications.
+   *
+   *  Useful to combine and create types out of generic ones. For example:
+   *
+   *  {{{
+   *    scala> val boolType = typeOf[Boolean]
+   *    boolType: reflect.runtime.universe.Type = Boolean
+   *
+   *    scala> val optionType = typeOf[Option[_]]
+   *    optionType: reflect.runtime.universe.Type = Option[_]
+   *
+   *    scala> appliedType(optionType.typeConstructor, boolType)
+   *    res0: reflect.runtime.universe.Type = Option[Boolean]
+   *  }}}
+   *
    *  @group TypeOps
    */
   def appliedType(tycon: Type, args: List[Type]): Type

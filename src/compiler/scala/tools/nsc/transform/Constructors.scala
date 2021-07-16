@@ -1,6 +1,13 @@
-/*  NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -8,6 +15,7 @@ package transform
 
 import scala.collection.mutable
 import scala.reflect.internal.util.ListOfNil
+import scala.tools.nsc.Reporting.WarningCategory
 import symtab.Flags._
 
 /** This phase converts classes with parameters into Java-like classes with
@@ -20,7 +28,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
   /** the following two members override abstract members in Transform */
   val phaseName: String = "constructors"
 
-  protected def newTransformer(unit: CompilationUnit): Transformer =
+  protected def newTransformer(unit: CompilationUnit): AstTransformer =
     new ConstructorTransformer(unit)
 
   private val guardedCtorStats: mutable.Map[Symbol, List[Tree]] = perRunCaches.newMap[Symbol, List[Tree]]()
@@ -53,7 +61,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
         def check(tree: Tree) = {
           for (t <- tree) t match {
             case t: RefTree if uninitializedVals(t.symbol.accessedOrSelf) && t.qualifier.symbol == clazz =>
-              reporter.warning(t.pos, s"Reference to uninitialized ${t.symbol.accessedOrSelf}")
+              runReporting.warning(t.pos, s"Reference to uninitialized ${t.symbol.accessedOrSelf}", WarningCategory.Other, t.symbol)
             case _ =>
           }
         }
@@ -150,7 +158,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
    *
    */
   private trait OmittablesHelper {
-    def computeOmittableAccessors(clazz: Symbol, defs: List[Tree], auxConstructors: List[Tree]): Set[Symbol] = {
+    def computeOmittableAccessors(clazz: Symbol, defs: List[Tree], auxConstructors: List[Tree], constructor: List[Tree]): Set[Symbol] = {
       val decls = clazz.info.decls.toSet
       val isEffectivelyFinal = clazz.isEffectivelyFinal
 
@@ -164,7 +172,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
       //   class Outer { def test = {class LocalParent; class LocalChild extends LocalParent } }
       //
       // See run/t9408.scala for related test cases.
-      def omittableParamAcc(sym: Symbol) = sym.isParamAccessor && sym.isPrivateLocal
+      def omittableParamAcc(sym: Symbol) = sym.isParamAccessor && sym.isPrivateLocal && !sym.isVariable
       def omittableOuterAcc(sym: Symbol) = isEffectivelyFinal && sym.isOuterAccessor && !sym.isOverridingSymbol
       val omittables = mutable.Set.empty[Symbol] ++ (decls filter (sym => omittableParamAcc(sym) || omittableOuterAcc(sym))) // the closure only captures isEffectivelyFinal
 
@@ -250,7 +258,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
       methodSym setInfoAndEnter MethodType(Nil, UnitTpe)
 
       // changeOwner needed because the `stats` contained in the DefDef were owned by the template, not long ago.
-      val blk       = Block(stats, gen.mkZero(UnitTpe)).changeOwner(impl.symbol -> methodSym)
+      val blk       = Block(stats, gen.mkZero(UnitTpe)).changeOwner(impl.symbol, methodSym)
       val delayedDD = localTyper typed { DefDef(methodSym, Nil, blk) }
 
       delayedDD.asInstanceOf[DefDef]
@@ -264,16 +272,10 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
 
           closureClass setInfoAndEnter new ClassInfoType(closureParents, newScope, closureClass)
 
-          val outerField: TermSymbol = (
-            closureClass
-              newValue(nme.OUTER, impl.pos, PrivateLocal | PARAMACCESSOR)
-              setInfoAndEnter clazz.tpe
-          )
-          val applyMethod: MethodSymbol = (
-            closureClass
-              newMethod(nme.apply, impl.pos, FINAL)
-              setInfoAndEnter MethodType(Nil, ObjectTpe)
-          )
+          val outerField: TermSymbol =
+            closureClass.newValue(nme.OUTER, impl.pos, PrivateLocal | PARAMACCESSOR) setInfoAndEnter clazz.tpe
+          val applyMethod: MethodSymbol =
+            closureClass.newMethod(nme.apply, impl.pos, FINAL) setInfoAndEnter MethodType(Nil, ObjectTpe)
           val outerFieldDef     = ValDef(outerField)
           val closureClassTyper = localTyper.atOwner(closureClass)
           val applyMethodTyper  = closureClassTyper.atOwner(applyMethod)
@@ -351,7 +353,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
        */
       def rewriteArrayUpdate(tree: Tree): Tree = {
         val arrayUpdateMethod = currentRun.runDefinitions.arrayUpdateMethod
-        val adapter = new Transformer {
+        val adapter = new AstTransformer {
           override def transform(t: Tree): Tree = t match {
             case Apply(fun @ Select(receiver, method), List(xs, idx, v)) if fun.symbol == arrayUpdateMethod =>
               localTyper.typed(Apply(gen.mkAttributedSelect(xs, arrayUpdateMethod), List(idx, v)))
@@ -375,7 +377,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
         }
 
         if (stat1 eq stat) {
-          assert(ctorParams(genericClazz).length == primaryConstrParams.length)
+          assert(ctorParams(genericClazz).length == primaryConstrParams.length, "Bad param len")
           // this is just to make private fields public
           (new specializeTypes.ImplementationAdapter(ctorParams(genericClazz), primaryConstrParams, null, true))(stat1)
 
@@ -467,26 +469,28 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
       abort("no constructor in template: impl = " + impl)
     }
 
-
     def primaryConstrParams  = _primaryConstrParams
     def usesSpecializedField = intoConstructor.usesSpecializedField
 
     // The constructor parameter corresponding to an accessor
-    def parameter(acc: Symbol): Symbol = parameterNamed(acc.unexpandedName.getterName)
-
-    // The constructor parameter with given name. This means the parameter
-    // has given name, or starts with given name, and continues with a `$` afterwards.
-    def parameterNamed(name: Name): Symbol = {
-      def matchesName(param: Symbol) = param.name == name || param.name.startsWith(name + nme.NAME_JOIN_STRING)
-
-      primaryConstrParams filter matchesName match {
-        case Nil    => abort(name + " not in " + primaryConstrParams)
-        case p :: _ => p
-      }
+    def parameter(acc: Symbol): Symbol = {
+      //works around the edge case where unexpandedName over-unexpands shenanigans like literal $$ or `$#`
+      def unexpanded = parameterNamed(acc.unexpandedName.getterName)
+      def expanded = parameterNamed(acc.getterName)
+      unexpanded.orElse(expanded).swap.map(abort).merge
     }
 
+    // The constructor parameter with given getter name. This means the parameter name
+    // decodes to the same name that the getter decodes to
+    def parameterNamed(name: Name): Either[String, Symbol] =  
+      primaryConstrParams.filter(_.name.decodedName == name.decodedName) match {
+        case List(p) => Right(p)
+        case Nil     => Left(s"No constructor parameter named $name (decoded to ${name.decodedName}) found in list of constructor parameters $primaryConstrParams (decoded to ${primaryConstrParams.map(_.decodedName)})")
+        case ps      => Left(s"$name matches multiple constructor parameters $ps")
+      }
+
     // A transformer for expressions that go into the constructor
-    object intoConstructor extends Transformer {
+    object intoConstructor extends AstTransformer {
       /*
       * `usesSpecializedField` makes a difference in deciding whether constructor-statements
       * should be guarded in a `guardSpecializedFieldInit` class, ie in a class that's the generic super-class of
@@ -504,7 +508,8 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
       private def isStationaryParamRef(sym: Symbol) = (
         isParamRef(sym) &&
         !(sym.isGetter && sym.accessed.isVariable) &&
-        !sym.isSetter
+        !sym.isSetter &&
+        !sym.isVariable
       )
 
       /*
@@ -528,7 +533,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
           else if (canBeSupplanted(tree.symbol))
             gen.mkAttributedIdent(parameter(tree.symbol)) setPos tree.pos
           else if (tree.symbol.outerSource == clazz && !isDelayedInitSubclass)
-            gen.mkAttributedIdent(parameterNamed(nme.OUTER)) setPos tree.pos
+            gen.mkAttributedIdent(parameterNamed(nme.OUTER).fold(abort, identity)).setPos(tree.pos)
           else
             super.transform(tree)
 
@@ -549,7 +554,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
       // Move tree into constructor, take care of changing owner from `oldOwner` to `newOwner` (the primary constructor symbol)
       def apply(oldOwner: Symbol, newOwner: Symbol)(tree: Tree) =
         if (tree eq EmptyTree) tree
-        else transform(tree.changeOwner(oldOwner -> newOwner))
+        else transform(tree.changeOwner(oldOwner, newOwner))
     }
 
     // Assign `rhs` to class field / trait setter `assignSym`
@@ -674,7 +679,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
             case dd: DefDef =>
               // either move the RHS to ctor (for getter of stored field) or just drop it (for corresponding setter)
               def shouldMoveRHS =
-                clazz.isTrait && statSym.isAccessor && !statSym.isLazy && (statSym.isSetter || memoizeValue(statSym))
+                clazz.isTrait && statSym.isAccessor && !statSym.isLazy && !statSym.isSpecialized && (statSym.isSetter || memoizeValue(statSym))
 
               if ((dd.rhs eq EmptyTree) || !shouldMoveRHS) { defBuf += dd }
               else {
@@ -696,7 +701,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
       // omit unused outers
       val omittableAccessor: Set[Symbol] =
         if (isDelayedInitSubclass) Set.empty
-        else computeOmittableAccessors(clazz, defs, auxConstructors)
+        else computeOmittableAccessors(clazz, defs, auxConstructors, constructorStats)
 
       // TODO: this should omit fields for non-memoized (constant-typed, unit-typed vals need no storage --
       // all the action is in the getter)
@@ -731,18 +736,7 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
         copyParam(accSetter, parameter(acc))
       }
 
-      // Return a pair consisting of (all statements up to and including superclass and trait constr calls, rest)
-      def splitAtSuper(stats: List[Tree]) = {
-        def isConstr(tree: Tree): Boolean = tree match {
-          case Block(_, expr) => isConstr(expr) // scala/bug#6481 account for named argument blocks
-          case _              => (tree.symbol ne null) && tree.symbol.isConstructor
-        }
-        val (pre, rest0)       = stats span (!isConstr(_))
-        val (supercalls, rest) = rest0 span (isConstr(_))
-        (pre ::: supercalls, rest)
-      }
-
-      val (uptoSuperStats, remainingConstrStats) = splitAtSuper(constructorStats)
+      val (uptoSuperStats, remainingConstrStats) = treeInfo.splitAtSuper(constructorStats, classOnly = false)
 
       /* TODO: XXX This condition (`isDelayedInitSubclass && remainingConstrStats.nonEmpty`) is not correct:
       * remainingConstrStats.nonEmpty excludes too much,
@@ -752,15 +746,29 @@ abstract class Constructors extends Statics with Transform with TypingTransforme
       * See test case files/run/bug4680.scala, the output of which is wrong in many
       * particulars.
       */
+      var needFenceForDelayedInit = false
       val (delayedHookDefs, remainingConstrStatsDelayedInit) =
-        if (isDelayedInitSubclass && remainingConstrStats.nonEmpty) delayedInitDefsAndConstrStats(defs, remainingConstrStats)
-        else (Nil, remainingConstrStats)
+        if (isDelayedInitSubclass && remainingConstrStats.nonEmpty) {
+          remainingConstrStats foreach {
+            case Assign(lhs, _ ) =>
+              lhs.symbol.setFlag(MUTABLE) // delayed init fields cannot be final, scala/bug#11412
+              needFenceForDelayedInit = true
+            case _ =>
+          }
+          delayedInitDefsAndConstrStats(defs, remainingConstrStats)
+        } else
+          (Nil, remainingConstrStats)
+
+      val fence = if (needFenceForDelayedInit || clazz.primaryConstructor.hasAttachment[ConstructorNeedsFence.type]) {
+        val tree = localTyper.typedPos(clazz.primaryConstructor.pos)(gen.mkMethodCall(RuntimeStaticsModule, nme.releaseFence, Nil))
+        tree :: Nil
+      } else Nil
 
       // Assemble final constructor
       val primaryConstructor = deriveDefDef(primaryConstr)(_ => {
         treeCopy.Block(
           primaryConstrBody,
-          paramInits ::: constructorPrefix ::: uptoSuperStats ::: guardSpecializedInitializer(remainingConstrStatsDelayedInit),
+          paramInits ::: constructorPrefix ::: uptoSuperStats ::: guardSpecializedInitializer(remainingConstrStatsDelayedInit) ::: fence,
           primaryConstrBody.expr)
       })
 

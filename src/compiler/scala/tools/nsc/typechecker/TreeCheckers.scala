@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -9,13 +16,16 @@ package typechecker
 import scala.collection.mutable
 import scala.reflect.internal.util.shortClassOfInstance
 import scala.reflect.internal.util.StringOps._
+import scala.tools.nsc.Reporting.WarningCategory
 
 abstract class TreeCheckers extends Analyzer {
   import global._
 
   override protected def onTreeCheckerError(pos: Position, msg: String): Unit = {
+    // could thread the `site` through ContextReporter for errors, like we do for warnings, but it
+    // looks like an overkill since it would only be used here.
     if (settings.fatalWarnings)
-      reporter.warning(pos, "\n** Error during internal checking:\n" + msg)
+      runReporting.warning(pos, "\n** Error during internal checking:\n" + msg, WarningCategory.OtherDebug, site = "")
   }
 
   case class DiffResult[T](lost: List[T], gained: List[T]) {
@@ -44,25 +54,22 @@ abstract class TreeCheckers extends Analyzer {
     case _                            => diffTrees(t1, t2).toString // "<error: different tree classes>"
   }
 
-  private def clean_s(s: String) = s.replaceAllLiterally("scala.collection.", "s.c.")
+  private def clean_s(s: String) = s.replace("scala.collection.", "s.c.")
   private def typestr(x: Type)    = " (tpe = " + x + ")"
-  private def treestr(t: Tree)    = t + " [" + classString(t) + "]" + typestr(t.tpe)
-  private def ownerstr(s: Symbol) = "'" + s + "'" + s.locationString
-  private def wholetreestr(t: Tree) = nodeToString(t) + "\n"
-  private def truncate(str: String, len: Int): String = (
-    if (str.length <= len) str
-    else (str takeWhile (_ != '\n') take len - 3) + "..."
-  )
+  private def treestr(t: Tree)    = s"$t [${classString(t)}]${typestr(t.tpe)}"
+  private def ownerstr(s: Symbol) = s"'$s'${s.locationString}"
+  private def wholetreestr(t: Tree) = s"${nodeToString(t)}\n"
+  private def truncate(str: String, len: Int): String = if (str.length <= len) str else s"${str.takeWhile(_ != '\n').take(len - 3)}..."
   private def signature(sym: Symbol) = clean_s(sym match {
     case null           => "null"
-    case _: ClassSymbol => sym.name + ": " + sym.tpe_*
+    case _: ClassSymbol => s"${sym.name}: ${sym.tpe_*}"
     case _              => sym.defString
   })
-  private def classString(x: Any) = x match {
+  private def classString(x: Any): String = x match {
     case null      => ""
     case t: Tree   => t.shortClass
     case s: Symbol => s.shortSymbolClass
-    case x: AnyRef => shortClassOfInstance(x)
+    case x         => shortClassOfInstance(x.asInstanceOf[AnyRef])
   }
   private def nonPackageOwners(s: Symbol) = s.ownerChain drop 1 takeWhile (!_.hasPackageFlag)
   private def nonPackageOwnersPlusOne(s: Symbol) = nonPackageOwners(s) ::: (s.ownerChain dropWhile (!_.hasPackageFlag) take 1)
@@ -122,8 +129,8 @@ abstract class TreeCheckers extends Analyzer {
     def reportChanges(): Unit = {
       // new symbols
       if (newSyms.nonEmpty) {
-        informFn(newSyms.size + " new symbols.")
-        val toPrint = if (settings.debug) sortedNewSyms mkString " " else ""
+        informFn("" + newSyms.size + " new symbols.")
+        val toPrint = if (settings.isDebug) sortedNewSyms mkString " " else ""
 
         newSyms.clear()
         if (toPrint != "")
@@ -166,11 +173,11 @@ abstract class TreeCheckers extends Analyzer {
   )
 
 
-  def errorFn(pos: Position, msg: Any): Unit = reporter.warning(pos, "[check: %s] %s".format(phase.prev, msg))
+  def errorFn(pos: Position, msg: Any): Unit = runReporting.warning(pos, "[check: %s] %s".format(phase.prev, msg), WarningCategory.OtherDebug, site = "")
   def errorFn(msg: Any): Unit                = errorFn(NoPosition, msg)
 
   def informFn(msg: Any): Unit = {
-    if (settings.verbose || settings.debug)
+    if (settings.verbose || settings.isDebug)
       println("[check: %s] %s".format(phase.prev, msg))
   }
 
@@ -305,10 +312,7 @@ abstract class TreeCheckers extends Analyzer {
                   if (accessed != NoSymbol) {
                     val agetter = accessed.getterIn(sym.owner)
                     val asetter = accessed.setterIn(sym.owner)
-
-                    assertFn(agetter == sym || asetter == sym,
-                      sym + " is getter or setter, but accessed sym " + accessed + " shows " + agetter + " and " + asetter
-                    )
+                    assertFn(agetter == sym || asetter == sym, s"$sym is getter or setter, but accessed sym $accessed shows $agetter and $asetter")
                   }
               }
             }
@@ -341,14 +345,13 @@ abstract class TreeCheckers extends Analyzer {
           checkSym(tree)
 
           tree match {
-            case x: PackageDef    =>
-              if ((sym.ownerChain contains currentOwner) || currentOwner.isEmptyPackageClass) ()
-              else fail(sym + " owner chain does not contain currentOwner " + currentOwner + sym.ownerChain)
+            case _: PackageDef if sym.ownerChain.contains(currentOwner) || currentOwner.isEmptyPackageClass => ()
+            case _: PackageDef => fail(s"$sym owner chain does not contain currentOwner ${currentOwner}${sym.ownerChain}")
             case _ =>
               def cond(s: Symbol) = !s.isTerm || s.isMethod || s == sym.owner
 
               if (sym.owner != currentOwner) {
-                val expected = currentOwner.ownerChain find (x => cond(x)) getOrElse { fail("DefTree can't find owner: ") ; NoSymbol }
+                val expected = currentOwner.ownerChain.find(cond(_)).getOrElse { fail("DefTree can't find owner: ") ; NoSymbol }
                 if (sym.owner != expected)
                   fail(sm"""|
                             | currentOwner chain: ${currentOwner.ownerChain take 3 mkString " -> "}

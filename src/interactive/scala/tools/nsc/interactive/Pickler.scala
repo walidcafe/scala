@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.interactive
 
 import Lexer._
@@ -21,8 +33,8 @@ import java.io.Writer
  *  These Picklers build on the work of Andrew Kennedy. They are most closely inspired by
  *  Iulian Dragos' picklers for Scala to XML. See:
  *
- *  <a href="http://code.google.com/p/gdata-scala-client/wiki/DevelopersGuide">
- *  http://code.google.com/p/gdata-scala-client/wiki/DevelopersGuide
+ *  <a href="https://code.google.com/p/gdata-scala-client/wiki/DevelopersGuide">
+ *  https://code.google.com/p/gdata-scala-client/wiki/DevelopersGuide
  *  </a>
  */
 abstract class Pickler[T] {
@@ -41,8 +53,8 @@ abstract class Pickler[T] {
    *  @return An `UnpickleSuccess` value if the current input corresponds to the
    *          kind of value that is unpickled by the current subclass of `Pickler`,
    *          an `UnpickleFailure` value otherwise.
-   *  @throws  `Lexer.MalformedInput` if input is invalid, or if
-   *          an `Unpickle
+   *  @throws Lexer.MalformedInput if input is invalid, or if
+   *          an `Unpickle`
    */
   def unpickle(rd: Lexer): Unpickled[T]
 
@@ -56,7 +68,7 @@ abstract class Pickler[T] {
   /** A pickler that adds a label to the current pickler, using the representation
    *   `label ( <current pickler> )`
    *
-   *  @label  the string to be added as a label.
+   *  @param  label the string to be added as a label.
    */
   def labelled(label: String): Pickler[T] = labelledPickler(label, this)
 
@@ -87,7 +99,7 @@ object Pickler {
    *  where a value of the given type `T` could not be unpickled from input.
    *  @tparam  T the type of unpickled values in case of success.
    */
-  abstract class Unpickled[+T] {
+  sealed abstract class Unpickled[+T] {
     /** Transforms success values to success values using given function,
      *  leaves failures alone
      *  @param   f the function to apply.
@@ -113,7 +125,7 @@ object Pickler {
     }
 
     /** Transforms failures into thrown `MalformedInput` exceptions.
-     *  @throws  MalformedInput   if current result is a failure
+     *  @throws  Lexer.MalformedInput   if current result is a failure
      */
     def requireSuccess: UnpickleSuccess[T] = this match {
       case s @ UnpickleSuccess(x) => s
@@ -133,7 +145,7 @@ object Pickler {
    *  @param rd       the lexer unpickled values were read from (can be used to get
    *                  error position, for instance).
    */
-  class UnpickleFailure(msg: => String, val rd: Lexer) extends Unpickled[Nothing] {
+  final class UnpickleFailure(msg: => String, val rd: Lexer) extends Unpickled[Nothing] {
     def errMsg = msg
     override def toString = "Failure at "+rd.tokenPos+":\n"+msg
   }
@@ -235,13 +247,13 @@ object Pickler {
       .cond (x eq _.asInstanceOf[AnyRef])
 
   /** A pickler the handles instances of classes that have an empty constructor.
-   *  It represents than as `$new ( <name of class> )`.
+   *  It represents than as `\$new ( <name of class> )`.
    *  When unpickling, a new instance of the class is created using the empty
-   *  constructor of the class via `Class.forName(<name of class>).newInstance()`.
+   *  constructor of the class via `Class.forName(<name of class>).getConstructor().newInstance()`.
    */
   def javaInstancePickler[T <: AnyRef]: Pickler[T] =
     (stringPickler labelled "$new")
-      .wrapped { name => Class.forName(name).newInstance().asInstanceOf[T] } { _.getClass.getName }
+      .wrapped { name => Class.forName(name).getConstructor().newInstance().asInstanceOf[T] } { _.getClass.getName }
 
   /** A picklers that handles iterators. It pickles all values
    *  returned by an iterator separated by commas.

@@ -1,4 +1,9 @@
+
+import scala.jdk.CollectionConverters._
 import scala.tools.partest.nest.FileManager._
+
+import java.io.File
+import java.nio.file.Files
 
 object Test extends App {
   val cm = reflect.runtime.currentMirror
@@ -25,14 +30,30 @@ object Test extends App {
   }
 
   val code =
-    s"""|// Generated Code, validated by run/t6240-universe-code-gen.scala
+    s"""|/*
+        | * Scala (https://www.scala-lang.org)
+        | *
+        | * Copyright EPFL and Lightbend, Inc.
+        | *
+        | * Licensed under Apache License 2.0
+        | * (http://www.apache.org/licenses/LICENSE-2.0).
+        | *
+        | * See the NOTICE file distributed with this work for
+        | * additional information regarding copyright ownership.
+        | */
+        |
+        |// Generated Code, validated by run/t6240-universe-code-gen.scala
         |package scala.reflect
         |package runtime
         |
+        |import scala.annotation.nowarn
+        |
+        |@nowarn("cat=deprecation&origin=scala\\\\.reflect\\\\.internal\\\\.Internals\\\\.compat")
+        |@nowarn("cat=deprecation&origin=scala\\\\.reflect\\\\.internal\\\\.Trees\\\\.emptyValDef")
         |trait JavaUniverseForce { self: runtime.JavaUniverse  =>
         |  def force(): Unit = {
         |    Literal(Constant(42)).duplicate
-        |    nme.flattenedName()
+        |    nme.flattenedName(NoSymbol, nme.NO_NAME)
         |    nme.raw
         |    WeakTypeTag
         |    TypeTag
@@ -60,12 +81,10 @@ object Test extends App {
         |  }
         |}""".stripMargin
 
-  import java.io.File
   val testFile = new File(sys.props("partest.test-path"))
-  val actualFile = new java.io.File(testFile.getParent + "/../../../src/reflect/scala/reflect/runtime/JavaUniverseForce.scala").getCanonicalFile
-  val actual = scala.io.Source.fromFile(actualFile)
-  val actualLines = actual.getLines.toList
-  val generatedLines = code.lines.toList
+  val actualFile = new File(testFile.getParent + "/../../../src/reflect/scala/reflect/runtime/JavaUniverseForce.scala").getCanonicalFile
+  val actualLines = Files.readAllLines(actualFile.toPath).asScala.toList
+  val generatedLines = code.linesIterator.toList
   if (actualLines != generatedLines) {
     val msg = s"""|${actualFile} must be updated.
                   |===========================================================

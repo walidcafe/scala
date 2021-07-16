@@ -13,13 +13,13 @@ def ensuring(cond: Boolean): Pong
 def ensuring(cond: Boolean, msg: => Any): Pong
 def ensuring(cond: Pong => Boolean): Pong
 def ensuring(cond: Pong => Boolean, msg: => Any): Pong
-def equals(x$1: Any): Boolean
+def equals(x$1: Object): Boolean
 def formatted(fmtstr: String): String
 def hashCode(): Int
 def poke(): Unit
 def →[B](y: B): (Pong, B)
 final def !=(x$1: Any): Boolean
-final def ##(): Int
+final def ## : Int
 final def ==(x$1: Any): Boolean
 final def asInstanceOf[T0]: T0
 final def eq(x$1: AnyRef): Boolean
@@ -47,7 +47,7 @@ def ensuring(cond: Boolean): Ping
 def ensuring(cond: Boolean, msg: => Any): Ping
 def ensuring(cond: Ping => Boolean): Ping
 def ensuring(cond: Ping => Boolean, msg: => Any): Ping
-def equals(x$1: Any): Boolean
+def equals(x$1: Object): Boolean
 def formatted(fmtstr: String): String
 def hashCode(): Int
 def loop: Unit
@@ -55,7 +55,7 @@ def name: String
 def poke: Unit
 def →[B](y: B): (Ping, B)
 final def !=(x$1: Any): Boolean
-final def ##(): Int
+final def ## : Int
 final def ==(x$1: Any): Boolean
 final def asInstanceOf[T0]: T0
 final def eq(x$1: AnyRef): Boolean

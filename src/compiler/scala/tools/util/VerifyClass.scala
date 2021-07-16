@@ -1,9 +1,20 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.util
 
 import scala.tools.nsc.io._
 import java.net.URLClassLoader
-import scala.collection.JavaConverters._
-import scala.language.postfixOps
+import scala.jdk.CollectionConverters._
 
 object VerifyClass {
 
@@ -18,14 +29,14 @@ object VerifyClass {
     }
   }
 
-  def checkClassesInJar(name: String, cl: ClassLoader) = new Jar(File(name)) filter (_.getName.endsWith(".class")) map { x =>
+  def checkClassesInJar(name: String, cl: ClassLoader) = new Jar(File(name)).filter(_.getName.endsWith(".class")).map { x =>
     checkClass(x.getName.stripSuffix(".class").replace('/', '.'), cl)
-  } toMap
+  }.toMap
 
   def checkClassesInDir(name: String, cl: ClassLoader) = (for {
     file <- Path(name).walk
     if file.name endsWith ".class"
-  } yield checkClass(name, cl)) toMap
+  } yield checkClass(name, cl)).toMap
 
   def checkClasses(name: String, cl: ClassLoader) =
     if (name endsWith ".jar")  checkClassesInJar(name, cl)

@@ -5,7 +5,7 @@ import java.{util => ju}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
-import scala.collection.convert.{DecorateAsJava, DecorateAsScala}
+import scala.collection.immutable.ChampMapSmokeTest.mkTuple
 
 object ChampSetSmokeTest {
 
@@ -27,8 +27,7 @@ object ChampSetSmokeTest {
 
 }
 
-class ChampSetSmokeTest extends DecorateAsJava with DecorateAsScala {
-
+class ChampSetSmokeTest {
   import ChampSetSmokeTest._
 
   @Test def testNodeValNode(): Unit = {
@@ -110,7 +109,7 @@ class ChampSetSmokeTest extends DecorateAsJava with DecorateAsScala {
     assertEquals(xs, ys)
   }
 
-  @Test def RemovalFromCollisonNodeEqualsSingelton(): Unit = {
+  @Test def RemovalFromCollisionNodeEqualsSingleton(): Unit = {
     val hash98304_obj1 = mkValue(1, 98304)
     val hash98304_obj2 = mkValue(2, 98304)
     val xs: Set[CustomHashInt] = setOf(hash98304_obj1)
@@ -220,5 +219,47 @@ class ChampSetSmokeTest extends DecorateAsJava with DecorateAsScala {
     val xs: Set[CustomHashInt] = setOf(hash98304_obj1, hash8_obj3, hash98304_obj2) - hash98304_obj2
     val ys: Set[CustomHashInt] = setOf(hash98304_obj1, hash8_obj3)
     assertEquals(xs, ys)
+  }
+
+  object O1 { override def hashCode = 1 ; override def toString = "O1"}
+  class C(val i: Int) { override def hashCode = i % 4 ; override def toString = s"C($i)" }
+  val cs = Array.tabulate(4096)(new C(_))
+
+  private def assertSameEqHash(expected: HashSet[Any], actual: HashSet[Any]) = {
+    assertEquals(List.from(actual).size, actual.size)
+    assertEquals(expected.size, actual.size)
+    assertEquals(expected.hashCode(), actual.hashCode())
+  }
+
+  @Test def testCachedSizeAndHashCode(): Unit = {
+    val emptySet = HashSet.empty[Any]
+    var set: HashSet[Any] = emptySet + O1
+    assertEquals(1, set.size)
+    set = set + O1
+    assertSameEqHash(emptySet + O1, set)
+  }
+
+  @Test def testCachedSizeAndHashCodeCollision(): Unit = {
+    val emptySet = HashSet.empty[Any]
+    var set: HashSet[Any] = emptySet
+    for (c <- cs)
+      set = set + c
+    var set1 = set
+    for (c <- cs) {
+      set1 = set1 + c
+      assertEquals(set.rootNode.cachedJavaKeySetHashCode, set1.rootNode.cachedJavaKeySetHashCode)
+      if (c.i % 41 == 0)
+        assertEquals(set, set1)
+    }
+    assertEquals(set, set1)
+    assertSameEqHash(set1, set)
+
+    var set2 = set + mkTuple(O1, "O1_V2")
+    set2 = set2 +  mkTuple(O1, "O1_V2")
+    assertSameEqHash(set1 + mkTuple(O1, "O1_V2"), set2)
+  }
+
+  @Test def hashCodeCheck(): Unit = {
+    assertEquals(-1075495872, collection.immutable.HashSet(1).hashCode())
   }
 }

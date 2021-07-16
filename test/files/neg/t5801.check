@@ -1,4 +1,5 @@
 t5801.scala:1: error: object sth is not a member of package scala
+did you mean math or sys?
 import scala.sth
        ^
 t5801.scala:4: error: not found: value sth
@@ -19,4 +20,4 @@ t5801.scala:13: error: not found: value sth
 t5801.scala:14: error: could not find implicit value for parameter b: Int
   meh2(1)
       ^
-7 errors found
+7 errors

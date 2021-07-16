@@ -6,9 +6,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
-import scala.tools.partest.ASMConverters._
-import scala.tools.testing.BytecodeTesting
-import scala.tools.testing.BytecodeTesting._
+import scala.tools.testkit.ASMConverters._
+import scala.tools.testkit.BytecodeTesting
+import scala.tools.testkit.BytecodeTesting._
 
 @RunWith(classOf[JUnit4])
 class StringConcatTest extends BytecodeTesting {
@@ -115,7 +115,7 @@ class StringConcatTest extends BytecodeTesting {
     }
     def sbuf = { val r = new java.lang.StringBuffer(); r.append("sbuf"); r }
     def chsq: java.lang.CharSequence = "chsq"
-    val s = t((), true, 'd', 3: Byte, 12: Short, 3, -32l, 12.3f, -4.2d, "me", sbuf, chsq, Array('a', 'b'))
+    val s = t((), true, 'd', 3: Byte, 12: Short, 3, -32L, 12.3f, -4.2d, "me", sbuf, chsq, Array('a', 'b'))
     val r = s.replaceAll("""\[C@\w+""", "<ARRAY>")
     assertEquals(r, "meTTT()trued312312.3-32-4.2sbufchsq<ARRAY>")
   }

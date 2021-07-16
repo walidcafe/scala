@@ -1,3 +1,6 @@
+
+// scalac: -Xsource:2.13
+
 object Test {
 
   // Data types
@@ -11,7 +14,7 @@ object Test {
   type MaybeMaybe[A] = MaybeT[Maybe, A]
 
 
-  // Typeclass
+  // Type class
 
   trait Monad[F[_]]
 

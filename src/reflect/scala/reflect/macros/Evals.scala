@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package macros
@@ -23,7 +35,7 @@ trait Evals {
    *  {{{
    *  scala> def impl(c: Context)(x: c.Expr[String]) = {
    *       | val x1 = c.Expr[String](c.untypecheck(x.tree.duplicate))
-   *       | println(s"compile-time value is: ${c.eval(x1)}")
+   *       | println(s"compile-time value is: \${c.eval(x1)}")
    *       | x
    *       | }
    *  impl: (c: Context)(x: c.Expr[String])c.Expr[String]

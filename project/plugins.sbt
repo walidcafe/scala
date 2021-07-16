@@ -1,11 +1,9 @@
-scalacOptions ++= Seq("-unchecked", "-feature", /*"-deprecation",*/
-  "-Xlint" /*, "-Xfatal-warnings"*/)
+scalacOptions ++= Seq("-unchecked", "-feature", "-deprecation",
+  "-Xlint:-unused,_", "-Xfatal-warnings")
 
-libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.3.2"
+libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.12.0"
 
-libraryDependencies += "org.pantsbuild" % "jarjar" % "1.6.5"
-
-libraryDependencies += "biz.aQute.bnd" % "biz.aQute.bnd" % "2.4.1"
+libraryDependencies += "biz.aQute.bnd" % "biz.aQute.bndlib" % "5.3.0"
 
 enablePlugins(BuildInfoPlugin)
 
@@ -13,21 +11,26 @@ enablePlugins(BuildInfoPlugin)
 
 lazy val buildClasspath = taskKey[String]("Colon-separated (or semicolon-separated in case of Windows) list of entries on the sbt build classpath.")
 
-buildClasspath := (externalDependencyClasspath in Compile).value.map(_.data).mkString(java.io.File.pathSeparator)
+buildClasspath := (Compile / externalDependencyClasspath).value.map(_.data).mkString(java.io.File.pathSeparator)
 
 buildInfoKeys := Seq[BuildInfoKey](buildClasspath)
 
 buildInfoPackage := "scalabuild"
 
-addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % "0.1.15")
+addSbtPlugin("com.typesafe" % "sbt-mima-plugin" % "0.9.0")
 
 libraryDependencies ++= Seq(
   "org.eclipse.jgit" % "org.eclipse.jgit" % "4.6.0.201612231935-r",
-  "org.slf4j" % "slf4j-nop" % "1.7.23"
+  "org.slf4j" % "slf4j-nop" % "1.7.31",
+  "com.googlecode.java-diff-utils" % "diffutils" % "1.3.0",
 )
 
-concurrentRestrictions in Global := Seq(
+Global / concurrentRestrictions := Seq(
   Tags.limitAll(1) // workaround for https://github.com/sbt/sbt/issues/2970
 )
 
-addSbtPlugin("pl.project13.scala" % "sbt-jmh" % "0.3.3")
+addSbtPlugin("pl.project13.scala" % "sbt-jmh" % "0.4.2")
+
+addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.0.0")
+
+addSbtPlugin("com.lightbend" % "sbt-whitesource" % "0.1.18")

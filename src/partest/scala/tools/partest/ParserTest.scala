@@ -1,5 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2014 LAMP/EPFL
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.partest
@@ -9,7 +17,7 @@ package scala.tools.partest
  */
 abstract class ParserTest extends DirectTest {
 
-  override def extraSettings: String = "-usejavacp -Ystop-after:parser -Xprint:parser"
+  override def extraSettings: String = "-usejavacp -Ystop-after:parser -Vprint:parser"
 
   override def show(): Unit = {
     // redirect err to out, for logging

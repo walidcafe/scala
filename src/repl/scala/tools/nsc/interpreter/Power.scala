@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc.interpreter
@@ -92,7 +99,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
     /** Looking for dwindling returns */
     def droppedEnough() = unseenHistory.size >= 4 && {
       unseenHistory takeRight 4 sliding 2 forall { it =>
-        val List(a, b) = it.toList
+        val List(a, b) = (it.toList: @unchecked)
         a > b
       }
     }
@@ -128,7 +135,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
 
   val initImports = List(
     "import scala.tools.nsc._",
-    "import scala.collection.JavaConverters._",
+    "import scala.jdk.CollectionConverters._",
     "import intp.global.{ error => _, _ }",
     "import definitions.{ getClass => _, _ }",
     "import power.rutil._",
@@ -226,7 +233,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
     def pp(f: Seq[T] => Seq[T]): Unit =
       pretty.prettify(f(value)).iterator foreach (StringPrettifier show _)
 
-    def freq[U](p: T => U) = (value.toSeq groupBy p mapValues (_.size)).toList sortBy (-_._2) map (_.swap)
+    def freq[U](p: T => U) = value.groupMapReduce(p)(_ => 1)(_ + _).toList sortBy (-_._2) map (_.swap)
 
     def >>(implicit ord: Ordering[T]): Unit      = pp(_.sorted)
     def >!(): Unit                               = pp(_.distinct)
@@ -242,7 +249,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
     // make an url out of the string
     def u: URL = (
       if (s contains ":") new URL(s)
-      else if ((new java.io.File(s)).exists) new java.io.File(s).toURI.toURL
+      else if (new java.io.File(s).exists) new java.io.File(s).toURI.toURL
       else new URL("http://" + s)
     )
   }

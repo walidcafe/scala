@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.concurrent
 
@@ -14,8 +18,8 @@ import java.util.concurrent.TimeUnit
  *  All methods are synchronized.
  *
  *  @tparam A type of the contained value
- *  @author  Martin Odersky
  */
+@deprecated("Use `java.util.concurrent.LinkedBlockingQueue with capacity 1` instead.", since = "2.13.0")
 class SyncVar[A] {
   private[this] var isDefined: Boolean = false
   private[this] var value: A = _
@@ -39,7 +43,7 @@ class SyncVar[A] {
     wait(timeout)
     val elapsed = System.nanoTime() - start
     // nanoTime should be monotonic, but it's not possible to rely on that.
-    // See http://bugs.java.com/view_bug.do?bug_id=6458294
+    // See https://bugs.java.com/view_bug.do?bug_id=6458294
     if (elapsed < 0) 0 else TimeUnit.NANOSECONDS.toMillis(elapsed)
   }
 

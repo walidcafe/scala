@@ -1,139 +1,146 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2006-2016, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://www.scala-lang.org/           **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package collection
 package convert
 
-import java.{ lang => jl, util => ju }, java.util.{ concurrent => juc }
+import java.util.{concurrent => juc}
+import java.{lang => jl, util => ju}
+
+import scala.collection.JavaConverters._
 import scala.language.implicitConversions
 
-import JavaConverters._
-
 /** Defines implicit converter methods from Java to Scala collections. */
+@deprecated("Use `scala.jdk.CollectionConverters` instead", "2.13.0")
 trait ToScalaImplicits {
   /** Implicitly converts a Java `Iterator` to a Scala `Iterator`.
-   *  @see [[AsScalaConverters.asScalaIterator]]
+   *  @see [[JavaConverters.asScalaIterator]]
    */
   implicit def `iterator asScala`[A](it: ju.Iterator[A]): Iterator[A] = asScalaIterator(it)
 
   /** Implicitly converts a Java `Enumeration` to a Scala `Iterator`.
-   *  @see [[AsScalaConverters.enumerationAsScalaIterator]]
+   *  @see [[JavaConverters.enumerationAsScalaIterator]]
    */
   implicit def `enumeration AsScalaIterator`[A](i: ju.Enumeration[A]): Iterator[A] = enumerationAsScalaIterator(i)
 
   /** Implicitly converts a Java `Iterable` to a Scala `Iterable`.
-   *  @see [[AsScalaConverters.iterableAsScalaIterable]]
+   *  @see [[JavaConverters.iterableAsScalaIterable]]
    */
   implicit def `iterable AsScalaIterable`[A](i: jl.Iterable[A]): Iterable[A] = iterableAsScalaIterable(i)
 
   /** Implicitly converts a Java `Collection` to an Scala `Iterable`.
-   *  @see [[AsScalaConverters.collectionAsScalaIterable]]
+   *  @see [[JavaConverters.collectionAsScalaIterable]]
    */
   implicit def `collection AsScalaIterable`[A](i: ju.Collection[A]): Iterable[A] = collectionAsScalaIterable(i)
 
   /** Implicitly converts a Java `List` to a Scala mutable `Buffer`.
-   *  @see [[AsScalaConverters.asScalaBuffer]]
+   *  @see [[JavaConverters.asScalaBuffer]]
    */
   implicit def `list asScalaBuffer`[A](l: ju.List[A]): mutable.Buffer[A] = asScalaBuffer(l)
 
   /** Implicitly converts a Java `Set` to a Scala mutable `Set`.
-   *  @see [[AsScalaConverters.asScalaSet]]
+   *  @see [[JavaConverters.asScalaSet]]
    */
   implicit def `set asScala`[A](s: ju.Set[A]): mutable.Set[A] = asScalaSet(s)
 
   /** Implicitly converts a Java `Map` to a Scala mutable `Map`.
-   *  @see [[AsScalaConverters.mapAsScalaMap]]
+   *  @see [[JavaConverters.mapAsScalaMap]]
    */
-  implicit def `map AsScala`[A, B](m: ju.Map[A, B]): mutable.Map[A, B] = mapAsScalaMap(m)
+  implicit def `map AsScala`[K, V](m: ju.Map[K, V]): mutable.Map[K, V] = mapAsScalaMap(m)
 
   /** Implicitly converts a Java `ConcurrentMap` to a Scala mutable `ConcurrentMap`.
-   *  @see [[AsScalaConverters.mapAsScalaConcurrentMap]]
+   *  @see [[JavaConverters.mapAsScalaConcurrentMap]]
    */
-  implicit def `map AsScalaConcurrentMap`[A, B](m: juc.ConcurrentMap[A, B]): concurrent.Map[A, B] = mapAsScalaConcurrentMap(m)
+  implicit def `map AsScalaConcurrentMap`[K, V](m: juc.ConcurrentMap[K, V]): concurrent.Map[K, V] = mapAsScalaConcurrentMap(m)
 
   /** Implicitly converts a Java `Dictionary` to a Scala mutable `Map`.
-   *  @see [[AsScalaConverters.dictionaryAsScalaMap]]
+   *  @see [[JavaConverters.dictionaryAsScalaMap]]
    */
-  implicit def `dictionary AsScalaMap`[A, B](p: ju.Dictionary[A, B]): mutable.Map[A, B] = dictionaryAsScalaMap(p)
+  implicit def `dictionary AsScalaMap`[K, V](p: ju.Dictionary[K, V]): mutable.Map[K, V] = dictionaryAsScalaMap(p)
 
   /** Implicitly converts a Java `Properties` to a Scala `mutable Map[String, String]`.
-   *  @see [[AsScalaConverters.propertiesAsScalaMap]]
+   *  @see [[JavaConverters.propertiesAsScalaMap]]
    */
   implicit def `properties AsScalaMap`(p: ju.Properties): mutable.Map[String, String] = propertiesAsScalaMap(p)
 }
 
 /** Defines implicit conversions from Scala to Java collections. */
+@deprecated("Use `scala.jdk.CollectionConverters` instead", "2.13.0")
 trait ToJavaImplicits {
   /** Implicitly converts a Scala `Iterator` to a Java `Iterator`.
-   *  @see [[AsJavaConverters.asJavaIterator]]
+   *  @see [[JavaConverters.asJavaIterator]]
    */
   implicit def `iterator asJava`[A](it: Iterator[A]): ju.Iterator[A] = asJavaIterator(it)
 
   /** Implicitly converts a Scala `Iterator` to a Java `Enumeration`.
-   *  @see [[AsJavaConverters.asJavaEnumeration]]
+   *  @see [[JavaConverters.asJavaEnumeration]]
    */
   implicit def `enumeration asJava`[A](it: Iterator[A]): ju.Enumeration[A] = asJavaEnumeration(it)
 
   /** Implicitly converts a Scala `Iterable` to a Java `Iterable`.
-   *  @see [[AsJavaConverters.asJavaIterable]]
+   *  @see [[JavaConverters.asJavaIterable]]
    */
   implicit def `iterable asJava`[A](i: Iterable[A]): jl.Iterable[A] = asJavaIterable(i)
 
   /** Implicitly converts a Scala `Iterable` to an immutable Java `Collection`.
-   *  @see [[AsJavaConverters.asJavaCollection]]
+   *  @see [[JavaConverters.asJavaCollection]]
    */
   implicit def `collection asJava`[A](it: Iterable[A]): ju.Collection[A] = asJavaCollection(it)
 
   /** Implicitly converts a Scala mutable `Buffer` to a Java `List`.
-   *  @see [[AsJavaConverters.bufferAsJavaList]]
+   *  @see [[JavaConverters.bufferAsJavaList]]
    */
   implicit def `buffer AsJavaList`[A](b: mutable.Buffer[A]): ju.List[A] = bufferAsJavaList(b)
 
   /** Implicitly converts a Scala mutable `Seq` to a Java `List`.
-   *  @see [[AsJavaConverters.mutableSeqAsJavaList]]
+   *  @see [[JavaConverters.mutableSeqAsJavaList]]
    */
   implicit def `mutableSeq AsJavaList`[A](seq: mutable.Seq[A]): ju.List[A] = mutableSeqAsJavaList(seq)
 
   /** Implicitly converts a Scala `Seq` to a Java `List`.
-   *  @see [[AsJavaConverters.seqAsJavaList]]
+   *  @see [[JavaConverters.seqAsJavaList]]
    */
   implicit def `seq AsJavaList`[A](seq: Seq[A]): ju.List[A] = seqAsJavaList(seq)
 
   /** Implicitly converts a Scala mutable `Set` to a Java `Set`.
-   *  @see [[AsJavaConverters.mutableSetAsJavaSet]]
+   *  @see [[JavaConverters.mutableSetAsJavaSet]]
    */
   implicit def `mutableSet AsJavaSet`[A](s: mutable.Set[A]): ju.Set[A] = mutableSetAsJavaSet(s)
 
   /** Implicitly converts a Scala `Set` to a Java `Set`.
-   *  @see [[AsJavaConverters.setAsJavaSet]]
+   *  @see [[JavaConverters.setAsJavaSet]]
    */
   implicit def `set AsJavaSet`[A](s: Set[A]): ju.Set[A] = setAsJavaSet(s)
 
   /** Implicitly converts a Scala mutable `Map` to a Java `Map`.
-   *  @see [[AsJavaConverters.mutableMapAsJavaMap]]
+   *  @see [[JavaConverters.mutableMapAsJavaMap]]
    */
-  implicit def `mutableMap AsJavaMap`[A, B](m: mutable.Map[A, B]): ju.Map[A, B] = mutableMapAsJavaMap(m)
+  implicit def `mutableMap AsJavaMap`[K, V](m: mutable.Map[K, V]): ju.Map[K, V] = mutableMapAsJavaMap(m)
 
   /** Implicitly converts a Scala mutable `Map` to a Java `Dictionary`.
-   *  @see [[AsJavaConverters.asJavaDictionary]]
+   *  @see [[JavaConverters.asJavaDictionary]]
    */
-  implicit def `dictionary asJava`[A, B](m: mutable.Map[A, B]): ju.Dictionary[A, B] = asJavaDictionary(m)
+  implicit def `dictionary asJava`[K, V](m: mutable.Map[K, V]): ju.Dictionary[K, V] = asJavaDictionary(m)
 
   /** Implicitly converts a Scala `Map` to a Java `Map`.
-   *  @see [[AsJavaConverters.mapAsJavaMap]]
+   *  @see [[JavaConverters.mapAsJavaMap]]
    */
-  implicit def `map AsJavaMap`[A, B](m: Map[A, B]): ju.Map[A, B] = mapAsJavaMap(m)
+  implicit def `map AsJavaMap`[K, V](m: Map[K, V]): ju.Map[K, V] = mapAsJavaMap(m)
 
   /** Implicitly converts a Scala mutable `concurrent.Map` to a Java `ConcurrentMap`.
-   *  @see [[AsJavaConverters.mapAsJavaConcurrentMap]]
+   *  @see [[JavaConverters.mapAsJavaConcurrentMap]]
    */
-  implicit def `map AsJavaConcurrentMap`[A, B](m: concurrent.Map[A, B]): juc.ConcurrentMap[A, B] = mapAsJavaConcurrentMap(m)
+  implicit def `map AsJavaConcurrentMap`[K, V](m: concurrent.Map[K, V]): juc.ConcurrentMap[K, V] = mapAsJavaConcurrentMap(m)
 }
 
 /**
@@ -142,6 +149,7 @@ trait ToJavaImplicits {
  * It is recommended to use explicit conversions provided by [[collection.JavaConverters]] instead.
  * Implicit conversions may cause unexpected issues, see [[ImplicitConversions]].
  */
+@deprecated("Use `scala.jdk.CollectionConverters` instead", "2.13.0")
 object ImplicitConversionsToJava extends ToJavaImplicits
 
 /**
@@ -150,6 +158,7 @@ object ImplicitConversionsToJava extends ToJavaImplicits
  * It is recommended to use explicit conversions provided by [[collection.JavaConverters]] instead.
  * Implicit conversions may cause unexpected issues, see [[ImplicitConversions]].
  */
+@deprecated("Use `scala.jdk.CollectionConverters` instead", "2.13.0")
 object ImplicitConversionsToScala extends ToScalaImplicits
 
 /**
@@ -168,4 +177,5 @@ object ImplicitConversionsToScala extends ToScalaImplicits
  * The above example returns `null` instead of producing a type error at compile-time. The map is
  * implicitly converted to a `java.util.Map` which provides a method `get(x: AnyRef)`.
  */
+@deprecated("Use `scala.jdk.CollectionConverters` instead", "2.13.0")
 object ImplicitConversions extends ToScalaImplicits with ToJavaImplicits

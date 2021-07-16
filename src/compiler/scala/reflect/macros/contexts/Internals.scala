@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.macros
 package contexts
 
@@ -9,7 +21,7 @@ trait Internals extends scala.tools.nsc.transform.TypingTransformers {
   lazy val internal: ContextInternalApi = new global.SymbolTableInternal with ContextInternalApi {
     val enclosingOwner = callsiteTyper.context.owner
 
-    class HofTransformer(hof: (Tree, TransformApi) => Tree) extends Transformer {
+    class HofTransformer(hof: (Tree, TransformApi) => Tree) extends AstTransformer {
       val api = new TransformApi {
         def recur(tree: Tree): Tree = hof(tree, this)
         def default(tree: Tree): Tree = superTransform(tree)
@@ -42,6 +54,9 @@ trait Internals extends scala.tools.nsc.transform.TypingTransformers {
     def typingTransform(tree: Tree, owner: Symbol)(transformer: (Tree, TypingTransformApi) => Tree): Tree = {
       val trans = new HofTypingTransformer(transformer)
       trans.atOwner(owner)(trans.transform(tree))
+    }
+    override def markForAsyncTransform(owner: Symbol, method: DefDef, awaitSymbol: Symbol, config: Map[String, AnyRef]): DefDef = {
+      global.async.markForAsyncTransform(owner, method, awaitSymbol, config)
     }
   }
 }

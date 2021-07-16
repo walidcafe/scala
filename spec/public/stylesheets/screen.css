@@ -425,7 +425,7 @@ header {
     color: #FFFFFF;
     text-decoration: none;
     font-size: 0.63vw;
-    padding: 100% 8px;
+    padding: 100% 5px;
 }
 
 #chapters a:hover, #chapters a:focus, #github:hover, #github:focus {
@@ -502,3 +502,20 @@ header {
 /* proper rendering of MathJax into highlighted code blocks */
 .fixws { white-space: pre; }
 .fixws .math { white-space: nowrap; }
+
+.version-notice {
+    background-color: #C93A3A;
+    color: #f2f2f2;
+    border:1px solid #ccc;
+    padding: 1em;
+    margin-bottom: 1em;
+}
+.version-notice a {
+    color: #f2f2f2;
+    font-weight: bold;
+    text-decoration: underline;
+}
+
+.print-only {
+  display: none;
+}

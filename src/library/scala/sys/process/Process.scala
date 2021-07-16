@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package sys
@@ -64,8 +68,7 @@ trait ProcessCreation {
     *
     * @example {{{ apply("cat", files) }}}
     */
-  def apply(command: String, arguments: scala.collection.Seq[String]): ProcessBuilder = apply(Seq(command) ++: arguments, None)
-  //TODO there should be a way to avoid wrapping `command` in `Seq`
+  def apply(command: String, arguments: scala.collection.Seq[String]): ProcessBuilder = apply(command +: arguments, None)
 
   /** Creates a [[scala.sys.process.ProcessBuilder]] with working dir set to `File` and extra
     * environment variables.
@@ -88,14 +91,8 @@ trait ProcessCreation {
     *
     * @example {{{ apply("java", params.get("cwd"), "CLASSPATH" -> "library.jar") }}}
     */
-  def apply(command: String, cwd: Option[File], extraEnv: (String, String)*): ProcessBuilder = {
-    apply(command.split("""\s+"""), cwd, extraEnv : _*)
-    // not smart to use this on windows, because CommandParser uses \ to escape ".
-    /*CommandParser.parse(command) match {
-      case Left(errorMsg) => error(errorMsg)
-      case Right((cmd, args)) => apply(cmd :: args, cwd, extraEnv : _*)
-    }*/
-  }
+  def apply(command: String, cwd: Option[File], extraEnv: (String, String)*): ProcessBuilder =
+    apply(Parser.tokenize(command), cwd, extraEnv: _*)
 
   /** Creates a [[scala.sys.process.ProcessBuilder]] with working dir optionally set to
     * `File` and extra environment variables.
@@ -143,7 +140,7 @@ trait ProcessCreation {
   /** Creates a sequence of [[scala.sys.process.ProcessBuilder.Source]] from a sequence of
     * something else for which there's an implicit conversion to `Source`.
     */
-  def applySeq[T](builders: scala.collection.Seq[T])(implicit convert: T => Source): Seq[Source] = builders.map(convert)
+  def applySeq[T](builders: scala.collection.Seq[T])(implicit convert: T => Source): scala.collection.Seq[Source] = builders.map(convert)
 
   /** Creates a [[scala.sys.process.ProcessBuilder]] from one or more
     * [[scala.sys.process.ProcessBuilder.Source]], which can then be
@@ -173,7 +170,7 @@ trait ProcessCreation {
     */
   def cat(files: scala.collection.Seq[Source]): ProcessBuilder = {
     require(files.nonEmpty)
-    files map (_.cat) reduceLeft (_ #&& _)
+    files.map(_.cat).reduceLeft(_ #&& _)
   }
 }
 
@@ -188,7 +185,7 @@ trait ProcessImplicits {
   /** Return a sequence of [[scala.sys.process.ProcessBuilder.Source]] from a sequence
     * of values for which an implicit conversion to `Source` is available.
     */
-  implicit def buildersToProcess[T](builders: scala.collection.Seq[T])(implicit convert: T => Source): Seq[Source] = applySeq(builders)
+  implicit def buildersToProcess[T](builders: scala.collection.Seq[T])(implicit convert: T => Source): scala.collection.Seq[Source] = applySeq(builders)
 
   /** Implicitly convert a `java.lang.ProcessBuilder` into a Scala one. */
   implicit def builderToProcess(builder: JProcessBuilder): ProcessBuilder = apply(builder)
@@ -208,7 +205,7 @@ trait ProcessImplicits {
     * input to a process. For example:
     * {{{
     * import scala.sys.process._
-    * Seq("xmllint", "--html", "-") #< new java.net.URL("http://www.scala-lang.org") #> new java.io.File("fixed.html") !
+    * Seq("xmllint", "--html", "-") #< new java.net.URL("https://www.scala-lang.org") #> new java.io.File("fixed.html") !
     * }}}
     */
   implicit def urlToProcess(url: URL): URLBuilder                         = apply(url)

@@ -1,12 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
-
-
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.concurrent
 
@@ -14,14 +16,14 @@ package scala.concurrent
  *  which are read by one or more reader threads.
  *
  *  @tparam A type of data exchanged
- *  @author  Martin Odersky
  */
+@deprecated("Use `java.util.concurrent.LinkedTransferQueue` instead.", since = "2.13.0")
 class Channel[A] {
-  class LinkedList[A] {
+  private class LinkedList {
     var elem: A = _
-    var next: LinkedList[A] = null
+    var next: LinkedList = _
   }
-  private[this] var written = new LinkedList[A] // FIFO queue, realized through
+  private[this] var written = new LinkedList    // FIFO queue, realized through
   private[this] var lastWritten = written       // aliasing of a linked list
   private[this] var nreaders = 0
 
@@ -30,9 +32,9 @@ class Channel[A] {
    *
    * @param x object to enqueue to this channel
    */
-  def write(x: A) = synchronized {
+  def write(x: A): Unit = synchronized {
     lastWritten.elem = x
-    lastWritten.next = new LinkedList[A]
+    lastWritten.next = new LinkedList
     lastWritten = lastWritten.next
     if (nreaders > 0) notify()
   }

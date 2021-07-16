@@ -4,14 +4,14 @@ import scala.concurrent.duration.Duration.Inf
 import scala.collection._
 import scala.runtime.NonLocalReturnControl
 import scala.util.{Try,Success,Failure}
-
-
+import scala.util.control.NoStackTrace
+import java.util.concurrent.ForkJoinPool
 
 class FutureTests extends MinimalScalaTest {
 
   /* some utils */
 
-  def testAsync(s: String)(implicit ec: ExecutionContext): Future[String] = s match {
+  def testAsync(s: String)(implicit ec: ExecutionContext): Future[String] = (s: @unchecked) match {
     case "Hello"   => Future { "World" }
     case "Failure" => Future.failed(new RuntimeException("Expected exception; to test fault-tolerance"))
     case "NoReply" => Promise[String]().future
@@ -30,16 +30,16 @@ class FutureTests extends MinimalScalaTest {
     t
   }
 
-  val defaultTimeout = 5 seconds
+  val defaultTimeout = Test.DefaultTimeout
 
   /* future specification */
 
   "A future with custom ExecutionContext" should {
     "shouldHandleThrowables" in {
       val ms = new concurrent.TrieMap[Throwable, Unit]
-      implicit val ec = scala.concurrent.ExecutionContext.fromExecutor(new java.util.concurrent.ForkJoinPool(), {
+      implicit val ec: ExecutionContextExecutor = ExecutionContext.fromExecutor(new ForkJoinPool(1), {
         t =>
-        ms += (t -> ())
+        ms.addOne((t, ()))
       })
 
       class ThrowableTest(m: String) extends Throwable(m)
@@ -53,36 +53,52 @@ class FutureTests extends MinimalScalaTest {
       }
 
       val latch = new TestLatch
+      val endLatch = new TestLatch(4)
       val f2 = Future {
         Await.ready(latch, 5 seconds)
         "success"
       }
-      val f3 = f2 map { s => s.toUpperCase }
 
-      f2 foreach { _ => throw new ThrowableTest("dispatcher foreach") }
-      f2 onComplete { case Success(_) => throw new ThrowableTest("dispatcher receive"); case _ => }
+      f2 foreach { _ => endLatch.countDown(); throw new ThrowableTest("dispatcher foreach") }
+      f2 onComplete { case Success(_) => endLatch.countDown(); throw new ThrowableTest("dispatcher onComplete"); case _ => endLatch.countDown() }
 
       latch.open()
 
       Await.result(f2, defaultTimeout) mustBe ("success")
 
-      f2 foreach { _ => throw new ThrowableTest("current thread foreach") }
-      f2 onComplete { case Success(_) => throw new ThrowableTest("current thread receive"); case _ => }
+      f2 foreach { _ => endLatch.countDown(); throw new ThrowableTest("current thread foreach") }
+      f2 onComplete { case Success(_) => endLatch.countDown(); throw new ThrowableTest("current thread onComplete"); case _ => endLatch.countDown() }
 
-      Await.result(f3, defaultTimeout) mustBe ("SUCCESS")
+      Await.result(f2 map { s => s.toUpperCase }, defaultTimeout) mustBe ("SUCCESS")
+      waitForIt(endLatch.isOpen)
 
-      val waiting = Future {
-        Thread.sleep(1000)
-      }
-      Await.ready(waiting, 4000 millis)
-
-      if (ms.size != 4)
-        assert(ms.size != 4, "Expected 4 throwables, found: " + ms)
-      //FIXME should check
+      ms.size mustBe 4
+      val msgs = ms.keysIterator.map(_.getMessage).toSet
+      val expectedMsgs = Set("dispatcher foreach", "dispatcher onComplete", "current thread foreach", "current thread onComplete")
+      msgs mustBe expectedMsgs
     }
   }
 
   "Futures" should {
+
+    "not be serializable" in {
+
+      def verifyNonSerializabilityFor(p: Future[_]): Unit = {
+        import java.io._
+        val out = new ObjectOutputStream(new ByteArrayOutputStream())
+        intercept[NotSerializableException] {
+          out.writeObject(p)
+        }
+      }
+      verifyNonSerializabilityFor(Await.ready(Future.unit.map(_ => ())(ExecutionContext.global), defaultTimeout))
+      verifyNonSerializabilityFor(Future.unit)
+      verifyNonSerializabilityFor(Future.failed(new NullPointerException))
+      verifyNonSerializabilityFor(Future.successful("test"))
+      verifyNonSerializabilityFor(Future.fromTry(Success("test")))
+      verifyNonSerializabilityFor(Future.fromTry(Failure(new NullPointerException)))
+      verifyNonSerializabilityFor(Future.never)
+    }
+
     "have proper toString representations" in {
       import ExecutionContext.Implicits.global
       val s = 5
@@ -131,6 +147,7 @@ class FutureTests extends MinimalScalaTest {
       assert( ECNotUsed(ec => f.filter(_ => fail("filter should not have been called"))(ec)) eq f)
       assert( ECNotUsed(ec => f.collect({ case _ => fail("collect should not have been called")})(ec)) eq f)
       assert( ECNotUsed(ec => f.zipWith(f)({ (_,_) => fail("zipWith should not have been called")})(ec)) eq f)
+
     }
   }
 
@@ -177,15 +194,52 @@ class FutureTests extends MinimalScalaTest {
     }
   }
 
+  "The parasitic ExecutionContext" should {
+     "run Runnables on the calling thread" in {
+       val t = Thread.currentThread
+       var rt: Thread = null
+       ExecutionContext.parasitic.execute(() => rt = Thread.currentThread)
+       t mustBe rt
+     }
+
+     "not rethrow non-fatal exceptions" in {
+       ExecutionContext.parasitic.execute(() => throw new RuntimeException("do not rethrow") with NoStackTrace)
+     }
+
+     "rethrow fatal exceptions" in {
+       val oome = new OutOfMemoryError("test")
+       intercept[OutOfMemoryError] {
+         ExecutionContext.parasitic.execute(() => throw oome)
+       } mustBe oome
+     }
+
+     "continue after non-fatal exceptions" in {
+       var value = ""
+       ExecutionContext.parasitic.execute(() => throw new RuntimeException("expected") with NoStackTrace)
+       ExecutionContext.parasitic.execute(() => value = "test")
+       value mustBe "test"
+     }
+
+     "not blow the stack" in {
+       def recur(i: Int): Unit = if (i > 0) ExecutionContext.parasitic.execute(() => recur(i - 1)) else ()
+
+       recur(100000)
+     }
+  }
+
   "The default ExecutionContext" should {
+    import ExecutionContext.Implicits._
     "report uncaught exceptions" in {
       val p = Promise[Throwable]()
-      val logThrowable: Throwable => Unit = p.trySuccess(_)
-      val ec: ExecutionContext = ExecutionContext.fromExecutor(null, logThrowable)
+      val ec: ExecutionContextExecutorService = ExecutionContext.fromExecutorService(null, p.trySuccess(_))
+      val t = new Exception()
+      try {
+        ec.execute(() => throw t)
+        Await.result(p.future, 4.seconds) mustBe t
+      } finally {
+        ec.shutdown()
+      }
 
-      val t = new InterruptedException()
-      val f = Future(throw t)(ec)
-      Await.result(p.future, 4.seconds) mustBe t
     }
   }
 
@@ -794,6 +848,26 @@ class FutureTests extends MinimalScalaTest {
       val expected = try Success(5 / 0) catch { case a: ArithmeticException => Failure(a) }
       val f = Future(5).map(_ / 0)
       Await.ready(f, defaultTimeout).value.get.toString mustBe expected.toString
+    }
+
+    "should delegate equivalently to unit.flatMap on failure" in {
+      val t = new Exception("test")
+      val df = Future.delegate(throw t)
+      val fm = Future.unit.flatMap(_ => throw t)
+
+      Await.ready(df, defaultTimeout)
+      Await.ready(fm, defaultTimeout)
+      df.value mustBe fm.value
+    }
+
+    "should delegate equivalently to unit.flatMap on success" in {
+      val f = Future.successful("test")
+      val df = Future.delegate(f)
+      val fm = Future.unit.flatMap(_ => f)
+
+      Await.ready(df, defaultTimeout)
+      Await.ready(fm, defaultTimeout)
+      df.value mustBe fm.value
     }
 
   }

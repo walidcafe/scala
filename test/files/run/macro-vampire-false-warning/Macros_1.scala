@@ -1,4 +1,5 @@
-// As per http://meta.plasm.us/posts/2013/08/31/feeding-our-vampires/
+// As per https://meta.plasm.us/posts/2013/08/31/feeding-our-vampires/
+// scalac: -Werror
 
 import scala.annotation.StaticAnnotation
 import scala.reflect.macros.whitebox.Context
@@ -18,7 +19,7 @@ object Macros {
     import c.universe._
     import Flag._
     // val kvps = xs.toList map { case q"${_}(${Literal(Constant(name: String))}).->[${_}]($value)" => name -> value }
-    val kvps = xs.map(_.tree).toList map { case Apply(TypeApply(Select(Apply(_, List(Literal(Constant(name: String)))), _), _), List(value)) => name -> value }
+    val kvps = xs.map(_.tree).toList map { case Apply(TypeApply(Select(Apply(_, List(Literal(Constant(name: String)))), _), _), List(value)) => name -> value case x => throw new MatchError(x) }
     // val fields = kvps map { case (k, v) => q"@body($v) def ${TermName(k)} = macro Macros.selFieldImpl" }
     val fields = kvps map { case (k, v) => DefDef(
       Modifiers(MACRO, typeNames.EMPTY, List(Apply(Select(New(Ident(TypeName("body"))), termNames.CONSTRUCTOR), List(v)))),

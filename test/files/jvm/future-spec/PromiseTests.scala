@@ -104,7 +104,7 @@ class PromiseTests extends MinimalScalaTest {
     "not be completable with a completed Promise" in {
       {
         val p = Promise[String]().failure(new RuntimeException("unbr0ken"))
-        p.tryCompleteWith(Promise[String].failure(new Exception("br0ken")).future)
+        p.tryCompleteWith(Promise[String]().failure(new Exception("br0ken")).future)
         intercept[RuntimeException] {
           Await.result(p.future, defaultTimeout)
         }.getMessage mustBe ("unbr0ken")
@@ -120,7 +120,7 @@ class PromiseTests extends MinimalScalaTest {
   }
 
   "An interrupted Promise" should {
-    val message = "Boxed InterruptedException"
+    val message = "Boxed Exception"
     val future = Promise[String]().complete(Failure(new InterruptedException(message))).future
     futureWithException[ExecutionException](_(future, message))
   }
@@ -129,6 +129,23 @@ class PromiseTests extends MinimalScalaTest {
     val result = "test value"
     val future = Promise[String]().complete(Failure(new NonLocalReturnControl[String]("test", result))).future
     futureWithResult(_(future, result))
+  }
+
+  "A Promise should not be serializable" should {
+
+    def verifyNonSerializabilityFor(p: Promise[_]): Unit = {
+      import java.io._
+      val out = new ObjectOutputStream(new ByteArrayOutputStream())
+      intercept[NotSerializableException] {
+        out.writeObject(p)
+      }.getMessage mustBe "Promises and Futures cannot be serialized"
+    }
+
+    verifyNonSerializabilityFor(Promise[Unit]())
+    verifyNonSerializabilityFor(Promise.failed(new NullPointerException))
+    verifyNonSerializabilityFor(Promise.successful("test"))
+    verifyNonSerializabilityFor(Promise.fromTry(Success("test")))
+    verifyNonSerializabilityFor(Promise.fromTry(Failure(new NullPointerException)))
   }
 
   def futureWithResult(f: ((Future[Any], Any) => Unit) => Unit): Unit = {
@@ -149,7 +166,7 @@ class PromiseTests extends MinimalScalaTest {
         Await.result((future filter (_ => true)), defaultTimeout) mustBe (result)
         intercept[NoSuchElementException] {
           Await.result((future filter (_ => false)), defaultTimeout)
-        }
+        }.getMessage mustBe ("Future.filter predicate is not satisfied")
       }
     }
 
@@ -204,7 +221,7 @@ class PromiseTests extends MinimalScalaTest {
     "cast using mapTo" in {
       f {
         (future, result) =>
-        Await.result(future.mapTo[Boolean].recover({ case _: ClassCastException ⇒ false }), defaultTimeout) mustBe (false)
+        Await.result(future.mapTo[Boolean].recover({ case _: ClassCastException => false }), defaultTimeout) mustBe (false)
       }
     }
 
@@ -271,7 +288,7 @@ class PromiseTests extends MinimalScalaTest {
     "recover from exception" in {
       f {
         (future, message) =>
-        Await.result(future.recover({ case e if e.getMessage == message ⇒ "pigdog" }), defaultTimeout) mustBe ("pigdog")
+        Await.result(future.recover({ case e if e.getMessage == message => "pigdog" }), defaultTimeout) mustBe ("pigdog")
       }
     }
 

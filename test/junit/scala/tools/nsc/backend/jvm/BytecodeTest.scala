@@ -2,16 +2,16 @@ package scala.tools.nsc.backend.jvm
 
 import org.junit.Assert._
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 
+import scala.annotation.unused
+import scala.jdk.CollectionConverters._
 import scala.tools.asm.Opcodes._
-import scala.tools.partest.ASMConverters._
-import scala.tools.testing.BytecodeTesting
-import scala.tools.testing.BytecodeTesting._
-import scala.collection.JavaConverters._
+import scala.tools.testkit.ASMConverters._
+import scala.tools.testkit.BytecodeTesting
+import scala.tools.testkit.BytecodeTesting._
+import scala.tools.asm.Opcodes
+import scala.tools.asm.tree.MethodNode
 
-@RunWith(classOf[JUnit4])
 class BytecodeTest extends BytecodeTesting {
   import compiler._
 
@@ -87,7 +87,7 @@ class BytecodeTest extends BytecodeTesting {
         |  def t5(a: AnyRef) = (a eq null) || (null ne a)
         |  def t6(a: Int, b: Boolean) = if ((a == 10) && b || a != 1) 1 else 2
         |  def t7(a: AnyRef, b: AnyRef) = a == b
-        |  def t8(a: AnyRef) = Nil == a || "" != a
+        |  def t8(a: AnyRef) = scala.collection.immutable.Nil == a || "" != a
         |}
       """.stripMargin
 
@@ -173,14 +173,14 @@ class BytecodeTest extends BytecodeTesting {
     val t = getMethod(c, "t")
     val isFrameLine = (x: Instruction) => x.isInstanceOf[FrameEntry] || x.isInstanceOf[LineNumber]
     assertSameCode(t.instructions.filterNot(isFrameLine), List(
-      Label(0), Ldc(LDC, ""), Label(3), VarOp(ASTORE, 1),
-      Label(5), VarOp(ALOAD, 1), Jump(IFNULL, Label(21)),
-      Label(10), VarOp(ALOAD, 0), Invoke(INVOKEVIRTUAL, "C", "foo", "()V", false), Label(14), Op(ACONST_NULL), VarOp(ASTORE, 1), Label(18), Jump(GOTO, Label(5)),
-      Label(21), VarOp(ALOAD, 0), Invoke(INVOKEVIRTUAL, "C", "bar", "()V", false), Label(26), Op(RETURN), Label(28)))
+      Label(0), Ldc(LDC, ""), VarOp(ASTORE, 1),
+      Label(4), VarOp(ALOAD, 1), Jump(IFNULL, Label(20)),
+      Label(9), VarOp(ALOAD, 0), Invoke(INVOKEVIRTUAL, "C", "foo", "()V", false), Label(13), Op(ACONST_NULL), VarOp(ASTORE, 1), Label(17), Jump(GOTO, Label(4)),
+      Label(20), VarOp(ALOAD, 0), Invoke(INVOKEVIRTUAL, "C", "bar", "()V", false), Label(25), Op(RETURN), Label(27)))
     val labels = t.instructions collect { case l: Label => l }
     val x = t.localVars.find(_.name == "x").get
     assertEquals(x.start, labels(1))
-    assertEquals(x.end, labels(7))
+    assertEquals(x.end, labels(6))
   }
 
   @Test
@@ -195,7 +195,7 @@ class BytecodeTest extends BytecodeTesting {
       """.stripMargin
     val t = compileClass(code)
     val tMethod = getMethod(t, "t$")
-    val invoke = Invoke(INVOKEVIRTUAL, "java/lang/Object", "toString", "()Ljava/lang/String;", false)
+    @unused val invoke = Invoke(INVOKEVIRTUAL, "java/lang/Object", "toString", "()Ljava/lang/String;", false)
     // ths static accessor is positioned at the line number of the accessed method.
     assertSameCode(tMethod.instructions,
       List(Label(0), LineNumber(2, Label(0)), VarOp(ALOAD, 0), Invoke(INVOKESPECIAL, "T", "t", "()V", true), Op(RETURN), Label(4))
@@ -229,9 +229,148 @@ class BytecodeTest extends BytecodeTesting {
       assertEquals(pm.methods.asScala.map(_.name).toList,
         // after typer, `"$lessinit$greater$default$1"` is next to `<init>`, but the constructor phase
         // and code gen change module constructors around. the second `apply` is a bridge, created in erasure.
-        List("<clinit>", "$lessinit$greater$default$1", "toString", "apply", "apply$default$1", "unapply", "readResolve", "apply", "<init>"))
+        List("<clinit>", "$lessinit$greater$default$1", "toString", "apply", "apply$default$1", "unapply", "writeReplace", "apply", "<init>"))
     }
     check(s"$main\n$person")
     check(s"$person\n$main")
+  }
+
+  @Test
+  def t11127(): Unit = {
+    val code =
+      """abstract class C {
+        |  def b: Boolean
+        |
+        |  // no need to lift the `try` to a separate method if it's in the receiver expression
+        |  def t1 = (try { Console } catch { case _: ClassCastException => Console }).println()
+        |
+        |  // no need to lift the `try`
+        |  def t2 = !(try b catch { case _: ClassCastException => b })
+        |
+        |  def t3 = b || (try b catch { case _: ClassCastException => b })
+        |
+        |  def t4 = (try b catch { case _: ClassCastException => b }) || b
+        |
+        |  def t5 = b && (try b catch { case _: ClassCastException => b })
+        |
+        |  def t6 = (try b catch { case _: ClassCastException => b }) && b
+        |
+        |  def t7 = (try b catch { case _: ClassCastException => b }) && b || b && (try b catch { case _: ClassCastException => b || (try b catch { case _: ClassCastException => b }) })
+        |}
+      """.stripMargin
+    val c = compileClass(code)
+    def check(m: String, invoked: List[String]) = {
+      val meth = getMethod(c, m)
+      assert(meth.handlers.nonEmpty, meth.handlers)
+      assertInvokedMethods(meth, invoked)
+    }
+    check("t1", List("scala/Console$.println"))
+    check("t2", List("C.b", "C.b"))
+    check("t3", List("C.b", "C.b", "C.b"))
+    check("t4", List("C.b", "C.b", "C.b"))
+    check("t5", List("C.b", "C.b", "C.b"))
+    check("t6", List("C.b", "C.b", "C.b"))
+    check("t7", List("C.b", "C.b", "C.b", "C.b", "C.b", "C.b", "C.b", "C.b"))
+  }
+
+  @Test
+  def t11412(): Unit = {
+    val code = "class A { val a = 0 }; class C extends A with App { val x = 1; val y = x }"
+    val cs = compileClasses(code)
+    val c = cs.find(_.name == "C").get
+    val fs = c.fields.asScala.toList.sortBy(_.name).map(f => (f.name, (f.access & Opcodes.ACC_FINAL) != 0))
+    assertEquals(List(
+      ("executionStart", false),
+      ("scala$App$$_args", false),
+      ("scala$App$$initCode", false),
+      ("x", false),
+      ("y", false)
+    ), fs)
+    val assignedInConstr = getMethod(c, "<init>").instructions.filter(_.opcode == Opcodes.PUTFIELD)
+    assertEquals(Nil, assignedInConstr)
+  }
+
+  @Test
+  def t11412b(): Unit = {
+    val code = "class C { def f = { var x = 0; val y = 1; class K extends App { def m = x + y } } }"
+    val cs = compileClasses(code)
+    val k = cs.find(_.name == "C$K$1").get
+    val fs = k.fields.asScala.toList.sortBy(_.name).map(f => (f.name, (f.access & Opcodes.ACC_FINAL) != 0))
+    assertEquals(List(
+      ("$outer", true),
+      ("executionStart", false),
+      ("scala$App$$_args", false),
+      ("scala$App$$initCode", false),
+      ("x$1", true), // captured, assigned in constructor
+      ("y$1", true)  // captured
+    ), fs)
+    val assignedInConstr = getMethod(k, "<init>").instructions.filter(_.opcode == Opcodes.PUTFIELD) map {
+      case f: Field => f.name
+      case _ => ???  // @unchecked
+    }
+    assertEquals(List("$outer", "x$1", "y$1"), assignedInConstr.sorted)
+  }
+
+  @Test
+  def t11641(): Unit = {
+    val code =
+      """class B { val b = 0 }
+        |class C extends DelayedInit {
+        |  def delayedInit(body: => Unit): Unit = ()
+        |}
+        |class D extends DelayedInit {
+        |  val d = 0
+        |  def delayedInit(body: => Unit): Unit = ()
+        |}
+        |class E extends C {
+        |  val e = 0
+        |}
+        |class F extends D
+      """.stripMargin
+    val cs = compileClasses(code, allowMessage = _.msg.contains("2 deprecations"))
+
+    assertDoesNotInvoke(getMethod(cs.find(_.name == "B").get, "<init>"), "releaseFence")
+    assertDoesNotInvoke(getMethod(cs.find(_.name == "C").get, "<init>"), "releaseFence")
+    assertInvoke(getMethod(cs.find(_.name == "D").get, "<init>"), "scala/runtime/Statics", "releaseFence")
+    assertInvoke(getMethod(cs.find(_.name == "E").get, "<init>"), "scala/runtime/Statics", "releaseFence")
+    assertDoesNotInvoke(getMethod(cs.find(_.name == "F").get, "<init>"), "releaseFence")
+  }
+
+  @Test
+  def t11718(): Unit = {
+    val code = """class A11718 { private val a = ""; lazy val b = a }"""
+    val cs = compileClasses(code)
+    val A = cs.find(_.name == "A11718").get
+    val a = A.fields.asScala.find(_.name == "a").get
+    assertEquals(0, a.access & Opcodes.ACC_FINAL)
+  }
+
+  @Test
+  def t12362(): Unit = {
+    val code                 =
+      """object Test {
+        |  def foo(value: String) = {
+        |    println(value)
+        |  }
+        |
+        |  def abcde(value1: String, value2: Long, value3: Double, value4: Int, value5: Double): Double = {
+        |    println(value1)
+        |    value5
+        |  }
+        |}""".stripMargin
+
+    val List(mirror, _) = compileClasses(code)
+    assertEquals(mirror.name, "Test")
+
+    val foo    = getAsmMethod(mirror, "foo")
+    val abcde  = getAsmMethod(mirror, "abcde")
+
+    def t(m: MethodNode, r: List[(String, String, Int)]) = {
+      assertTrue((m.access & Opcodes.ACC_STATIC) != 0)
+      assertEquals(r, m.localVariables.asScala.toList.map(l => (l.desc, l.name, l.index)))
+    }
+
+    t(foo, List(("Ljava/lang/String;", "value", 0)))
+    t(abcde, List(("Ljava/lang/String;", "value1", 0), ("J", "value2", 1), ("D", "value3", 3), ("I", "value4", 5), ("D", "value5", 6)))
   }
 }

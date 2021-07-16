@@ -1,11 +1,23 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.collection.immutable
 
 
 import java.lang.Integer.bitCount
 import java.lang.Math.ceil
+import java.lang.System.arraycopy
 
-private[immutable] final object Node {
-
+private[collection] object Node {
   final val HashCodeLength = 32
 
   final val BitPartitionSize = 5
@@ -14,11 +26,7 @@ private[immutable] final object Node {
 
   final val MaxDepth = ceil(HashCodeLength.toDouble / BitPartitionSize).toInt
 
-  final val SizeEmpty = 0
-
-  final val SizeOne = 1
-
-  final val SizeMoreThanOne = 2
+  final val BranchingFactor = 1 << BitPartitionSize
 
   final def maskFrom(hash: Int, shift: Int): Int = (hash >>> shift) & BitPartitionMask
 
@@ -30,7 +38,7 @@ private[immutable] final object Node {
 
 }
 
-private[immutable] trait Node[T <: Node[T]] {
+private[collection] abstract class Node[T <: Node[T]] {
 
   def hasNodes: Boolean
 
@@ -44,8 +52,49 @@ private[immutable] trait Node[T <: Node[T]] {
 
   def getPayload(index: Int): Any
 
-  def sizePredicate: Int
+  def getHash(index: Int): Int
 
+  def cachedJavaKeySetHashCode: Int
+
+  private final def arrayIndexOutOfBounds(as: Array[_], ix:Int): ArrayIndexOutOfBoundsException =
+    new ArrayIndexOutOfBoundsException(s"$ix is out of bounds (min 0, max ${as.length-1}")
+
+  protected final def removeElement(as: Array[Int], ix: Int): Array[Int] = {
+    if (ix < 0) throw arrayIndexOutOfBounds(as, ix)
+    if (ix > as.length - 1) throw arrayIndexOutOfBounds(as, ix)
+    val result = new Array[Int](as.length - 1)
+    arraycopy(as, 0, result, 0, ix)
+    arraycopy(as, ix + 1, result, ix, as.length - ix - 1)
+    result
+  }
+
+  protected final def removeAnyElement(as: Array[Any], ix: Int): Array[Any] = {
+    if (ix < 0) throw arrayIndexOutOfBounds(as, ix)
+    if (ix > as.length - 1) throw arrayIndexOutOfBounds(as, ix)
+    val result = new Array[Any](as.length - 1)
+    arraycopy(as, 0, result, 0, ix)
+    arraycopy(as, ix + 1, result, ix, as.length - ix - 1)
+    result
+  }
+
+  protected final def insertElement(as: Array[Int], ix: Int, elem: Int): Array[Int] = {
+    if (ix < 0) throw arrayIndexOutOfBounds(as, ix)
+    if (ix > as.length) throw arrayIndexOutOfBounds(as, ix)
+    val result = new Array[Int](as.length + 1)
+    arraycopy(as, 0, result, 0, ix)
+    result(ix) = elem
+    arraycopy(as, ix, result, ix + 1, as.length - ix)
+    result
+  }
+  protected final def insertAnyElement(as: Array[Any], ix: Int, elem: Int): Array[Any] = {
+    if (ix < 0) throw arrayIndexOutOfBounds(as, ix)
+    if (ix > as.length) throw arrayIndexOutOfBounds(as, ix)
+    val result = new Array[Any](as.length + 1)
+    arraycopy(as, 0, result, 0, ix)
+    result(ix) = elem
+    arraycopy(as, ix, result, ix + 1, as.length - ix)
+    result
+  }
 }
 
 /**
@@ -54,20 +103,29 @@ private[immutable] trait Node[T <: Node[T]] {
   * node before traversing sub-nodes (left to right).
   *
   * @tparam T the trie node type we are iterating over
-  *
-  * @author   Michael J. Steindorfer
   */
 private[immutable] abstract class ChampBaseIterator[T <: Node[T]] {
 
   import Node.MaxDepth
 
+  // Note--this code is duplicated to a large extent both in
+  // ChampBaseReverseIterator and in convert.impl.ChampStepperBase.
+  // If you change this code, check those also in case they also
+  // need to be modified.
+  
   protected var currentValueCursor: Int = 0
   protected var currentValueLength: Int = 0
   protected var currentValueNode: T = _
 
   private[this] var currentStackLevel: Int = -1
-  private[this] val nodeCursorsAndLengths: Array[Int] = new Array[Int](MaxDepth * 2)
-  private[this] val nodes: Array[T] = new Array[Node[T]](MaxDepth).asInstanceOf[Array[T]]
+  private[this] var nodeCursorsAndLengths: Array[Int] = _
+  private[this] var nodes: Array[T] = _
+  private def initNodes(): Unit = {
+    if (nodeCursorsAndLengths eq null) {
+      nodeCursorsAndLengths = new Array[Int](MaxDepth * 2)
+      nodes = new Array[Node[T]](MaxDepth).asInstanceOf[Array[T]]
+    }
+  }
 
   def this(rootNode: T) = {
     this()
@@ -82,6 +140,7 @@ private[immutable] abstract class ChampBaseIterator[T <: Node[T]] {
   }
 
   private final def pushNode(node: T): Unit = {
+    initNodes()
     currentStackLevel = currentStackLevel + 1
 
     val cursorIndex = currentStackLevel * 2
@@ -132,8 +191,6 @@ private[immutable] abstract class ChampBaseIterator[T <: Node[T]] {
   * iterator performs a depth-first post-order traversal, traversing sub-nodes (right to left).
   *
   * @tparam T the trie node type we are iterating over
-  *
-  * @author   Michael J. Steindorfer
   */
 private[immutable] abstract class ChampBaseReverseIterator[T <: Node[T]] {
 

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package macros
@@ -29,7 +41,7 @@ package blackbox
  *  which means that its expansion will be upcast to its return type, enforcing faithfulness of that macro to its
  *  type signature. Whitebox macros, i.e. the ones defined with `whitebox.Context`, aren't bound by this restriction,
  *  which enables a number of important use cases, but they are also going to enjoy less support than blackbox macros,
- *  so choose wisely. See the [[http://docs.scala-lang.org/overviews/macros/overview.html Macros Guide]] for more information.
+ *  so choose wisely. See the [[https://docs.scala-lang.org/overviews/macros/overview.html Macros Guide]] for more information.
  *
  *  @see `scala.reflect.macros.whitebox.Context`
  */

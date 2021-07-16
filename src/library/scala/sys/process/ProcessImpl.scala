@@ -1,26 +1,32 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
-package scala
-package sys
-package process
+package scala.sys.process
 
 import processInternal._
-import java.io.{ PipedInputStream, PipedOutputStream }
+
+import java.util.concurrent.LinkedBlockingQueue
+import java.io.{PipedInputStream, PipedOutputStream}
+
+import scala.annotation.tailrec
 
 private[process] trait ProcessImpl {
   self: Process.type =>
 
   /** Runs provided code in a new Thread and returns the Thread instance. */
   private[process] object Spawn {
-    def apply(f: => Unit): Thread = apply(f, daemon = false)
-    def apply(f: => Unit, daemon: Boolean): Thread = {
-      val thread = new Thread() { override def run() = { f } }
+    def apply(prefix: String, daemon: Boolean = false)(f: => Unit): Thread = {
+      val thread = new Thread() { override def run() = f }
+      thread.setName(prefix + "-spawn-" + thread.getName)
       thread.setDaemon(daemon)
       thread.start()
       thread
@@ -28,14 +34,15 @@ private[process] trait ProcessImpl {
   }
   private[process] object Future {
     def apply[T](f: => T): (Thread, () => T) = {
-      val result = new SyncVar[Either[Throwable, T]]
-      def run(): Unit =
-        try result.put(Right(f))
-        catch { case e: Exception => result.put(Left(e)) }
+      val result = new LinkedBlockingQueue[Either[Throwable, T]](1)
+      def run(): Unit = {
+        val value = try Right(f) catch { case e: Exception => Left(e) }
+        result.put(value)
+      }
 
-      val t = Spawn(run())
+      val t = Spawn("Future")(run())
 
-      (t, () => result.get match {
+      (t, () => result.take() match {
         case Right(value)    => value
         case Left(exception) => throw exception
       })
@@ -90,16 +97,24 @@ private[process] trait ProcessImpl {
     def start()     = { futureThread ;() }
 
     protected lazy val (processThread, (futureThread, futureValue), destroyer) = {
-      val code = new SyncVar[Option[Int]]()
-      val thread = Spawn {
+      val code = new LinkedBlockingQueue[Option[Int]](1)
+      val thread = Spawn("CompoundProcess") {
         var value: Option[Int] = None
         try value = runAndExitValue()
+        catch {
+          case _: IndexOutOfBoundsException
+             | _: IOException
+             | _: NullPointerException
+             | _: SecurityException
+             | _: UnsupportedOperationException
+          => value = Some(-1)
+        }
         finally code.put(value)
       }
 
       (
         thread,
-        Future(code.get),          // thread.join()
+        Future(code.take()),          // thread.join()
         () => thread.interrupt()
       )
     }
@@ -114,19 +129,22 @@ private[process] trait ProcessImpl {
   }
 
   private[process] class PipedProcesses(a: ProcessBuilder, b: ProcessBuilder, defaultIO: ProcessIO, toError: Boolean) extends CompoundProcess {
-    protected[this] override def runAndExitValue() = runAndExitValue(new PipeSource(a.toString), new PipeSink(b.toString))
+    protected def newSource: PipeSource = new PipeSource(a.toString)
+    protected def newSink:   PipeSink   = new PipeSink(b.toString)
+    protected[this] override def runAndExitValue() = runAndExitValue(newSource, newSink)
     protected[this] def runAndExitValue(source: PipeSource, sink: PipeSink): Option[Int] = {
       source connectOut sink
       source.start()
       sink.start()
 
-      /** Release PipeSource, PipeSink and Process in the correct order.
-      * If once connect Process with Source or Sink, then the order of releasing them
-      * must be Source -> Sink -> Process, otherwise IOException will be thrown. */
-      def releaseResources(so: PipeSource, sk: PipeSink, p: Process *) = {
+      /* Release PipeSource, PipeSink and Process in the correct order.
+       * If once connect Process with Source or Sink, then the order of releasing them
+       * must be Source -> Sink -> Process, otherwise IOException will be thrown.
+       */
+      def releaseResources(so: PipeSource, sk: PipeSink, ps: Process*) = {
         so.release()
         sk.release()
-        p foreach( _.destroy() )
+        ps.foreach(_.destroy())
       }
 
       val firstIO =
@@ -147,9 +165,11 @@ private[process] trait ProcessImpl {
           throw err
         }
       runInterruptible {
-        source.join()
         val exit1 = first.exitValue()
+        source.done()
+        source.join()
         val exit2 = second.exitValue()
+        sink.done()
         // Since file redirection (e.g. #>) is implemented as a piped process,
         // we ignore its exit value so cmd #> file doesn't always return 0.
         if (b.hasExitValue) exit2 else exit1
@@ -169,53 +189,54 @@ private[process] trait ProcessImpl {
         if (isSink) dst else src
       }
     }
-    private def ioHandler(e: IOException): Unit = {
-      println("I/O error " + e.getMessage + " for process: " + labelFn())
-      e.printStackTrace()
-    }
+    private def ioHandler(e: IOException): Unit = e.printStackTrace()
   }
 
   private[process] class PipeSource(label: => String) extends PipeThread(false, () => label) {
+    setName(s"PipeSource($label)-$getName")
     protected[this] val pipe = new PipedOutputStream
-    protected[this] val source = new LinkedBlockingQueue[Option[InputStream]]
-    override def run(): Unit = {
-      try {
-        source.take match {
-          case Some(in) => runloop(in, pipe)
+    protected[this] val source = new LinkedBlockingQueue[Option[InputStream]](1)
+    override final def run(): Unit = {
+      @tailrec def go(): Unit =
+        source.take() match {
+          case Some(in) => runloop(in, pipe) ; go()
           case None =>
         }
-      }
+      try go()
       catch onInterrupt(())
       finally BasicIO close pipe
     }
-    def connectIn(in: InputStream): Unit = source add Some(in)
+    def connectIn(in: InputStream): Unit = source.put(Some(in))
     def connectOut(sink: PipeSink): Unit = sink connectIn pipe
     def release(): Unit = {
       interrupt()
-      source add None
+      done()
       join()
     }
+    def done() = source.put(None)
   }
   private[process] class PipeSink(label: => String) extends PipeThread(true, () => label) {
+    setName(s"PipeSink($label)-$getName")
     protected[this] val pipe = new PipedInputStream
-    protected[this] val sink = new LinkedBlockingQueue[Option[OutputStream]]
+    protected[this] val sink = new LinkedBlockingQueue[Option[OutputStream]](1)
     override def run(): Unit = {
-      try {
-        sink.take match {
-          case Some(out) => runloop(pipe, out)
+      @tailrec def go(): Unit =
+        sink.take() match {
+          case Some(out) => runloop(pipe, out) ; go()
           case None =>
         }
-      }
+      try go()
       catch onInterrupt(())
       finally BasicIO close pipe
     }
-    def connectOut(out: OutputStream): Unit = sink add Some(out)
+    def connectOut(out: OutputStream): Unit = sink.put(Some(out))
     def connectIn(pipeOut: PipedOutputStream): Unit = pipe connect pipeOut
     def release(): Unit = {
       interrupt()
-      sink add None
+      done()
       join()
     }
+    def done() = sink.put(None)
   }
 
   /** A thin wrapper around a java.lang.Process.  `ioThreads` are the Threads created to do I/O.
@@ -228,16 +249,22 @@ private[process] trait ProcessImpl {
     override def destroy(): Unit = { }
   }
 
-  /** A thin wrapper around a java.lang.Process.  `outputThreads` are the Threads created to read from the
-  * output and error streams of the process.  `inputThread` is the Thread created to write to the input stream of
-  * the process.
-  * The implementation of `exitValue` interrupts `inputThread` and then waits until all I/O threads die before
-  * returning. */
+  /** A thin wrapper around a java.lang.Process.
+   *
+   *  `outputThreads` are the Threads created to read from the
+   *  output and error streams of the process.
+   *
+   *  `inputThread` is the Thread created to write to the input stream of
+   *  the process. It may be null if stdin was inherited.
+   *
+   *  The implementation of `exitValue` interrupts `inputThread`
+   *  and then waits until all I/O threads die before returning.
+   */
   private[process] class SimpleProcess(p: JProcess, inputThread: Thread, outputThreads: List[Thread]) extends Process {
     override def isAlive() = p.isAlive()
     override def exitValue() = {
       try p.waitFor()                   // wait for the process to terminate
-      finally inputThread.interrupt()   // we interrupt the input thread to notify it that it can terminate
+      finally interrupt()
       outputThreads foreach (_.join())  // this ensures that all output is complete before returning (waitFor does not ensure this)
 
       p.exitValue()
@@ -247,12 +274,14 @@ private[process] trait ProcessImpl {
         outputThreads foreach (_.interrupt()) // on destroy, don't bother consuming any more output
         p.destroy()
       }
-      finally inputThread.interrupt()
+      finally interrupt()
     }
+    // we interrupt the input thread to notify it that it can terminate
+    private[this] def interrupt(): Unit = if (inputThread != null) inputThread.interrupt()
   }
-  private[process] final class ThreadProcess(thread: Thread, success: SyncVar[Boolean]) extends Process {
+  private[process] final class ThreadProcess(thread: Thread, success: LinkedBlockingQueue[Boolean]) extends Process {
     override def isAlive()   = thread.isAlive()
-    override def exitValue() = if (success.get) 0 else 1   // thread.join()
+    override def exitValue() = if (success.take()) 0 else 1   // thread.join()
     override def destroy()   = thread.interrupt()
   }
 }

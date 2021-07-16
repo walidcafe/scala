@@ -1,3 +1,16 @@
+serialization-new.scala:24: warning: comparing values of types A and B using `equals` unsafely bypasses cooperative equality; use `==` instead
+    println("x equals y: " + (x equals y) + ", y equals x: " + (y equals x))
+                                ^
+serialization-new.scala:24: warning: comparing values of types B and A using `equals` unsafely bypasses cooperative equality; use `==` instead
+    println("x equals y: " + (x equals y) + ", y equals x: " + (y equals x))
+                                                                  ^
+serialization-new.scala:25: warning: comparing values of types A and B using `equals` unsafely bypasses cooperative equality; use `==` instead
+    assert((x equals y) && (y equals x))
+              ^
+serialization-new.scala:25: warning: comparing values of types B and A using `equals` unsafely bypasses cooperative equality; use `==` instead
+    assert((x equals y) && (y equals x))
+                              ^
+warning: 4 deprecations (since 2.13.0); re-run with -deprecation for details
 a1 = Array[1,2,3]
 _a1 = Array[1,2,3]
 arrayEquals(a1, _a1): true
@@ -54,8 +67,8 @@ _o2 = Some(1)
 o2 eq _o2: false, _o2 eq o2: false
 o2 equals _o2: true, _o2 equals o2: true
 
-s1 = 'hello
-_s1 = 'hello
+s1 = Symbol(hello)
+_s1 = Symbol(hello)
 s1 eq _s1: true, _s1 eq s1: true
 s1 equals _s1: true, _s1 equals s1: true
 
@@ -112,8 +125,8 @@ x = TreeSet(1, 2, 3)
 y = TreeSet(1, 2, 3)
 x equals y: true, y equals x: true
 
-x = LazyList(_, ?)
-y = LazyList(_, ?)
+x = LazyList(<not computed>)
+y = LazyList(<not computed>)
 x equals y: true, y equals x: true
 
 x = TreeMap(42 -> FortyTwo)
@@ -124,8 +137,8 @@ x = TreeSet(0, 2)
 y = TreeSet(0, 2)
 x equals y: true, y equals x: true
 
-x = Vector('a, 'b, 'c)
-y = Vector('a, 'b, 'c)
+x = Vector(Symbol(a), Symbol(b), Symbol(c))
+y = Vector(Symbol(a), Symbol(b), Symbol(c))
 x equals y: true, y equals x: true
 
 x = ArrayBuffer(one, two)
@@ -144,12 +157,12 @@ x = BitSet(0, 8, 9)
 y = BitSet(0, 8, 9)
 x equals y: true, y equals x: true
 
-x = HashMap(A -> 1, C -> 3, B -> 2)
-y = HashMap(A -> 1, C -> 3, B -> 2)
+x = HashMap(A -> 1, B -> 2, C -> 3)
+y = HashMap(A -> 1, B -> 2, C -> 3)
 x equals y: true, y equals x: true
 
-x = HashSet(buffers, title, layers)
-y = HashSet(buffers, title, layers)
+x = HashSet(buffers, layers, title)
+y = HashSet(buffers, layers, title)
 x equals y: true, y equals x: true
 
 x = LinkedHashMap(Linked -> 1, Hash -> 2, Map -> 3)

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package api
@@ -49,7 +61,7 @@ import scala.language.implicitConversions
  * quite possible that in future releases of the reflection API, flag sets could be replaced with something else.
  *
  * For more details about `FlagSet`s and other aspects of Scala reflection, see the
- * [[http://docs.scala-lang.org/overviews/reflection/overview.html Reflection Guide]]
+ * [[https://docs.scala-lang.org/overviews/reflection/overview.html Reflection Guide]]
  *
  * @group ReflectionAPI
  *
@@ -178,7 +190,7 @@ trait FlagSets { self: Universe =>
 
     /** Flag indicating that tree represents a parameter of the primary constructor of some class
      *  or a synthetic member underlying thereof. E.g. here's how 'class C(val x: Int)' is represented:
-     *
+     * {{{
      *      [[syntax trees at end of parser]]// Scala source: tmposDU52
      *      class C extends scala.AnyRef {
      *        <paramaccessor> val x: Int = _;
@@ -198,12 +210,13 @@ trait FlagSets { self: Universe =>
      *              Modifiers(), nme.CONSTRUCTOR, List(),
      *              List(List(ValDef(Modifiers(PARAM | PARAMACCESSOR), TermName("x"), Ident(TypeName("Int")), EmptyTree))), TypeTree(),
      *              Block(List(pendingSuperCall), Literal(Constant(())))))))))
+     * }}}
      */
     val PARAMACCESSOR: FlagSet
 
     /** Flag indicating that tree represents a parameter of the primary constructor of some case class
      *  or a synthetic member underlying thereof.  E.g. here's how 'case class C(val x: Int)' is represented:
-     *
+     * {{{
      *      [[syntax trees at end of parser]]// Scala source: tmpnHkJ3y
      *      case class C extends scala.Product with scala.Serializable {
      *        <caseaccessor> <paramaccessor> val x: Int = _;
@@ -223,6 +236,7 @@ trait FlagSets { self: Universe =>
      *              Modifiers(), nme.CONSTRUCTOR, List(),
      *              List(List(ValDef(Modifiers(PARAM | PARAMACCESSOR), TermName("x"), Ident(TypeName("Int")), EmptyTree))), TypeTree(),
      *              Block(List(pendingSuperCall), Literal(Constant(())))))))))
+     * }}}
      */
     val CASEACCESSOR: FlagSet
 
@@ -233,7 +247,7 @@ trait FlagSets { self: Universe =>
 
     /** Flag used to distinguish platform-specific implementation details.
      *  Trees and symbols which are currently marked ARTIFACT by scalac:
-     *    * $outer fields and accessors
+     *    * \$outer fields and accessors
      *    * super accessors
      *    * protected accessors
      *    * lazy local accessors

@@ -1,15 +1,26 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package collection
 package immutable
 
-import java.io.{ObjectInputStream, ObjectOutputStream}
-
 import mutable.{Builder, ImmutableBuilder}
 import scala.annotation.tailrec
+import scala.collection.generic.DefaultSerializable
 
 /**
   * This class implements immutable sets using a list-based data structure. List set iterators and
-  * traversal methods visit elements in the order whey were first inserted.
+  * traversal methods visit elements in the order they were first inserted.
   *
   * Elements are stored internally in reversed insertion order, which means the newest element is at
   * the head of the list. As such, methods such as `head` and `tail` are O(n), while `last` and
@@ -21,8 +32,6 @@ import scala.annotation.tailrec
   *
   * @tparam A the type of the elements contained in this list set
   *
-  * @author Matthias Zenger
-  * @since 1
   * @define Coll ListSet
   * @define coll list set
   * @define mayNotTerminateInf
@@ -30,12 +39,14 @@ import scala.annotation.tailrec
   */
 sealed class ListSet[A]
   extends AbstractSet[A]
-    with SetOps[A, ListSet, ListSet[A]]
-    with StrictOptimizedIterableOps[A, ListSet, ListSet[A]] {
+    with StrictOptimizedSetOps[A, ListSet, ListSet[A]]
+    with IterableFactoryDefaults[A, ListSet]
+    with DefaultSerializable {
 
-  override def className: String = "ListSet"
+  override protected[this] def className: String = "ListSet"
 
   override def size: Int = 0
+  override def knownSize: Int = 0
   override def isEmpty: Boolean = true
 
   def contains(elem: A): Boolean = false
@@ -64,14 +75,14 @@ sealed class ListSet[A]
   protected class Node(override protected val elem: A) extends ListSet[A] {
 
     override def size = sizeInternal(this, 0)
-
+    override def knownSize: Int = -1
     @tailrec private[this] def sizeInternal(n: ListSet[A], acc: Int): Int =
       if (n.isEmpty) acc
       else sizeInternal(n.next, acc + 1)
 
     override def isEmpty: Boolean = false
 
-    override def contains(e: A) = containsInternal(this, e)
+    override def contains(e: A): Boolean = containsInternal(this, e)
 
     @tailrec private[this] def containsInternal(n: ListSet[A], e: A): Boolean =
       !n.isEmpty && (n.elem == e || containsInternal(n.next, e))
@@ -100,7 +111,6 @@ sealed class ListSet[A]
   * n elements will take O(n^2^) time. This makes the builder suitable only for a small number of
   * elements.
   *
-  * @since 1
   * @define Coll ListSet
   * @define coll list set
   */
@@ -110,10 +120,13 @@ object ListSet extends IterableFactory[ListSet] {
   def from[E](it: scala.collection.IterableOnce[E]): ListSet[E] =
     it match {
       case ls: ListSet[E] => ls
+      case _ if it.knownSize == 0 => empty[E]
       case _ => (newBuilder[E] ++= it).result()
     }
 
-  private object EmptyListSet extends ListSet[Any]
+  private object EmptyListSet extends ListSet[Any] {
+    override def knownSize: Int = 0
+  }
   private[collection] def emptyInstance: ListSet[Any] = EmptyListSet
 
   def empty[A]: ListSet[A] = EmptyListSet.asInstanceOf[ListSet[A]]
@@ -122,9 +135,4 @@ object ListSet extends IterableFactory[ListSet] {
     new ImmutableBuilder[A, ListSet[A]](empty) {
       def addOne(elem: A): this.type = { elems = elems + elem; this }
     }
-
-  // scalac generates a `readReplace` method to discard the deserialized state (see https://github.com/scala/bug/issues/10412).
-  // This prevents it from serializing it in the first place:
-  private[this] def writeObject(out: ObjectOutputStream): Unit = ()
-  private[this] def readObject(in: ObjectInputStream): Unit = ()
 }

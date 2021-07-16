@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 // Developer note:
 //   scala -J-Dscala.process.debug
@@ -182,7 +186,7 @@ package scala.sys {
     * import java.io.File
     * import java.net.URL
     * import scala.sys.process._
-    * new URL("http://www.scala-lang.org/") #> new File("scala-lang.html") !
+    * new URL("https://www.scala-lang.org/") #> new File("scala-lang.html") !
     * }}}
     *
     * More information about the other ways of controlling I/O can be found
@@ -227,10 +231,11 @@ package scala.sys {
       type InputStream            = java.io.InputStream
       type JProcess               = java.lang.Process
       type JProcessBuilder        = java.lang.ProcessBuilder
-      type LinkedBlockingQueue[T] = java.util.concurrent.LinkedBlockingQueue[T]
       type OutputStream           = java.io.OutputStream
-      type SyncVar[T]             = scala.concurrent.SyncVar[T]
       type URL                    = java.net.URL
+
+      @deprecated("Use `java.util.concurrent.LinkedBlockingQueue with capacity 1` instead.", since = "2.13.4")
+      type SyncVar[T] = scala.concurrent.SyncVar[T]
 
       def onError[T](handler: Throwable => T): Throwable =?> T = {
         case e @ _ => handler(e)

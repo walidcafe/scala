@@ -1,15 +1,22 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools
 package nsc
 package doc
 
-import reporters._
 import scala.reflect.internal.util._
-import DocParser.Parsed
+import scala.tools.nsc.doc.DocParser.Parsed
+import scala.tools.nsc.reporters.{ConsoleReporter, Reporter}
 
 /** A very minimal global customized for extracting `DocDefs`.  It stops
  *  right after parsing so it can read `DocDefs` from source code which would
@@ -22,7 +29,6 @@ class DocParser(settings: nsc.Settings, reporter: Reporter) extends Global(setti
   // the usual global initialization
   locally { new Run() }
 
-  override def forScaladoc = true
   override protected def computeInternalPhases(): Unit = phasesSet += syntaxAnalyzer
 
   /** Returns a list of `DocParser.Parseds`, which hold the DocDefs found
@@ -62,7 +68,7 @@ object DocParser {
     def raw: String           = docDef.comment.raw
 
     override def toString = (
-      nameChain.init.map(x => if (x.isTypeName) x + "#" else x + ".").mkString + nameChain.last
+      nameChain.init.map(x => if (x.isTypeName) s"$x#" else s"$x.").mkString + nameChain.last
     )
   }
 }

@@ -1,5 +1,6 @@
-import scala.reflect.runtime.universe._
+import scala.language.experimental.macros
 import scala.reflect.macros.blackbox.Context
+import scala.reflect.runtime.universe._
 
 object Impls {
   def foo_targs[T, U: c.WeakTypeTag](c: Context = null)(x: c.Expr[Int] = null) = {
@@ -16,5 +17,5 @@ object Impls {
 }
 
 class Macros[T] {
-  def foo_targs[U](x: Int) = macro Impls.foo_targs[T, U]
+  def foo_targs[U](x: Int): Unit = macro Impls.foo_targs[T, U]
 }

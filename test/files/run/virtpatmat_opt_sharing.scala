@@ -1,6 +1,4 @@
-/*
- * filter: It would fail on the following input
- */
+// scalac: -Ypatmat-exhaust-depth off
 object Test extends App {
   virtMatch()
   def virtMatch() = {

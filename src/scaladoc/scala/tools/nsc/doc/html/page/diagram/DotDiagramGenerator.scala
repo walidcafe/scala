@@ -1,7 +1,15 @@
-/**
- * @author Damien Obrist
- * @author Vlad Ureche
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala
 package tools
 package nsc
@@ -92,7 +100,7 @@ class DotDiagramGenerator(settings: doc.Settings) extends DiagramGenerator {
         def tooltip(nodes: List[Node]) = limitSize(nodes.map(_.tpe.name).mkString(", "))
 
         def counted(nodes: List[Node]) = new TypeEntity {
-          val name = nodes.length + MultiSuffix;
+          val name = "" + nodes.length + MultiSuffix;
           def refEntity: SortedMap[Int, (base.LinkTo, Int)] = SortedMap()
         }
         // avoid overcrowding the diagram:
@@ -100,22 +108,22 @@ class DotDiagramGenerator(settings: doc.Settings) extends DiagramGenerator {
         //   them by on node with a corresponding tooltip
 
         val outgoingImplicits =
-          if (_outgoingImplicits.length > settings.docDiagramsMaxImplicitClasses.value) {
+          if (_outgoingImplicits.lengthIs > settings.docDiagramsMaxImplicitClasses.value) {
             List(ImplicitNode(counted(_outgoingImplicits), None)(Some(tooltip(_outgoingImplicits))))
           } else _outgoingImplicits
 
         val incomingImplicits =
-          if (_incomingImplicits.length > settings.docDiagramsMaxImplicitClasses.value) {
+          if (_incomingImplicits.lengthIs > settings.docDiagramsMaxImplicitClasses.value) {
             List(ImplicitNode(counted(_incomingImplicits), None)(Some(tooltip(_incomingImplicits))))
           } else _incomingImplicits
 
         val subClasses =
-          if (_subClasses.length > settings.docDiagramsMaxNormalClasses.value) {
+          if (_subClasses.lengthIs > settings.docDiagramsMaxNormalClasses.value) {
             List(NormalNode(counted(_subClasses), None)(Some(tooltip(_subClasses))))
           } else _subClasses
 
         val superClasses =
-          if (_superClasses.length > settings.docDiagramsMaxNormalClasses.value) {
+          if (_superClasses.lengthIs > settings.docDiagramsMaxNormalClasses.value) {
             List(NormalNode(counted(_superClasses), None)(Some(tooltip(_superClasses))))
           } else _superClasses
 
@@ -196,7 +204,7 @@ class DotDiagramGenerator(settings: doc.Settings) extends DiagramGenerator {
           "node" + node2Index(from) + " -> node" + node2Index(to) +
           nodeAttrString(Map(
                               "class" -> edgeClass(from, to),
-                              "id" -> (node2Index(from) + "_" + node2Index(to)),
+                              "id" -> ("" + node2Index(from) + "_" + node2Index(to)),
                               "tooltip" -> tooltip,
                               "constraint" -> "false",
                               "minlen" -> "2",

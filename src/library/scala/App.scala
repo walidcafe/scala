@@ -1,14 +1,20 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2010-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
 import java.lang.System.{currentTimeMillis => currentTime}
+
+import scala.annotation.nowarn
 import scala.collection.mutable.ListBuffer
 
 /** The `App` trait can be used to quickly turn objects
@@ -31,10 +37,8 @@ import scala.collection.mutable.ListBuffer
  *  before the main method has been executed.'''''
  *
  *  Future versions of this trait will no longer extend `DelayedInit`.
- *
- *  @author  Martin Odersky
- *  @since   2.1
  */
+@nowarn("""cat=deprecation&origin=scala\.DelayedInit""")
 trait App extends DelayedInit {
 
   /** The time when the execution of this program started, in milliseconds since 1

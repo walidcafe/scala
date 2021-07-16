@@ -1,21 +1,27 @@
-/* NSC -- new Scala compiler
+/*
+ * Scala (https://www.scala-lang.org)
  *
- * Copyright 2011-2013 LAMP/EPFL
- * @author Adriaan Moors
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package tools.nsc.transform.patmat
 
-import scala.language.postfixOps
 import scala.collection.mutable
 import scala.collection.immutable.ArraySeq
-import scala.reflect.internal.util.{HashSet, NoPosition, Position, StatisticsStatics}
+import scala.reflect.internal.util.Collections._
+import scala.reflect.internal.util.HashSet
 
-trait Logic extends Debugging  {
-  import global.statistics
+trait Logic extends Debugging {
+  import global._
 
-  private def max(xs: Seq[Int]) = if (xs isEmpty) 0 else xs max
+  private def max(xs: Seq[Int]) = if (xs.isEmpty) 0 else xs.max
   private def alignedColumns(cols: Seq[Any]): Seq[String] = {
     def toString(x: Any) = if (x == null) "" else x.toString
     if (cols.isEmpty || cols.tails.isEmpty) cols map toString
@@ -45,7 +51,7 @@ trait Logic extends Debugging  {
     type Type
     type Tree
 
-    class Prop
+    sealed abstract class Prop
     final case class Eq(p: Var, q: Const) extends Prop
 
     type Const
@@ -71,7 +77,7 @@ trait Logic extends Debugging  {
       def unapply(v: Var): Some[Tree]
     }
 
-    def uncheckedWarning(pos: Position, msg: String): Unit
+    def uncheckedWarning(pos: Position, msg: String, site: Symbol): Unit
 
     def reportWarning(message: String): Unit
 
@@ -111,12 +117,20 @@ trait Logic extends Debugging  {
     // but that requires typing relations like And(x: Tx, y: Ty) : (if(Tx == PureProp && Ty == PureProp) PureProp else Prop)
     final case class And(ops: Set[Prop]) extends Prop
     object And {
-      def apply(ops: Prop*) = new And(ops.toSet)
+      def apply(ps: Prop*)           = create(ps)
+      def create(ps: Iterable[Prop]) = ps match {
+        case ps: Set[Prop] => new And(ps)
+        case _             => new And(ps.to(scala.collection.immutable.ListSet))
+      }
     }
 
     final case class Or(ops: Set[Prop]) extends Prop
     object Or {
-      def apply(ops: Prop*) = new Or(ops.toSet)
+      def apply(ps: Prop*)           = create(ps)
+      def create(ps: Iterable[Prop]) = ps match {
+        case ps: Set[Prop] => new Or(ps)
+        case _             => new Or(ps.to(scala.collection.immutable.ListSet))
+      }
     }
 
     final case class Not(a: Prop) extends Prop
@@ -151,12 +165,21 @@ trait Logic extends Debugging  {
         val newSym = new Sym(variable, const)
         (uniques findEntryOrUpdate newSym)
       }
-      def nextSymId = {_symId += 1; _symId}; private var _symId = 0
+      def nextSymId = {_symId += 1; _symId}; private[this] var _symId = 0
       implicit val SymOrdering: Ordering[Sym] = Ordering.by(_.id)
     }
 
-    def /\(props: Iterable[Prop]) = if (props.isEmpty) True else And(props.toSeq: _*)
-    def \/(props: Iterable[Prop]) = if (props.isEmpty) False else Or(props.toSeq: _*)
+    def /\(props: Iterable[Prop]) = props match {
+      case _ if props.isEmpty     => True
+      case _ if props.sizeIs == 1 => props.head
+      case _                      => And.create(props)
+    }
+
+    def \/(props: Iterable[Prop]) = props match {
+      case _ if props.isEmpty     => False
+      case _ if props.sizeIs == 1 => props.head
+      case _                      => Or.create(props)
+    }
 
     /**
      * Simplifies propositional formula according to the following rules:
@@ -170,7 +193,7 @@ trait Logic extends Debugging  {
      *
      * Complexity: DFS over formula tree
      *
-     * See http://www.decision-procedures.org/slides/propositional_logic-2x3.pdf
+     * See https://www.decision-procedures.org/slides/propositional_logic-2x3.pdf
      */
     def simplify(f: Prop): Prop = {
 
@@ -198,14 +221,14 @@ trait Logic extends Debugging  {
         else if (size == 2) { // Specialized versions for size 2+3
           val it = ops0.iterator
           val result = checkPair(it.next(), it.next())
-          assert(!it.hasNext)
+          assert(!it.hasNext, "iterator must be empty")
           result
         } else if (size == 3) {
           val it = ops0.iterator
           val a = it.next()
           val b = it.next()
           val c = it.next()
-          assert(!it.hasNext)
+          assert(!it.hasNext, "iterator must be empty")
           checkPair(a, b) || checkPair(a, c) || checkPair(b, c)
         } else {
           val ops = new Array[Prop](size)
@@ -224,81 +247,81 @@ trait Logic extends Debugging  {
         }
       }
 
+      def mapConserve[A <: AnyRef](s: Set[A])(f: A => A): Set[A] = {
+        var changed = false
+        val s1 = s.map {a =>
+          val a1 = f(a)
+          if (a1 ne a) changed = true
+          a1
+        }
+        if (changed) s1 else s
+      }
+
       // push negation inside formula
       def negationNormalFormNot(p: Prop): Prop = p match {
-        case And(ops) => Or(ops.map(negationNormalFormNot)) // De Morgan
-        case Or(ops)  => And(ops.map(negationNormalFormNot)) // De Morgan
-        case Not(p)   => negationNormalForm(p)
-        case True     => False
-        case False    => True
-        case s: Sym   => Not(s)
+        case And(ops)         => Or(mapConserve(ops)(negationNormalFormNot)) // De Morgan
+        case Or(ops)          => And(mapConserve(ops)(negationNormalFormNot)) // De Morgan
+        case Not(p)           => negationNormalForm(p)
+        case True             => False
+        case False            => True
+        case s: Sym           => Not(s)
+        case Eq(_, _)         => Not(p)
+        case p @ AtMostOne(_) => Not(p)
       }
 
       def negationNormalForm(p: Prop): Prop = p match {
-        case And(ops)     => And(ops.map(negationNormalForm))
-        case Or(ops)      => Or(ops.map(negationNormalForm))
+        case And(ops)     =>
+          val ops1 = mapConserve(ops)(negationNormalForm)
+          if (ops1 eq ops) p else And(ops1)
+        case Or(ops)      =>
+          val ops1 = mapConserve(ops)(negationNormalForm)
+          if (ops1 eq ops) p else Or(ops1)
         case Not(negated) => negationNormalFormNot(negated)
         case True
              | False
              | (_: Sym)
+             | (_: Eq)
              | (_: AtMostOne)   => p
       }
 
+      def simplifyAnd(ps: Set[Prop]): Prop = {
+        // recurse for nested And (pulls all Ands up)
+        // build up Set in order to remove duplicates
+        val props = mutable.LinkedHashSet.empty[Prop]
+        for (prop <- ps) {
+          simplifyProp(prop) match {
+            case True    => // ignore `True`
+            case And(fv) => fv.foreach(props += _)
+            case f       => props += f
+          }
+        }
+
+        if (props.contains(False) || hasImpureAtom(props)) False
+        else /\(props)
+      }
+
+      def simplifyOr(ps: Set[Prop]): Prop = {
+        // recurse for nested Or (pulls all Ors up)
+        // build up Set in order to remove duplicates
+        val props = mutable.LinkedHashSet.empty[Prop]
+        for (prop <- ps) {
+          simplifyProp(prop) match {
+            case False  => // ignore `False`
+            case Or(fv) => props ++= fv
+            case f      => props += f
+          }
+        }
+
+        if (props.contains(True) || hasImpureAtom(props)) True
+        else \/(props)
+      }
+
       def simplifyProp(p: Prop): Prop = p match {
-        case And(fv)     =>
-          // recurse for nested And (pulls all Ands up)
-          // build up Set in order to remove duplicates
-          val opsFlattenedBuilder = collection.immutable.Set.newBuilder[Prop]
-          for (prop <- fv) {
-            val simplified = simplifyProp(prop)
-            if (simplified != True) { // ignore `True`
-              simplified match {
-                case And(fv) => fv.foreach(opsFlattenedBuilder += _)
-                case f => opsFlattenedBuilder += f
-              }
-            }
-          }
-          val opsFlattened = opsFlattenedBuilder.result()
-
-          if (opsFlattened.contains(False) || hasImpureAtom(opsFlattened)) {
-            False
-          } else {
-            opsFlattened.size match {
-              case 0 => True
-              case 1 => opsFlattened.head
-              case _ => new And(opsFlattened)
-            }
-          }
-        case Or(fv)      =>
-          // recurse for nested Or (pulls all Ors up)
-          // build up Set in order to remove duplicates
-          val opsFlattenedBuilder = collection.immutable.Set.newBuilder[Prop]
-          for (prop <- fv) {
-            val simplified = simplifyProp(prop)
-            if (simplified != False) { // ignore `False`
-              simplified match {
-                case Or(fv) => fv.foreach(opsFlattenedBuilder += _)
-                case f => opsFlattenedBuilder += f
-              }
-            }
-          }
-          val opsFlattened = opsFlattenedBuilder.result()
-
-          if (opsFlattened.contains(True) || hasImpureAtom(opsFlattened)) {
-            True
-          } else {
-            opsFlattened.size match {
-              case 0 => False
-              case 1 => opsFlattened.head
-              case _ => new Or(opsFlattened)
-            }
-          }
-        case Not(Not(a)) =>
-          simplify(a)
-        case Not(p)      =>
-          Not(simplify(p))
-        case p           =>
-          p
+        case And(ps)     => simplifyAnd(ps)
+        case Or(ps)      => simplifyOr(ps)
+        case Not(Not(a)) => simplify(a)
+        case Not(p)      => Not(simplify(p))
+        case p           => p
       }
 
       val nnf = negationNormalForm(f)
@@ -320,20 +343,20 @@ trait Logic extends Debugging  {
       def applySymbol(x: Sym): Unit = {}
     }
 
-    def gatherVariables(p: Prop): Set[Var] = {
-      val vars = new mutable.HashSet[Var]()
+    def gatherVariables(p: Prop): collection.Set[Var] = {
+      val vars = new mutable.LinkedHashSet[Var]()
       (new PropTraverser {
         override def applyVar(v: Var) = vars += v
       })(p)
-      vars.toSet
+      vars
     }
 
-    def gatherSymbols(p: Prop): Set[Sym] = {
-      val syms = new mutable.HashSet[Sym]()
+    def gatherSymbols(p: Prop): collection.Set[Sym] = {
+      val syms = new mutable.LinkedHashSet[Sym]()
       (new PropTraverser {
         override def applySymbol(s: Sym) = syms += s
       })(p)
-      syms.toSet
+      syms
     }
 
     trait PropMap {
@@ -372,7 +395,7 @@ trait Logic extends Debugging  {
     // according to subtyping, e.g., V = ConstantType(1) and V = Int are valid assignments
     // we rewrite V = C to a fresh boolean symbol, and model what we know about the variable's domain
     // in a prelude (the equality axioms)
-    //   1. a variable with a closed domain (of a sealed type) must be assigned one of the instantiatable types in its domain
+    //   1. a variable with a closed domain (of a sealed type) must be assigned one of the instantiable types in its domain
     //   2. for each variable V in props, and each constant C it is compared to,
     //      compute which assignments imply each other (as in the example above: V = 1 implies V = Int)
     //      and which assignments are mutually exclusive (V = String implies -(V = Int))
@@ -385,16 +408,15 @@ trait Logic extends Debugging  {
     //       V1 = Nil implies -(V2 = Ci) for all Ci in V2's domain (i.e., it is unassignable)
     // may throw an AnalysisBudget.Exception
     def removeVarEq(props: List[Prop], modelNull: Boolean = false): (Prop, List[Prop]) = {
-      val start = if (StatisticsStatics.areSomeColdStatsEnabled) statistics.startTimer(statistics.patmatAnaVarEq) else null
+      val start = if (settings.areStatisticsEnabled) statistics.startTimer(statistics.patmatAnaVarEq) else null
 
-      val vars = new mutable.HashSet[Var]
+      val vars = new mutable.LinkedHashSet[Var]
 
       object gatherEqualities extends PropTraverser {
         override def apply(p: Prop) = p match {
-          case Eq(v, c) =>
-            vars += v
-            v.registerEquality(c)
-          case _ => super.apply(p)
+          case Eq(v, NullConst) if !modelNull => vars += v // not modeling equality to null
+          case Eq(v, c)                       => vars += v; v.registerEquality(c)
+          case _                              => super.apply(p)
         }
       }
 
@@ -415,12 +437,25 @@ trait Logic extends Debugging  {
 
       debug.patmat("removeVarEq vars: "+ vars)
       vars.foreach { v =>
+        val isScrutineeVar = v == vars.head
+
         // if v.domainSyms.isEmpty, we must consider the domain to be infinite
         // otherwise, since the domain fully partitions the type of the value,
         // exactly one of the types (and whatever it implies, imposed separately) must be chosen
         // consider X ::= A | B | C, and A => B
         // coverage is formulated as: A \/ B \/ C and the implications are
-        v.domainSyms foreach { dsyms => addAxiom(\/(dsyms)) }
+        v.domainSyms foreach { dsyms =>
+          // if the domain is knonw to be empty
+          // only add that axiom if the var is the scrutinee
+          // which has the effect of wiping out the whole formula
+          // (because `\/(Set.empty) == False`)
+          // otherwise it's just a subvariable of a match expression
+          // which has no domain (i.e. an unreachable branch)
+          // but it shouldn't wipe out the whole exhaustivity check
+          // neg/t8511 vs (pos/t6146 or neg/virtpatmat_exhaust_compound.scala)
+          if (isScrutineeVar || dsyms.nonEmpty)
+            addAxiom(\/(dsyms))
+        }
 
         // when this variable cannot be null the equality corresponding to the type test `(x: T)`, where T is x's static type,
         // is always true; when the variable may be null we use the implication `(x != null) => (x: T)` for the axiom
@@ -456,7 +491,7 @@ trait Logic extends Debugging  {
       debug.patmat(s"eqAxioms:\n${eqAxiomsSeq.mkString("\n")}")
       debug.patmat(s"pure:${pure.mkString("\n")}")
 
-      if (StatisticsStatics.areSomeColdStatsEnabled) statistics.stopTimer(statistics.patmatAnaVarEq, start)
+      if (settings.areStatisticsEnabled) statistics.stopTimer(statistics.patmatAnaVarEq, start)
 
       (And(eqAxiomsSeq: _*), pure)
     }
@@ -464,7 +499,7 @@ trait Logic extends Debugging  {
     type Solvable
 
     def propToSolvable(p: Prop): Solvable = {
-      val (eqAxiom, pure :: Nil) = removeVarEq(List(p), modelNull = false)
+      val (eqAxiom, pure :: Nil) = removeVarEq(List(p), modelNull = false): @unchecked
       eqFreePropToSolvable(And(eqAxiom, pure))
     }
 
@@ -476,9 +511,9 @@ trait Logic extends Debugging  {
 
     final case class Solution(model: Model, unassigned: List[Sym])
 
-    def findModelFor(solvable: Solvable): Model
+    def hasModel(solvable: Solvable): Boolean
 
-    def findAllModelsFor(solvable: Solvable, pos: Position = NoPosition): List[Solution]
+    def findAllModelsFor(solvable: Solvable, sym: Symbol = NoSymbol): List[Solution]
   }
 }
 
@@ -492,12 +527,12 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
     def prepareNewAnalysis(): Unit = { Var.resetUniques(); Const.resetUniques() }
 
     object Var extends VarExtractor {
-      private var _nextId = 0
+      private[this] var _nextId = 0
       def nextId = {_nextId += 1; _nextId}
 
       def resetUniques() = {_nextId = 0; uniques.clear()}
       private val uniques = new mutable.HashMap[Tree, Var]
-      def apply(x: Tree): Var = uniques getOrElseUpdate(x, new Var(x, x.tpe))
+      def apply(x: Tree): Var = uniques.getOrElseUpdate(x, new Var(x, x.tpe))
       def unapply(v: Var) = Some(v.path)
     }
     class Var(val path: Tree, staticTp: Type) extends AbsVar {
@@ -527,7 +562,7 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
         val subConsts =
           enumerateSubtypes(staticTp, grouped = false)
           .headOption.map { tps =>
-          tps.toSet[Type].map{ tp =>
+          tps.to(scala.collection.immutable.ListSet).map { tp =>
             val domainC = TypeConst(tp)
             registerEquality(domainC)
             domainC
@@ -548,18 +583,18 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
         val subtypes = enumerateSubtypes(staticTp, grouped = true)
         subtypes.map {
           subTypes =>
-            val syms = subTypes.flatMap(tpe => symForEqualsTo.get(TypeConst(tpe))).toSet
+            val syms = subTypes.flatMap(tpe => symForEqualsTo.get(TypeConst(tpe))).to(scala.collection.immutable.ListSet)
             if (mayBeNull) syms + symForEqualsTo(NullConst) else syms
         }.filter(_.nonEmpty)
       }
 
       // populate equalitySyms
       // don't care about the result, but want only one fresh symbol per distinct constant c
-      def registerEquality(c: Const): Unit = {ensureCanModify(); symForEqualsTo getOrElseUpdate(c, Sym(this, c))}
+      def registerEquality(c: Const): Unit = { ensureCanModify() ; symForEqualsTo.getOrElseUpdate(c, Sym(this, c)) }
 
       // return the symbol that represents this variable being equal to the constant `c`, if it exists, otherwise False (for robustness)
       // (registerEquality(c) must have been called prior, either when constructing the domain or from outside)
-      def propForEqualsTo(c: Const): Prop = {observed(); symForEqualsTo.getOrElse(c, False)}
+      def propForEqualsTo(c: Const): Prop = { observed() ; symForEqualsTo.getOrElse(c, False) }
 
       // [implementation NOTE: don't access until all potential equalities have been registered using registerEquality]p
       /** the information needed to construct the boolean proposition that encodes the equality proposition (V = C)
@@ -590,7 +625,7 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
           // else  debug.patmat("NOT implies: "+(lower, upper))
 
 
-        /** Does V=A preclude V=B?
+        /* Does V=A preclude V=B?
          *
          * (0) A or B must be in the domain to draw any conclusions.
          *
@@ -665,7 +700,7 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
           // if we've already excluded the pair at some point (-A \/ -B), then don't exclude the symmetric one (-B \/ -A)
           // (nor the positive implications -B \/ A, or -A \/ B, which would entail the equality axioms falsifying the whole formula)
           val todo = equalitySyms filterNot (b => (b.const == sym.const) || excludedPair(ExcludedPair(b.const, sym.const)))
-          val (excluded, notExcluded) = todo partition (b => excludes(sym.const, b.const))
+          val (excluded, notExcluded) = partitionConserve(todo)(b => excludes(sym.const, b.const))
           val implied = notExcluded filter (b => implies(sym.const, b.const))
 
           debug.patmat("eq axioms for: "+ sym.const)
@@ -684,13 +719,14 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
       lazy val symForStaticTp: Option[Sym]  = symForEqualsTo.get(TypeConst(staticTpCheckable))
 
       // don't access until all potential equalities have been registered using registerEquality
-      private lazy val equalitySyms = {observed(); symForEqualsTo.values.toList}
+      private lazy val equalitySyms = {observed(); symForEqualsTo.values.toList.sortBy(_.toString) }
 
       // don't call until all equalities have been registered and registerNull has been called (if needed)
       def describe = {
+        val consts = symForEqualsTo.keys.toSeq.sortBy(_.toString)
         def domain_s = domain match {
-          case Some(d) => d mkString (" ::= ", " | ", "// "+ symForEqualsTo.keys)
-          case _       => symForEqualsTo.keys mkString (" ::= ", " | ", " | ...")
+          case Some(d) => d.mkString(" ::= ", " | ", "// " + consts)
+          case _       => consts.mkString(" ::= ", " | ", " | ...")
         }
         s"$this: ${staticTp}${domain_s} // = $path"
       }
@@ -708,10 +744,10 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
     object Const {
       def resetUniques() = {_nextTypeId = 0; _nextValueId = 0; uniques.clear() ; trees.clear()}
 
-      private var _nextTypeId = 0
+      private[this] var _nextTypeId = 0
       def nextTypeId = {_nextTypeId += 1; _nextTypeId}
 
-      private var _nextValueId = 0
+      private[this] var _nextValueId = 0
       def nextValueId = {_nextValueId += 1; _nextValueId}
 
       private val uniques = new mutable.HashMap[Type, Const]
@@ -776,7 +812,7 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
     // (At least conceptually: `true` is an instance of class `Boolean`)
     private def widenToClass(tp: Type): Type =
       if (tp.typeSymbol.isClass) tp
-      else if (tp.baseClasses.isEmpty) throw new IllegalArgumentException("Bad type: " + tp)
+      else if (tp.baseClasses.isEmpty) AnyTpe
       else tp.baseType(tp.baseClasses.head)
 
     object TypeConst extends TypeConstExtractor {
@@ -823,14 +859,14 @@ trait ScalaLogic extends Interface with Logic with TreeAndTypeAnalysis {
                 else ConstantType(c)
               case Ident(_) if p.symbol.isStable =>
                 // for Idents, can encode uniqueness of symbol as uniqueness of the corresponding singleton type
-                // for Selects, which are handled by the next case, the prefix of the select varies independently of the symbol (see pos/virtpatmat_unreach_select.scala)
+                // for Selects, which are handled by the next case, the prefix of the select varies independently of the symbol (see neg/virtpatmat_unreach_select.scala)
                 singleType(tp.prefix, p.symbol)
               case _ =>
                 Const.uniqueTpForTree(p)
             }
 
           val toString =
-            if (hasStableSymbol(p)) p.symbol.name.toString // tp.toString
+            if (p.hasSymbolField && p.symbol.isStable) p.symbol.name.toString // tp.toString
             else p.toString //+"#"+ id
 
           Const.unique(narrowTp, new ValueConst(narrowTp, checkableType(wideTp), toString)) // must make wide type checkable so that it is comparable to types from TypeConst

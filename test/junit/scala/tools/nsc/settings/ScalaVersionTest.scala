@@ -3,11 +3,8 @@ package settings
 
 import org.junit.Assert._
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
-import scala.tools.testing.AssertUtil.assertThrows
+import scala.tools.testkit.AssertUtil.assertThrows
 
-@RunWith(classOf[JUnit4])
 class ScalaVersionTest {
   // scala/bug#8711
   @Test def versionUnparse(): Unit = {
@@ -20,7 +17,6 @@ class ScalaVersionTest {
   // scala/bug#9167
   @Test def `version parses with rigor`(): Unit = {
     import settings.{ SpecificScalaVersion => V }
-    import ScalaVersion._
 
     // no-brainers
     assertEquals(V(2,11,7,Final), ScalaVersion("2.11.7"))
@@ -65,5 +61,14 @@ class ScalaVersionTest {
   // scala/bug#9377
   @Test def `missing version is as good as none`(): Unit = {
     assertEquals(NoScalaVersion, ScalaVersion(""))
+  }
+
+  @Test def `missing ops`(): Unit = {
+    assertEquals(ScalaVersion("2.13"), ScalaVersion("2.12") max ScalaVersion("2.13"))
+    assertEquals(ScalaVersion("2.12"), ScalaVersion("2.12") min ScalaVersion("2.13"))
+    assertEquals(ScalaVersion("2.13"), ScalaVersion("2.13") max ScalaVersion("2.12"))
+    assertEquals(ScalaVersion("2.12"), ScalaVersion("2.13") min ScalaVersion("2.12"))
+    assertEquals(ScalaVersion("2.13"), ScalaVersion("2.13") max ScalaVersion("2.13"))
+    assertEquals(ScalaVersion("2.13"), ScalaVersion("2.13") min ScalaVersion("2.13"))
   }
 }

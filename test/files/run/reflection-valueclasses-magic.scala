@@ -1,3 +1,5 @@
+// scalac: -deprecation
+//
 import scala.reflect.runtime.universe._
 import scala.reflect.runtime.universe.definitions._
 import scala.reflect.runtime.{currentMirror => cm}
@@ -14,6 +16,7 @@ object Test extends App {
     sym match {
       // initialize parameter symbols
       case meth: MethodSymbol => meth.paramLists.flatten.map(_.info)
+      case _                  => throw new MatchError(sym)
     }
     s"$sym: ${sym.info}"
   }

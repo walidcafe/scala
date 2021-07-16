@@ -1,14 +1,23 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect.internal.util
 
-import scala.collection.{ mutable, immutable }
+import scala.reflect.ClassTag
+import scala.collection.{immutable, mutable}
 import scala.annotation.tailrec
 import mutable.ListBuffer
+import scala.runtime.Statics.releaseFence
 
 /** Profiler driven changes.
  *  TODO - inlining doesn't work from here because of the bug that
@@ -58,6 +67,7 @@ trait Collections {
       tail = next
       rest = rest.tail
     }
+    releaseFence()
     head
   }
 
@@ -128,7 +138,9 @@ trait Collections {
         }
       }
     }
-    loop(null, xs, xs, ys)
+    val result = loop(null, xs, xs, ys)
+    releaseFence()
+    result
   }
 
   final def map3[A, B, C, D](xs1: List[A], xs2: List[B], xs3: List[C])(f: (A, B, C) => D): List[D] = {
@@ -148,7 +160,20 @@ trait Collections {
       ys1 = ys1.tail
       ys2 = ys2.tail
     }
-    if (lb eq null) Nil else lb.result
+    if (lb eq null) Nil else lb.result()
+  }
+
+  // compare to foldLeft[A, B](xs)
+  final def foldLeft2[A1, A2, B](xs1: List[A1], xs2: List[A2])(z0: B)(f: (B, A1, A2) => B): B = {
+    var ys1 = xs1
+    var ys2 = xs2
+    var res = z0
+    while (!ys1.isEmpty && !ys2.isEmpty) {
+      res = f(res, ys1.head, ys2.head)
+      ys1 = ys1.tail
+      ys2 = ys2.tail
+    }
+    res
   }
 
   final def flatCollect[A, B](elems: List[A])(pf: PartialFunction[A, Iterable[B]]): List[B] = {
@@ -176,7 +201,7 @@ trait Collections {
     xss.isEmpty || xss.head.isEmpty && flattensToEmpty(xss.tail)
   }
 
-  final def foreachWithIndex[A, B](xs: List[A])(f: (A, Int) => Unit): Unit = {
+  final def foreachWithIndex[A](xs: List[A])(f: (A, Int) => Unit): Unit = {
     var index = 0
     var ys = xs
     while (!ys.isEmpty) {
@@ -288,9 +313,89 @@ trait Collections {
     true
   }
 
-  final def sequence[A](as: List[Option[A]]): Option[List[A]] = {
-    if (as.exists (_.isEmpty)) None
-    else Some(as.flatten)
+  final def mapFilter2[A, B, C](itA: Iterator[A], itB: Iterator[B])(f: (A, B) => Option[C]): Iterator[C] =
+    new Iterator[C] {
+      private[this] var head: Option[C] = None
+      private[this] def advanceHead(): Unit =
+        while (head.isEmpty && itA.hasNext && itB.hasNext) {
+          val x = itA.next()
+          val y = itB.next()
+          head = f(x, y)
+        }
+
+      def hasNext: Boolean = {
+        advanceHead()
+        !head.isEmpty
+      }
+
+      def next(): C = {
+        advanceHead()
+        val res = head getOrElse (throw new NoSuchElementException("next on empty Iterator"))
+        head = None
+        res
+      }
+    }
+
+  final def mapToArray[A, B: ClassTag](xs: List[A])(f: A => B): Array[B] = {
+    val arr = new Array[B](xs.length)
+    var ix = 0
+    var ys = xs
+    while (ix < arr.length){
+      arr(ix) = f(ys.head)
+      ix += 1
+      ys = ys.tail
+    }
+    arr
+  }
+
+  final def mapFromArray[A, B](arr: Array[A])(f: A => B): List[B] = {
+    var ix = arr.length
+    var xs: List[B] = Nil
+    while (ix > 0){
+      ix -= 1
+      xs = f(arr(ix)) :: xs
+    }
+    xs
+  }
+
+  // "Opt" suffix or traverse clashes with the various traversers' traverses
+  final def sequenceOpt[A](as: List[Option[A]]): Option[List[A]] = traverseOpt(as)(identity)
+  final def traverseOpt[A, B](as: List[A])(f: A => Option[B]): Option[List[B]] =
+    if (as eq Nil) SomeOfNil else {
+      var result: ListBuffer[B] = null
+      var curr = as
+      while (curr ne Nil) {
+        f(curr.head) match {
+          case Some(b) =>
+            if (result eq null) result = ListBuffer.empty
+            result += b
+          case None => return None
+        }
+        curr = curr.tail
+      }
+      Some(result.toList)
+    }
+
+  final def partitionInto[A](xs: List[A], pred: A => Boolean, ayes: ListBuffer[A], nays: ListBuffer[A]): Unit = {
+    var ys = xs
+    while (!ys.isEmpty) {
+      val y = ys.head
+      if (pred(y)) ayes.addOne(y) else nays.addOne(y)
+      ys = ys.tail
+    }
+  }
+
+  final def bitSetByPredicate[A](xs: List[A])(pred: A => Boolean): mutable.BitSet = {
+    val bs = new mutable.BitSet()
+    var ys = xs
+    var i: Int = 0
+    while (! ys.isEmpty){
+      if (pred(ys.head))
+        bs.add(i)
+      ys = ys.tail
+      i += 1
+    }
+    bs
   }
 
   final def transposeSafe[A](ass: List[List[A]]): Option[List[List[A]]] = try {
@@ -311,6 +416,72 @@ trait Collections {
   /** Again avoiding calling length, but the lengthCompare interface is clunky.
     */
   final def hasLength(xs: List[_], len: Int) = xs.lengthCompare(len) == 0
+
+  @tailrec final def sumSize(xss: List[List[_]], acc: Int): Int =
+    if (xss.isEmpty) acc else sumSize(xss.tail, acc + xss.head.size)
+
+  final def fillList[T](n: Int)(t: T): List[T] = {
+    var i = 0
+    var result: List[T] = Nil
+    while (i < n) {
+      result = t :: result
+      i += 1
+    }
+    result
+  }
+
+  final def mapToArray[A, B](as: List[A], arr: Array[B], i: Int)(f: A => B): Unit = {
+    var these = as
+    var index = i
+    while (!these.isEmpty) {
+      arr(index) = f(these.head)
+      index += 1
+      these = these.tail
+    }
+  }
+
+  private val TupleOfNil = (Nil, Nil)
+  final def partitionConserve[A](as: List[A])(p: A => Boolean): (List[A], List[A]) = {
+    if (as.isEmpty) TupleOfNil
+    else {
+      var b0 = true
+      var canConserve = true
+      var ys = as
+      var ayes: ListBuffer[A] = null
+      var nays: ListBuffer[A] = null
+      var n = 0
+      while (!ys.isEmpty) {
+        val y = ys.head
+        val b = p(y)
+        if (canConserve) {
+          if (n == 0) b0 = b
+          else if (b != b0) {
+            canConserve = false
+            ayes = new ListBuffer[A]
+            nays = new ListBuffer[A]
+            val prefix = if (b0) ayes else nays
+            var j = 0
+            var zs = as
+            while (j < n) {
+              prefix += zs.head
+              zs = zs.tail
+              j += 1
+            }
+            (if (b) ayes else nays) += y
+          }
+          n += 1
+        } else {
+          (if (b) ayes else nays) += y
+        }
+        ys = ys.tail
+      }
+      if (canConserve)
+        if (b0) (as, Nil) else (Nil, as)
+      else
+        (ayes.toList, nays.toList)
+    }
+  }
+
 }
 
 object Collections extends Collections

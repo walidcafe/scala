@@ -1,10 +1,22 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.typechecker
+
+import scala.tools.nsc.Reporting.WarningCategory
 
 // imported from scalamacros/paradise
 trait MacroAnnotationNamers { self: Analyzer =>
   import global._
-  import analyzer._
-  import definitions._
   import scala.reflect.internal.Flags._
   import scala.reflect.internal.Mode._
 
@@ -23,7 +35,7 @@ trait MacroAnnotationNamers { self: Analyzer =>
           case tree @ Import(_, _) =>
             createAssignAndEnterSymbol(tree)
             finishSymbol(tree)
-            returnContext = context.make(tree)
+            returnContext = context.makeImportContext(tree)
           case tree: MemberDef =>
             createAssignAndEnterSymbol(tree)
             finishSymbol(tree)
@@ -154,7 +166,17 @@ trait MacroAnnotationNamers { self: Analyzer =>
     protected def weakEnsureCompanionObject(cdef: ClassDef, creator: ClassDef => Tree = companionModuleDef(_)): Symbol = {
       val m = patchedCompanionSymbolOf(cdef.symbol, context)
       if (m != NoSymbol && currentRun.compiles(m)) m
-      else { val mdef = atPos(cdef.pos.focus)(creator(cdef)); enterSym(mdef); markWeak(mdef.symbol) }
+      else {
+        val existsVal = context.tree.children.find {
+          case ValDef(_, term, _, _) if cdef.getterName == term  => true
+          case _ => false
+        }
+        if (existsVal.isDefined) NoSymbol else {
+          val mdef = atPos(cdef.pos.focus)(creator(cdef))
+          enterSym(mdef)
+          markWeak(mdef.symbol)
+        }
+      }
     }
 
     protected def finishSymbol(tree: Tree): Unit = {
@@ -214,7 +236,7 @@ trait MacroAnnotationNamers { self: Analyzer =>
       savingLock {
         tree match {
           case tree @ PackageDef(_, _) =>
-            newNamer(context.make(tree, sym.moduleClass, sym.info.decls)) enterSyms tree.stats
+            newNamer(context.make(tree, sym.moduleClass, sym.info.decls)).enterSyms(tree.stats)
           case tree @ ClassDef(mods, name, tparams, impl) =>
             val primaryConstructorArity = treeInfo.firstConstructorArgs(impl.body).size
             // not entering
@@ -231,10 +253,10 @@ trait MacroAnnotationNamers { self: Analyzer =>
             }
             val owner = tree.symbol.owner
             if (settings.warnPackageObjectClasses && owner.isPackageObjectClass && !mods.isImplicit) {
-              reporter.warning(tree.pos,
+              context.warning(tree.pos,
                                "it is not recommended to define classes/objects inside of package objects.\n" +
-                               "If possible, define " + tree.symbol + " in " + owner.skipPackageObject + " instead."
-                              )
+                               "If possible, define " + tree.symbol + " in " + owner.skipPackageObject + " instead.",
+                              WarningCategory.LintPackageObjectClasses)
             }
             // Suggested location only.
             if (mods.isImplicit) {
@@ -290,6 +312,7 @@ trait MacroAnnotationNamers { self: Analyzer =>
             sym setInfo completerOf(tree)
           case tree @ Import(_, _) =>
             namerOf(tree.symbol) importTypeCompleter tree
+          case x => throw new MatchError(x)
         }
       }
     }
@@ -367,7 +390,7 @@ trait MacroAnnotationNamers { self: Analyzer =>
 
           def maybeExpand(annotation: Tree, annottee: Tree, maybeExpandee: Tree): Option[List[Tree]] =
             if (context.macrosEnabled) { // TODO: when is this bit flipped -- can we pull this check out farther?
-              val treeInfo.Applied(Select(New(tpt), nme.CONSTRUCTOR), _, _) = annotation
+              val treeInfo.Applied(Select(New(tpt), nme.CONSTRUCTOR), _, _) = annotation: @unchecked
               val mann = probeMacroAnnotation(context, tpt)
               if (mann.isClass && mann.hasFlag(MACRO)) {
                 assert(!currentRun.compiles(mann), mann)
@@ -382,7 +405,7 @@ trait MacroAnnotationNamers { self: Analyzer =>
               } else None
             } else None
 
-          annZippers.iterator.flatMap(annz => maybeExpand(annz.annotation, annz.annottee, annz.owner)).nextOption match {
+          annZippers.iterator.flatMap(annz => maybeExpand(annz.annotation, annz.annottee, annz.owner)).nextOption() match {
             case Some(expanded) =>
               // TODO: The workaround employed in https://github.com/scalamacros/paradise/issues/19
               // no longer works because of the REPL refactoring in 2.13.0-M2.
@@ -474,12 +497,12 @@ trait MacroAnnotationNamers { self: Analyzer =>
         var selectors = imp.tree.selectors
         def current = selectors.head
         while (selectors != Nil && result == NoSymbol) {
-          if (current.rename == name.toTermName)
+          if (current.introduces(name))
             result = nonLocalMember(pre, if (name.isTypeName) current.name.toTypeName else current.name)
           else if (selectors.head.name == name.toTermName)
-                 renamed = true
-          else if (selectors.head.name == nme.WILDCARD && !renamed)
-                 result = nonLocalMember(pre, name)
+            renamed = true
+          else if (current.isWildcard && !renamed)
+            result = nonLocalMember(pre, name)
           if (result == NoSymbol)
             selectors = selectors.tail
         }
@@ -720,6 +743,7 @@ trait MacroAnnotationNamers { self: Analyzer =>
                   MacroAnnotationTopLevelModuleBadExpansion(expandee)
                   None
               }
+            case x => throw new MatchError(x)
           }
         } else {
           if (wasTransient) {
@@ -755,7 +779,7 @@ trait MacroAnnotationNamers { self: Analyzer =>
         case (_, unexpected) => unexpected // NOTE: who knows how people are already using macro annotations, so it's scary to fail here
       }
       if (phase.id > currentRun.typerPhase.id || !stats.exists(mightNeedTransform)) stats
-      else stats.flatMap(stat => {
+      else stats.flatMap { stat =>
         if (mightNeedTransform(stat)) {
           val sym = stat.symbol
           assert(sym != NoSymbol, (sym, stat))
@@ -771,7 +795,7 @@ trait MacroAnnotationNamers { self: Analyzer =>
         } else {
           List(stat)
         }
-      })
+      }
     }
   }
 }

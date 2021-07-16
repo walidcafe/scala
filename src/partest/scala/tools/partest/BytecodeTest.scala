@@ -1,21 +1,34 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.partest
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.tools.asm.{ClassReader, ClassWriter}
 import scala.tools.asm.tree._
 import java.io.{InputStream, File => JFile}
-
+import scala.tools.testkit.ASMConverters
 import AsmNode._
+import scala.tools.nsc.CloseableRegistry
 
 /**
  * Provides utilities for inspecting bytecode using ASM library.
  *
  * HOW TO USE
- * 1. Create subdirectory in test/files/jvm for your test. Let's name it $TESTDIR.
- * 2. Create $TESTDIR/BytecodeSrc_1.scala that contains Scala source file that you
+ * 1. Create subdirectory in test/files/jvm for your test. Let's name it \$TESTDIR.
+ * 2. Create \$TESTDIR/BytecodeSrc_1.scala that contains Scala source file that you
  *    want to inspect the bytecode for. The '_1' suffix signals to partest that it
  *    should compile this file first.
- * 3. Create $TESTDIR/Test.scala:
+ * 3. Create \$TESTDIR/Test.scala:
  *    import scala.tools.partest.BytecodeTest
  *    object Test extends BytecodeTest {
  *      def show {
@@ -69,9 +82,9 @@ abstract class BytecodeTest {
       println(s"Different member counts in $name1 and $name2")
       false
     }
-    else (ms1, ms2).zipped forall { (m1, m2) =>
+    else ms1.lazyZip(ms2).forall { (m1, m2) =>
       val c1 = f(m1)
-      val c2 = f(m2).replaceAllLiterally(name2, name1)
+      val c2 = f(m2).replace(name2, name1)
       if (c1 == c2)
         println(s"[ok] $m1")
       else
@@ -84,7 +97,7 @@ abstract class BytecodeTest {
   /**
    * Compare the bytecodes of two methods.
    *
-   * For the `similar` function, you probably want to pass [[ASMConverters.equivalentBytecode]].
+   * For the `similar` function, you probably want to pass [[scala.tools.testkit.ASMConverters.equivalentBytecode]].
    */
   def similarBytecode(methA: MethodNode, methB: MethodNode, similar: (List[Instruction], List[Instruction]) => Boolean) = {
     val isa = instructionsFromMethod(methA)
@@ -111,6 +124,10 @@ abstract class BytecodeTest {
   }
 
 // loading
+  protected def getField(classNode: ClassNode, name: String): FieldNode =
+    classNode.fields.asScala.find(_.name == name) getOrElse
+      sys.error(s"Didn't find field '$name' in class '${classNode.name}'")
+
   protected def getMethod(classNode: ClassNode, name: String): MethodNode =
     classNode.methods.asScala.find(_.name == name) getOrElse
       sys.error(s"Didn't find method '$name' in class '${classNode.name}'")
@@ -132,7 +149,7 @@ abstract class BytecodeTest {
     import scala.tools.nsc.Settings
     // logic inspired by scala.tools.util.PathResolver implementation
     // `Settings` is used to check YdisableFlatCpCaching in ZipArchiveFlatClassPath
-    val factory = new ClassPathFactory(new Settings())
+    val factory = new ClassPathFactory(new Settings(), new CloseableRegistry)
     val containers = factory.classesInExpandedPath(sys.props("partest.output") + java.io.File.pathSeparator + Defaults.javaUserClassPath)
     new AggregateClassPath(containers)
   }

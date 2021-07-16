@@ -1,4 +1,5 @@
-import scala.language.higherKinds
+// scalac: -Xsource:2.13
+//
 
 trait Functor[F[_]]
 

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools
 package reflect
 
@@ -33,9 +45,6 @@ trait FrontEnd {
 
   /** Displays incoming info */
   def display(info: Info): Unit
-
-  /** Services a request to drop into interactive mode */
-  def interactive(): Unit
 
   /** Refreshes the UI */
   def flush(): Unit = {}

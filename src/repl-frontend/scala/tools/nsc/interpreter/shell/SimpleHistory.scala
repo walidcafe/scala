@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc.interpreter.shell
@@ -29,7 +36,7 @@ class SimpleHistory extends History {
   def get(idx: Int): CharSequence = buf(idx)
   def add(item: CharSequence): Unit = buf += item.toString
   def replace(item: CharSequence): Unit = {
-    buf trimEnd 1
+    buf dropRightInPlace 1
     add(item)
   }
 

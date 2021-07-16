@@ -1,3 +1,4 @@
+import scala.language.experimental.macros
 import scala.reflect.macros.blackbox.Context
 
 object Impls {
@@ -9,5 +10,5 @@ object Impls {
 }
 
 object Macros {
-  def foo[T](x: T) = macro Impls.foo[T]
+  def foo[T](x: T): Unit = macro Impls.foo[T]
 }

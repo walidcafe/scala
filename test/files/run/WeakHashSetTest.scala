@@ -1,17 +1,17 @@
 object Test {
   def main(args: Array[String]): Unit = {
     val test = scala.reflect.internal.util.WeakHashSetTest
-    test.checkEmpty
-    test.checkPlusEquals
-    test.checkPlusEqualsCollisions
-    test.checkRehashing
-    test.checkRehashCollisions
-    test.checkFindOrUpdate
-    test.checkMinusEquals
-    test.checkMinusEqualsCollisions
-    test.checkClear
-    test.checkIterator
-    test.checkIteratorCollisions
+    test.checkEmpty()
+    test.checkPlusEquals()
+    test.checkPlusEqualsCollisions()
+    test.checkRehashing()
+    test.checkRehashCollisions()
+    test.checkFindOrUpdate()
+    test.checkMinusEquals()
+    test.checkMinusEqualsCollisions()
+    test.checkClear()
+    test.checkIterator()
+    test.checkIteratorCollisions()
 
     // This test is commented out because it relies on gc behavior which isn't reliable enough in an automated environment
     // test.checkRemoveUnreferencedObjects
@@ -22,65 +22,65 @@ object Test {
 // it uses the package private "diagnostics" method
 package scala.reflect.internal.util {
 
-  object WeakHashSetTest {
-    // a class guaranteed to provide hash collisions
-    case class Collider(x : String) extends Comparable[Collider] with Serializable {
-      override def hashCode = 0
-      def compareTo(y : Collider) = this.x compareTo y.x
-    }
+  // a class guaranteed to provide hash collisions
+  case class Collider(x : String) extends Comparable[Collider] with Serializable {
+    override def hashCode = 0
+    def compareTo(y : Collider) = this.x compareTo y.x
+  }
 
+  object WeakHashSetTest {
     // basic emptiness check
-    def checkEmpty: Unit = {
+    def checkEmpty(): Unit = {
       val hs = new WeakHashSet[String]()
       assert(hs.size == 0)
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // make sure += works
-    def checkPlusEquals: Unit = {
+    def checkPlusEquals(): Unit = {
       val hs = new WeakHashSet[String]()
       val elements = List("hello", "goodbye")
       elements foreach (hs += _)
       assert(hs.size == 2)
       assert(hs contains "hello")
       assert(hs contains "goodbye")
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // make sure += works when there are collisions
-    def checkPlusEqualsCollisions: Unit = {
+    def checkPlusEqualsCollisions(): Unit = {
       val hs = new WeakHashSet[Collider]()
       val elements = List("hello", "goodbye") map Collider
       elements foreach (hs += _)
       assert(hs.size == 2)
       assert(hs contains Collider("hello"))
       assert(hs contains Collider("goodbye"))
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // add a large number of elements to force rehashing and then validate
-    def checkRehashing: Unit = {
+    def checkRehashing(): Unit = {
       val size = 200
       val hs = new WeakHashSet[String]()
       val elements = (0 until size).toList map ("a" + _)
       elements foreach (hs += _)
       elements foreach {i => assert(hs contains i)}
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // make sure rehashing works properly when the set is rehashed
-    def checkRehashCollisions: Unit = {
+    def checkRehashCollisions(): Unit = {
       val size = 200
       val hs = new WeakHashSet[Collider]()
       val elements = (0 until size).toList map {x => Collider("a" + x)}
       elements foreach (hs += _)
       elements foreach {i => assert(hs contains i)}
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // test that unreferenced objects are removed
     // not run in an automated environment because gc behavior can't be relied on
-    def checkRemoveUnreferencedObjects: Unit = {
+    def checkRemoveUnreferencedObjects(): Unit = {
       val size = 200
       val hs = new WeakHashSet[Collider]()
       val elements = (0 until size).toList map {x => Collider("a" + x)}
@@ -97,11 +97,11 @@ package scala.reflect.internal.util {
       for (i <- 0 until size) {
         assert(!(hs contains Collider("b" + i)))
       }
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // make sure findOrUpdate returns the originally entered element
-    def checkFindOrUpdate: Unit = {
+    def checkFindOrUpdate(): Unit = {
       val size = 200
       val hs = new WeakHashSet[Collider]()
       val elements = (0 until size).toList map {x => Collider("a" + x)}
@@ -111,11 +111,11 @@ package scala.reflect.internal.util {
         // original put in
         assert(hs findEntryOrUpdate(Collider("a" + i)) eq elements(i))
       }
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // check -= functionality
-    def checkMinusEquals: Unit = {
+    def checkMinusEquals(): Unit = {
       val hs = new WeakHashSet[String]()
       val elements = List("hello", "goodbye")
       elements foreach (hs += _)
@@ -123,11 +123,11 @@ package scala.reflect.internal.util {
       assert(hs.size == 1)
       assert(hs contains "hello")
       assert(!(hs contains "goodbye"))
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // check -= when there are collisions
-    def checkMinusEqualsCollisions: Unit = {
+    def checkMinusEqualsCollisions(): Unit = {
       val hs = new WeakHashSet[Collider]
       val elements = List(Collider("hello"), Collider("goodbye"))
       elements foreach (hs += _)
@@ -138,11 +138,11 @@ package scala.reflect.internal.util {
       hs -= Collider("hello")
       assert(hs.size == 0)
       assert(!(hs contains Collider("hello")))
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // check that the clear method actually cleans everything
-    def checkClear: Unit = {
+    def checkClear(): Unit = {
       val size = 200
       val hs = new WeakHashSet[String]()
       val elements = (0 until size).toList map ("a" + _)
@@ -150,25 +150,25 @@ package scala.reflect.internal.util {
       hs.clear()
       assert(hs.size == 0)
       elements foreach {i => assert(!(hs contains i))}
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // check that the iterator covers all the contents
-    def checkIterator: Unit = {
+    def checkIterator(): Unit = {
       val hs = new WeakHashSet[String]()
       val elements = (0 until 20).toList map ("a" + _)
       elements foreach (hs += _)
       assert(elements.iterator.toList.sorted == elements.sorted)
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
 
     // check that the iterator covers all the contents even when there is a collision
-    def checkIteratorCollisions: Unit = {
+    def checkIteratorCollisions(): Unit = {
       val hs = new WeakHashSet[Collider]
       val elements = (0 until 20).toList map {x => Collider("a" + x)}
       elements foreach (hs += _)
       assert(elements.iterator.toList.sorted == elements.sorted)
-      hs.diagnostics.fullyValidate
+      hs.diagnostics.fullyValidate()
     }
   }
 }

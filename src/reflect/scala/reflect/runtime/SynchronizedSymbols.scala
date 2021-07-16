@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package runtime
@@ -148,6 +160,7 @@ private[reflect] trait SynchronizedSymbols extends internal.Symbols { self: Symb
     override def exists: Boolean = gilSynchronizedIfNotThreadsafe(super.exists)
     override def typeSignature: Type = gilSynchronizedIfNotThreadsafe { super.typeSignature }
     override def typeSignatureIn(site: Type): Type = gilSynchronizedIfNotThreadsafe { super.typeSignatureIn(site) }
+    override def typeConstructor: Type = gilSynchronizedIfNotThreadsafe { super.typeConstructor }
 
     override def typeParams: List[Symbol] = gilSynchronizedIfNotThreadsafe {
       if (isCompilerUniverse) super.typeParams

@@ -1,3 +1,5 @@
+// scalac: -Xfatal-warnings
+//
 // constructors used to drop outer fields when they were not accessed
 // however, how can you know (respecting separate compilation) that they're not accessed!?
 class Outer { final class Inner }
@@ -8,11 +10,11 @@ class Outer { final class Inner }
 object Test extends App {
   val a = new Outer
   val b = new Outer
-  (new a.Inner: Any) match {
+  (new a.Inner: Any @unchecked) match {
     case _: b.Inner => println("b")
     case _: a.Inner => println("a") // this is the case we want
   }
-  (new b.Inner: Any) match {
+  (new b.Inner: Any @unchecked) match {
     case _: a.Inner => println("a")
     case _: b.Inner => println("b") // this is the case we want
   }

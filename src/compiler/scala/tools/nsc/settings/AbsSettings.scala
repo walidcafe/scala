@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -15,19 +22,19 @@ trait AbsSettings extends scala.reflect.internal.settings.AbsSettings {
   type Setting <: AbsSetting      // Fix to the concrete Setting type
   type ResultOfTryToSet           // List[String] in mutable, (Settings, List[String]) in immutable
   def errorFn: String => Unit
-  protected def allSettings: scala.collection.Set[Setting]
+  protected def allSettings: scala.collection.Map[String, Setting]
 
   // settings minus internal usage settings
-  def visibleSettings = allSettings filterNot (_.isInternalOnly)
+  def visibleSettings: List[Setting] = allSettings.valuesIterator.filterNot(_.isInternalOnly).toList
 
   // only settings which differ from default
-  def userSetSettings = visibleSettings filterNot (_.isDefault)
+  def userSetSettings: List[Setting] = visibleSettings.filterNot(_.isDefault)
 
   // an argument list which (should) be usable to recreate the Settings
-  def recreateArgs = userSetSettings.toList flatMap (_.unparse)
+  def recreateArgs: List[String] = userSetSettings flatMap (_.unparse)
 
   // checks both name and any available abbreviations
-  def lookupSetting(cmd: String): Option[Setting] = allSettings find (_ respondsTo cmd)
+  def lookupSetting(cmd: String): Option[Setting] = allSettings.valuesIterator find (_ respondsTo cmd)
 
   // two AbsSettings objects are equal if their visible settings are equal.
   override def hashCode() = visibleSettings.size  // going for cheap
@@ -64,7 +71,7 @@ trait AbsSettings extends scala.reflect.internal.settings.AbsSettings {
      *  we can't use "this.type", at least not in a non-casty manner, which
      *  is unfortunate because we lose type information without it.
      *
-     *  ...but now they're this.type because of #3462.  The immutable
+     *  ...but now they're this.type because of scala/bug#3462.  The immutable
      *  side doesn't exist yet anyway.
      */
     def withAbbreviation(name: String): this.type
@@ -85,8 +92,8 @@ trait AbsSettings extends scala.reflect.internal.settings.AbsSettings {
       this
     }
 
-    /** Issue error and return */
-    def errorAndValue[T](msg: String, x: T): T = { errorFn(msg) ; x }
+    /** Issue error and return the value. */
+    def errorAndValue[A](msg: String, x: A): A = { errorFn(msg) ; x }
 
     /** If this method returns true, print the [[help]] message and exit. */
     def isHelping: Boolean = false
@@ -106,7 +113,7 @@ trait AbsSettings extends scala.reflect.internal.settings.AbsSettings {
      *  unmodified on failure, and Nil on success.
      */
     protected[nsc] def tryToSetColon(args: List[String]): Option[ResultOfTryToSet] =
-      errorAndValue("'%s' does not accept multiple arguments" format name, None)
+      errorAndValue(s"'$name' does not accept multiple arguments", None)
 
     /** Attempt to set from a properties file style property value.
      *  Currently used by Eclipse SDT only.
@@ -114,13 +121,17 @@ trait AbsSettings extends scala.reflect.internal.settings.AbsSettings {
      */
     def tryToSetFromPropertyValue(s: String): Unit = tryToSet(s :: Nil)
 
-    /** These categorizations are so the help output shows -X and -P among
-     *  the standard options and -Y among the advanced options.
+    /** Standard options are shown on the `-help` output,
+     *  advanced on `-X`, private on `-Y`, warning on `-W`, verbose on `-V`.
+     *
+     *  The single char options themselves, including `-P`, are explained on `-help`.
+     *  Additionally, `-Werror` is on `-help` and `-Xlint` on `-W`.
      */
-    def isAdvanced   = name match { case "-Y" => true ; case "-X" => false ; case _  => name startsWith "-X" }
-    def isPrivate    = name match { case "-Y" => false ; case _  => name startsWith "-Y" }
-    def isStandard   = !isAdvanced && !isPrivate
-    def isForDebug   = name endsWith "-debug" // by convention, i.e. -Ytyper-debug
+    def isAdvanced   = name.startsWith("-X") && name != "-X"
+    def isPrivate    = name.startsWith("-Y") && name != "-Y"
+    def isVerbose    = name.startsWith("-V") && name != "-V"
+    def isWarning    = name.startsWith("-W") && name != "-W" || name == "-Xlint"
+    def isStandard   = !isAdvanced && !isPrivate && !isWarning && !isVerbose || name == "-Werror"
     def isDeprecated = deprecationMessage.isDefined
 
     def compare(that: Setting): Int = name compare that.name

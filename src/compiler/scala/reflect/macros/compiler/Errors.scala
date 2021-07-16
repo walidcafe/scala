@@ -1,7 +1,19 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.macros
 package compiler
 
-import java.lang.System.{lineSeparator => EOL}
+import scala.annotation.tailrec
 import scala.reflect.macros.util.Traces
 
 trait Errors extends Traces {
@@ -33,7 +45,15 @@ trait Errors extends Traces {
     "macro implementation reference is ambiguous: makes sense both as\n"+
     "a macro bundle method reference and a vanilla object method reference")
 
-  def MacroBundleNonStaticError() = bundleRefError("macro bundles must be static")
+  private def replClassBasedMacroAddendum(isReplClassBased: Boolean): String =
+    if (isReplClassBased)
+      "\nnote: macro definition is not supported in the REPL when using -Yrepl-classbased, run :replay -Yrepl-class-based:false."
+    else ""
+
+
+  def MacroBundleNonStaticError(isReplClassBased: Boolean) = {
+    bundleRefError("macro bundles must be static" + replClassBasedMacroAddendum(isReplClassBased))
+  }
 
   def MacroBundleWrongShapeError() = bundleRefError("macro bundles must be concrete monomorphic classes having a single constructor with a `val c: Context` parameter")
 
@@ -42,13 +62,13 @@ trait Errors extends Traces {
 
     // sanity check errors
 
-    def MacroImplReferenceWrongShapeError() = implRefError(
+    def MacroImplReferenceWrongShapeError(isReplClassBased: Boolean = false) = implRefError(
       "macro implementation reference has wrong shape. required:\n"+
       "macro [<static object>].<method name>[[<type args>]] or\n" +
-      "macro [<macro bundle>].<method name>[[<type args>]]")
+      "macro [<macro bundle>].<method name>[[<type args>]]" + replClassBasedMacroAddendum(isReplClassBased))
 
     def MacroImplWrongNumberOfTypeArgumentsError() = {
-      val diagnostic = if (macroImpl.typeParams.length > targs.length) "has too few type arguments" else "has too many arguments"
+      val diagnostic = if (macroImpl.typeParams.sizeCompare(targs) > 0) "has too few type arguments" else "has too many arguments"
       implRefError(s"macro implementation reference $diagnostic for " + treeSymTypeMsg(macroImplRef))
     }
 
@@ -80,7 +100,7 @@ trait Errors extends Traces {
 
     private def showMeth(pss: List[List[Symbol]], restpe: Type, abbreviate: Boolean, untype: Boolean) = {
       def preprocess(tpe: Type) = if (untype) untypeMetalevel(tpe) else tpe
-      var pssPart = (pss map (ps => ps map (p => p.defStringSeenAs(preprocess(p.info))) mkString ("(", ", ", ")"))).mkString
+      var pssPart = pss.map(_.map(p => p.defStringSeenAs(preprocess(p.info))).mkString("(", ", ", ")")).mkString
       if (abbreviate) pssPart = abbreviateCoreAliases(pssPart)
       var retPart = preprocess(restpe).toString
       if (abbreviate || macroDdef.tpt.tpe == null) retPart = abbreviateCoreAliases(retPart)
@@ -92,8 +112,9 @@ trait Errors extends Traces {
     private def checkConforms(slot: String, rtpe: Type, atpe: Type) = {
       val verbose = macroDebugVerbose
 
+      @tailrec
       def check(rtpe: Type, atpe: Type): Boolean = {
-        def success() = { if (verbose) println(rtpe + " <: " + atpe + "?" + EOL + "true"); true }
+        def success() = { if (verbose) println(f"$rtpe <: $atpe?%ntrue"); true }
         (rtpe, atpe) match {
           case _ if rtpe eq atpe => success()
           case (TypeRef(_, RepeatedParamClass, rtpe :: Nil), TypeRef(_, RepeatedParamClass, atpe :: Nil)) => check(rtpe, atpe)

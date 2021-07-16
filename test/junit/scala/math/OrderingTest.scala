@@ -5,10 +5,10 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
-import scala.math.Ordering.Float.TotalOrdering
-import scala.math.Ordering.Double.TotalOrdering
-
 import java.{lang => jl}
+
+import scala.collection.SortedSet
+import scala.math.Ordering.Double.TotalOrdering
 
 @RunWith(classOf[JUnit4])
 class OrderingTest {
@@ -38,10 +38,10 @@ class OrderingTest {
     Double.NaN
   )
 
-
   /* Test for scala/bug#9077 */
+  @deprecated("Tests deprecated Ordering for Iterable", since="2.13")
   @Test
-  def testReverseOrdering: Unit = {
+  def reverseOrdering(): Unit = {
     def check[T: Ordering](t1: T, t2: T): Unit = {
       val O = Ordering[T]
       val R = O.reverse
@@ -90,7 +90,43 @@ class OrderingTest {
   }
 
   @Test
-  def testComposedOrdering(): Unit = {
+  def reverseOf(): Unit = {
+    def check[T](ord: Ordering[T]): Unit = {
+      assert(ord isReverseOf ord.reverse)
+      assert(ord.reverse isReverseOf ord)
+      assert(!(ord isReverseOf ord))
+      assert(!(ord.reverse isReverseOf ord.reverse))
+      assert(!ord.isReverseOf({ (_, _) => 0 }: Ordering[T]))
+      assert(!ord.reverse.isReverseOf({ (_, _) => 0 }: Ordering[T]))
+    }
+
+    check(Ordering[Int])
+    check(Ordering[(Int, Long)])
+    check(Ordering[(Int, Long, Float)])
+    check(Ordering[(Int, Long, Float, Double)])
+    check(Ordering[(Int, Long, Float, Double, Byte)])
+    check(Ordering[(Int, Long, Float, Double, Byte, Char)])
+    check(Ordering[(Int, Long, Float, Double, Byte, Char, Short)])
+    check(Ordering[(Int, Long, Float, Double, Byte, Char, Short, BigInt)])
+    check(Ordering[(Int, Long, Float, Double, Byte, Char, Short, BigInt, BigDecimal)])
+    check(Ordering[Option[Int]])
+
+    import Ordering.Implicits._
+    check(Ordering[Seq[Int]])
+    check(Ordering[SortedSet[Int]])
+  }
+
+  @Test
+  def cachedReverse(): Unit = {
+    def check[T](ord: Ordering[T]): Unit = {
+      assert(ord.reverse eq ord.reverse)
+    }
+
+    check(Ordering[Int])
+  }
+
+  @Test
+  def composedOrdering(): Unit = {
     case class Pair(a: Int, b: Int)
 
     def check(ord1: Ordering[Pair], ord2: Ordering[Pair]): Unit = {
@@ -110,7 +146,7 @@ class OrderingTest {
 
   /* Test for scala/bug#10511 */
   @Test
-  def testFloatDoubleTotalOrdering(): Unit = {
+  def floatDoubleTotalOrdering(): Unit = {
     val fNegZeroBits = jl.Float.floatToRawIntBits(-0.0f)
     val fPosZeroBits = jl.Float.floatToRawIntBits(0.0f)
 
@@ -199,5 +235,46 @@ class OrderingTest {
 
     checkFloats(floats: _*)
     checkDoubles(doubles: _*)
+  }
+
+  /* Test for scala/bug#8664 */
+  @Test
+  def symbolOrdering(): Unit = {
+    assertEquals(Seq("b", "c", "a").sorted, Seq("a", "b", "c"))
+  }
+
+  @Test
+  def orderingEquality(): Unit = {
+    def check[T](ord: => Ordering[T]): Unit = {
+      assertEquals(ord, ord)
+      assertEquals(ord.hashCode(), ord.hashCode())
+      assertEquals(ord.reverse, ord.reverse)
+      assertEquals(ord.reverse.hashCode(), ord.reverse.hashCode())
+    }
+
+    check(Ordering[Int])
+    check(Ordering[(Int, Long)])
+    check(Ordering[(Int, Long, Float)])
+    check(Ordering[(Int, Long, Float, Double)])
+    check(Ordering[(Int, Long, Float, Double, Byte)])
+    check(Ordering[(Int, Long, Float, Double, Byte, Char)])
+    check(Ordering[(Int, Long, Float, Double, Byte, Char, Short)])
+    check(Ordering[(Int, Long, Float, Double, Byte, Char, Short, BigInt)])
+    check(Ordering[(Int, Long, Float, Double, Byte, Char, Short, BigInt, BigDecimal)])
+    check(Ordering[Option[Int]])
+
+    import Ordering.Implicits._
+    check(Ordering[Seq[Int]])
+    check(Ordering[SortedSet[Int]])
+  }
+
+  /* Test for scala/bug#11284 */
+  @Test
+  def supertypeOrdering(): Unit = {
+    val before = java.time.LocalDate.of(2004, 1, 20)
+    val now = java.time.LocalDate.now()
+    val later = java.time.LocalDate.now().plusWeeks(1)
+
+    assertEquals(Seq(before, now, later), Seq(now, later, before).sorted)
   }
 }

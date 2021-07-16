@@ -1,21 +1,38 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.partest
 
-import scala.tools.nsc._
-import settings.ScalaVersion
-import scala.reflect.internal.util.{ SourceFile, BatchSourceFile }
-import reporters.{Reporter, ConsoleReporter}
+import scala.reflect.internal.util.{BatchSourceFile, SourceFile}
 import scala.tools.cmd.CommandLineParser
+import scala.tools.nsc._
+import scala.tools.nsc.reporters.{ConsoleReporter, Reporter}
+import scala.tools.nsc.settings.ScalaVersion
+import scala.util.chaining._
 
-/** A class for testing code which is embedded as a string.
- *  It allows for more complete control over settings, compiler
- *  configuration, sequence of events, etc. than does partest.
+/** Test with code which is embedded as a string.
+ *
+ *  `DirectTest` allows for more complete control over settings, compiler
+ *  configuration, sequence of events, etc. than does partest alone.
+ *
+ *  Tests must define `code` and `show()`. Minimally:
+ *  ```
+ *  def show() = assert(compile())
+ *  ```
+ *
+ *  There are helper methods for creating settings and
+ *  invoking a (newly constructed) compiler.
  */
-abstract class DirectTest extends App {
+abstract class DirectTest {
   // The program being tested in some fashion
   def code: String
   // produce the output to be compared against a checkfile
@@ -25,26 +42,29 @@ abstract class DirectTest extends App {
   def testPath   = SFile(sys.props("partest.test-path"))
   def testOutput = Directory(sys.props("partest.output"))
 
-  // override to add additional settings with strings
-  def extraSettings: String = ""
-  // a default Settings object
-  def settings: Settings = newSettings(CommandLineParser tokenize extraSettings)
-  // a custom Settings object
-  def newSettings(args: List[String]) = {
-    val s = new Settings
-    val allArgs = args ++ (CommandLineParser tokenize debugSettings)
-    log("newSettings: allArgs = " + allArgs)
-    s processArguments (allArgs, true)
-    s
+  protected def pathOf(locations: String*) = locations.mkString(sys.props("path.separator"))
+
+  // override to add additional settings besides -d testOutput.path
+  def extraSettings: String = "-usejavacp"
+  // a default Settings object using only extraSettings
+  def settings: Settings = newSettings(CommandLineParser.tokenize(extraSettings))
+  // settings factory using given args and also debug settings
+  def newSettings(args: List[String]) = (new Settings).tap { s =>
+    val allArgs = args ++ CommandLineParser.tokenize(debugSettings)
+    log(s"newSettings: allArgs = $allArgs")
+    val (success, residual) = s.processArguments(allArgs, processAll = false)
+    assert(success && residual.isEmpty, s"Bad settings [${args.mkString(",")}], residual [${residual.mkString(",")}]")
   }
-  // new compiler
+  // new compiler using given ad hoc args, -d and extraSettings
   def newCompiler(args: String*): Global = {
-    val settings = newSettings((CommandLineParser tokenize ("-d \"" + testOutput.path + "\" " + extraSettings)) ++ args.toList)
+    val settings = newSettings(CommandLineParser.tokenize(s"""-d "${testOutput.path}" ${extraSettings}""") ++ args.toList)
     newCompiler(settings)
   }
 
+  // compiler factory
   def newCompiler(settings: Settings): Global = Global(settings, reporter(settings))
 
+  // reporter factory, console by default
   def reporter(settings: Settings): Reporter = new ConsoleReporter(settings)
 
   private def newSourcesWithExtension(ext: String)(codes: String*): List[BatchSourceFile] =
@@ -89,40 +109,39 @@ abstract class DirectTest extends App {
   def compile(args: String*) = compileString(newCompiler(args: _*))(code)
 
   /**  Constructor/main body  **/
-  try show()
-  catch { case t: Exception => println(t.getMessage) ; t.printStackTrace ; sys.exit(1) }
-
-  /** Debugger interest only below this line **/
-  protected def isDebug       = (sys.props contains "partest.debug") || (sys.env contains "PARTEST_DEBUG")
-  protected def debugSettings = sys.props.getOrElse("partest.debug.settings", "")
-
-  final def log(msg: => Any): Unit = {
-    if (isDebug) Console.err println msg
-  }
+  def main(args: Array[String]): Unit =
+    try show()
+    catch {
+      case t: Exception =>
+        println(t.getMessage)
+        t.printStackTrace
+        sys.exit(1)
+    }
 
   /**
-   * Run a test only if the current java version is at least the version specified.
-   */
-  def testUnderJavaAtLeast[A](version: String)(yesRun: =>A) = new TestUnderJavaAtLeast(version, { yesRun })
-
-  class TestUnderJavaAtLeast[A](version: String, yesRun: => A) {
-    val javaVersion = System.getProperty("java.specification.version")
-
-    // the "ScalaVersion" class parses Java specification versions just fine
-    val requiredJavaVersion = ScalaVersion(version)
-    val executingJavaVersion = ScalaVersion(javaVersion)
-    val shouldRun = executingJavaVersion >= requiredJavaVersion
-    val preamble = if (shouldRun) "Attempting" else "Doing fallback for"
-
-    def logInfo() = log(s"$preamble java $version specific test under java version $javaVersion")
- 
-   /*
-    * If the current java version is at least 'version' then 'yesRun' is evaluated
-    * otherwise 'fallback' is 
+    * Run a test only if the current java version is at least the version specified.
     */
-    def otherwise(fallback: =>A): A = {
-      logInfo()
-      if (shouldRun) yesRun else fallback
-    }
+  def testUnderJavaAtLeast[A](version: String)(yesRun: => A) = ifJavaAtLeast(version)(yesRun)
+}
+
+class TestUnderJavaAtLeast[A](version: String, yesRun: => A) {
+  //val javaVersion = System.getProperty("java.specification.version")
+  val javaVersion = scala.util.Properties.javaSpecVersion
+
+  // the "ScalaVersion" class parses Java specification versions just fine
+  val requiredJavaVersion = ScalaVersion(version)
+  val executingJavaVersion = ScalaVersion(javaVersion)
+  val shouldRun = executingJavaVersion >= requiredJavaVersion
+  val preamble = if (shouldRun) "Attempting" else "Doing fallback for"
+
+  def logInfo() = log(s"$preamble java $version specific test under java version $javaVersion")
+
+  /*
+   * If the current java version is at least 'version' then 'yesRun' is evaluated
+   * otherwise 'fallback' is
+   */
+  def otherwise(fallback: => A): A = {
+    logInfo()
+    if (shouldRun) yesRun else fallback
   }
 }

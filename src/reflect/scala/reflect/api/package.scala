@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 
@@ -21,7 +33,7 @@ import scala.reflect.api.{Universe => ApiUniverse}
  *  - [[scala.reflect.api.Universe]]
  *
  *  For more information about Scala Reflection, see the
- * [[http://docs.scala-lang.org/overviews/reflection/overview.html Reflection Guide]]
+ * [[https://docs.scala-lang.org/overviews/reflection/overview.html Reflection Guide]]
  *
  *  @groupname ReflectionAPI Scala Reflection API
  *  @groupprio API        9

@@ -81,39 +81,51 @@ object ScalaOptionParser {
     P <~ token(OptSpace)
   }
 
-  // TODO retrieve this data programmatically, ala https://github.com/scala/scala-tool-support/blob/master/bash-completion/src/main/scala/BashCompletion.scala
-  private def booleanSettingNames = List("-X", "-Xcheckinit", "-Xdev", "-Xdisable-assertions", "-Xexperimental", "-Xfatal-warnings", "-Xfull-lubs", "-Xfuture", "-Xlog-free-terms", "-Xlog-free-types", "-Xlog-implicit-conversions", "-Xlog-implicits", "-Xlog-reflective-calls",
-    "-Xno-forwarders", "-Xno-patmat-analysis", "-Xno-uescape", "-Xnojline", "-Xprint-pos", "-Xprint-types", "-Xprompt", "-Xresident", "-Xshow-phases", "-Xstrict-inference", "-Xverify", "-Y",
+  // TODO retrieve these data programmatically, ala https://github.com/scala/scala-tool-support/blob/master/bash-completion/src/main/scala/BashCompletion.scala
+  private def booleanSettingNames = List("-X", "-Xasync", "-Xcheckinit", "-Xdev", "-Xdisable-assertions", "-Xexperimental", "-Xfatal-warnings", "-Xlog-free-terms", "-Xlog-free-types", "-Xlog-implicit-conversions", "-Xlog-reflective-calls",
+    "-Xno-forwarders", "-Xno-patmat-analysis", "-Xnon-strict-patmat-analysis", "-Xprint-pos", "-Xprint-types", "-Xprompt", "-Xresident", "-Xshow-phases", "-Xverify", "-Y",
     "-Ybreak-cycles", "-Ydebug", "-Ycompact-trees", "-YdisableFlatCpCaching", "-Ydoc-debug",
-    "-Yide-debug", "-Yinfer-argument-types",
+    "-Yide-debug",
     "-Yissue-debug", "-Ylog-classpath", "-Ymacro-debug-lite", "-Ymacro-debug-verbose", "-Ymacro-no-expand",
     "-Yno-completion", "-Yno-generic-signatures", "-Yno-imports", "-Yno-predef", "-Ymacro-annotations",
-    "-Yoverride-objects", "-Yoverride-vars", "-Ypatmat-debug", "-Yno-adapted-args", "-Ypos-debug", "-Ypresentation-debug",
+    "-Ypatmat-debug", "-Yno-adapted-args", "-Ypos-debug", "-Ypresentation-debug",
     "-Ypresentation-strict", "-Ypresentation-verbose", "-Yquasiquote-debug", "-Yrangepos", "-Yreify-copypaste", "-Yreify-debug", "-Yrepl-class-based",
     "-Yrepl-sync", "-Yshow-member-pos", "-Yshow-symkinds", "-Yshow-symowners", "-Yshow-syms", "-Yshow-trees", "-Yshow-trees-compact", "-Yshow-trees-stringified", "-Ytyper-debug",
     "-Ywarn-dead-code", "-Ywarn-numeric-widen", "-Ywarn-value-discard", "-Ywarn-extra-implicit", "-Ywarn-self-implicit",
+    "-V",
+    "-Vclasspath", "-Vdebug", "-Vdebug-tasty", "-Vdoc", "-Vfree-terms", "-Vfree-types",
+    "-Vhot-statistics", "-Vide", "-Vimplicit-conversions", "-Vimplicits", "-Vissue",
+    "-Vmacro", "-Vmacro-lite", "-Vpatmat", "-Vphases", "-Vpos", "-Vprint-pos",
+    "-Vprint-types", "-Vquasiquote", "-Vreflective-calls", "-Vreify",
+    "-Vshow-member-pos", "-Vshow-symkinds", "-Vshow-symowners", "-Vsymbols", "-Vtype-diffs", "-Vtyper",
+    "-W",
+    "-Wdead-code", "-Werror", "-Wextra-implicit", "-Wnumeric-widen", "-Woctal-literal",
+    "-Wvalue-discard", "-Wself-implicit",
     "-deprecation", "-explaintypes", "-feature", "-help", "-no-specialization", "-nobootcp", "-nowarn", "-optimise", "-print", "-unchecked", "-uniqid", "-usejavacp", "-usemanifestcp", "-verbose", "-version")
-  private def stringSettingNames = List("-Xgenerate-phase-graph", "-Xmain-class", "-Xpluginsdir", "-Xshow-class", "-Xshow-object", "-Xsource-reader", "-Ydump-classes", "-Ygen-asmp",
-    "-Ypresentation-log", "-Ypresentation-replay", "-Yrepl-outdir", "-d", "-dependencyfile", "-encoding", "-Xscript")
-  private def pathSettingNames = List("-bootclasspath", "-classpath", "-extdirs", "-javabootclasspath", "-javaextdirs", "-sourcepath", "-toolcp")
-  private val phases = List("all", "parser", "namer", "packageobjects", "typer", "patmat", "superaccessors", "extmethods", "pickler", "refchecks", "uncurry", "tailcalls", "specialize", "explicitouter", "erasure", "posterasure", "fields", "lambdalift", "constructors", "flatten", "mixin", "cleanup", "delambdafy", "icode", "jvm", "terminal")
-  private val phaseSettings = List("-Xprint-icode", "-Ystop-after", "-Yskip", "-Yshow", "-Ystop-before", "-Ybrowse", "-Ylog", "-Ycheck", "-Xprint")
-  private def multiStringSettingNames = List("-Xmacro-settings", "-Xplugin", "-Xplugin-disable", "-Xplugin-require", "-Ywarn-unused")
-  private def intSettingNames = List("-Xmax-classfile-name", "-Xelide-below", "-Ypatmat-exhaust-depth", "-Ypresentation-delay", "-Yrecursion")
+  private def stringSettingNames = List("-Xjline", "-Xgenerate-phase-graph", "-Xmain-class", "-Xpluginsdir", "-Xshow-class", "-Xshow-object", "-Vshow-object", "-Xsource-reader", "-Ydump-classes", "-Ygen-asmp",
+    "-Ypresentation-log", "-Ypresentation-replay", "-Yrepl-outdir", "-d", "-dependencyfile", "-encoding", "-Xscript", "-Vinline", "-Vopt", "-Vshow-class", "-Vshow-member-pos")
+  private def pathSettingNames = List("-bootclasspath", "-classpath", "-extdirs", "-javabootclasspath", "-javaextdirs", "-sourcepath", "-toolcp", "-Vprint-args")
+  private val phases = List("all", "parser", "namer", "packageobjects", "typer", "patmat", "superaccessors", "extmethods", "pickler", "refchecks", "uncurry", "tailcalls", "specialize", "explicitouter", "erasure", "posterasure", "fields", "lambdalift", "constructors", "flatten", "mixin", "cleanup", "delambdafy", "jvm", "terminal")
+  private val phaseSettings = List("-Ystop-after", "-Yskip", "-Yshow", "-Ystop-before",
+    "-Ybrowse", "-Ylog", "-Ycheck", "-Xprint", "-Yvalidate-pos", "-Vbrowse", "-Vlog", "-Vprint", "-Vshow")
+  private def multiStringSettingNames = List("-Xmacro-settings", "-Xplugin", "-Xplugin-disable", "-Xplugin-require", "-Ywarn-unused", "-opt-inline-from")
+  private def intSettingNames = List("-Xelide-below", "-Ypatmat-exhaust-depth", "-Ypresentation-delay", "-Yrecursion")
   private def choiceSettingNames = Map[String, List[String]](
     "-YclasspathImpl" -> List("flat", "recursive"),
     "-Ydelambdafy" -> List("inline", "method"),
     "-Ymacro-expand" -> List("discard", "none"),
     "-Yresolve-term-conflict" -> List("error", "object", "package"),
     "-g" -> List("line", "none", "notailcails", "source", "vars"),
-    "-target" -> List("jvm-1.5", "jvm-1.6", "jvm-1.7", "jvm-1.8"))
+    "-target" -> targetSettingNames)
   private def multiChoiceSettingNames = Map[String, List[String]](
-    "-Xlint" -> List("adapted-args", "nullary-unit", "inaccessible", "nullary-override", "infer-any", "missing-interpolator", "doc-detached", "private-shadow", "type-parameter-shadow", "poly-implicit-overload", "option-implicit", "delayedinit-select", "by-name-right-associative", "package-object-classes", "unsound-match", "stars-align", "constant", "unused"),
+    "-Xlint" -> List("adapted-args", "nullary-unit", "inaccessible", "nullary-override", "infer-any", "missing-interpolator", "doc-detached", "private-shadow", "type-parameter-shadow", "poly-implicit-overload", "option-implicit", "delayedinit-select", "package-object-classes", "stars-align", "strict-unsealed-patmat", "constant", "unused", "eta-zero"),
     "-language" -> List("help", "_", "dynamics", "postfixOps", "reflectiveCalls", "implicitConversions", "higherKinds", "existentials", "experimental.macros"),
-    "-opt" -> List("l:none", "l:default", "l:method", "l:project", "l:classpath", "unreachable-code", "simplify-jumps", "empty-line-numbers", "empty-labels", "compact-locals", "nullness-tracking", "closure-elimination", "inline-project", "inline-global"),
+    "-opt" -> List("unreachable-code", "simplify-jumps", "compact-locals", "copy-propagation", "redundant-casts", "box-unbox", "nullness-tracking", "closure-invocations" , "allow-skip-core-module-init", "assume-modules-non-null", "allow-skip-class-loading", "inline", "l:none", "l:default", "l:method", "l:inline", "l:project", "l:classpath"),
     "-Ywarn-unused" -> List("imports", "patvars", "privates", "locals", "explicits", "implicits", "params"),
     "-Ywarn-macros" -> List("none", "before", "after", "both"),
-    "-Ystatistics" -> List("parser", "typer", "patmat", "erasure", "cleanup", "jvm")
+    "-Ystatistics" -> List("parser", "typer", "patmat", "erasure", "cleanup", "jvm"),
+    "-Vstatistics" -> List("parser", "typer", "patmat", "erasure", "cleanup", "jvm"),
+    "-Wunused" -> List("imports", "patvars", "privates", "locals", "explicits", "implicits", "nowarn", "linted")
   )
   private def scalaVersionSettings = List("-Xmigration", "-Xsource")
 
@@ -124,8 +136,9 @@ object ScalaOptionParser {
   private def scalaDocBooleanSettingNames = List("-implicits", "-implicits-debug", "-implicits-show-all", "-implicits-sound-shadowing", "-implicits-hide", "-author", "-diagrams", "-diagrams-debug", "-raw-output", "-no-prefixes", "-no-link-warnings", "-expand-all-types", "-groups")
   private def scalaDocIntSettingNames = List("-diagrams-max-classes", "-diagrams-max-implicits", "-diagrams-dot-timeout", "-diagrams-dot-restart")
   private def scalaDocChoiceSettingNames = Map("-doc-format" -> List("html"))
-  private def scaladocStringSettingNames = List("-doc-title", "-doc-version", "-doc-footer", "-doc-no-compile", "-doc-source-url", "-doc-generator", "-skip-packages")
+  private def scaladocStringSettingNames = List("-doc-title", "-doc-version", "-doc-footer", "-doc-no-compile", "-doc-source-url", "-doc-generator", "-skip-packages", "-jdk-api-doc-base")
   private def scaladocPathSettingNames = List("-doc-root-content", "-diagrams-dot-path")
   private def scaladocMultiStringSettingNames = List("-doc-external-doc")
 
+  private val targetSettingNames = (8 to 18).map(_.toString).flatMap(v => v :: s"jvm-1.$v" :: s"jvm-$v" :: s"1.$v" :: Nil).toList
 }

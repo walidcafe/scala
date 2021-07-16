@@ -1,17 +1,24 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package typechecker
 
+import scala.annotation.tailrec
 import symtab.Flags._
 import scala.reflect.internal.util.ListOfNil
 
 /*
  *  @author  Martin Odersky
- *  @version 1.0
  */
 trait Unapplies extends ast.TreeDSL {
   self: Analyzer =>
@@ -35,10 +42,33 @@ trait Unapplies extends ast.TreeDSL {
    */
   def directUnapplyMember(tp: Type): Symbol = (tp member nme.unapply) orElse (tp member nme.unapplySeq)
 
-  /** Filters out unapplies with multiple (non-implicit) parameter lists,
-   *  as they cannot be used as extractors
+  /** Filters out unapplies with invalid shapes: extractor methods must have
+    * either one unary param list or one unary param list and an implicit param list.
    */
-  def unapplyMember(tp: Type): Symbol = directUnapplyMember(tp) filter (sym => !hasMultipleNonImplicitParamLists(sym))
+  def unapplyMember(tp: Type): Symbol = {
+    def qualifies(sym: Symbol) =
+      validateUnapplyMember(sym.info) == UnapplyMemberResult.Ok
+    directUnapplyMember(tp) filter qualifies
+  }
+
+  // this slight extravagance opens this to reuse in error message generation
+  object UnapplyMemberResult extends Enumeration {
+    val Ok, NoParams, MultiParams, MultiParamss, VarArgs, Other = Value
+  }
+  @tailrec final def validateUnapplyMember(tp: Type): UnapplyMemberResult.Value = {
+    import UnapplyMemberResult._
+    tp match {
+      case PolyType(_, restpe) => validateUnapplyMember(restpe)
+      case MethodType(Nil, _) | NullaryMethodType(_) => NoParams
+      case MethodType(_ :: Nil, snd: MethodType) =>
+        if (snd.isImplicit) Ok else MultiParamss
+      case MethodType(x :: Nil, _) =>
+        if (definitions.isRepeated(x)) VarArgs
+        else Ok
+      case MethodType(_, _) => MultiParams
+      case _ => Other
+    }
+  }
 
   object HasUnapply {
     def unapply(tp: Type): Option[Symbol] = unapplyMember(tp).toOption
@@ -53,46 +83,21 @@ trait Unapplies extends ast.TreeDSL {
   }
 
   private def constrParamss(cdef: ClassDef): List[List[ValDef]] = {
-    val prunedClassDef = deriveClassDef(cdef)(tmpl => deriveTemplate(tmpl)(stats => treeInfo.firstConstructor(stats).duplicate :: Nil))
-    val ClassDef(_, _, _, Template(_, _, firstConstructor :: Nil)) = resetAttrs(prunedClassDef)
-    val DefDef(_, _, _, vparamss, _, _) = firstConstructor
-    vparamss
+    resetAttrs(deriveClassDef(cdef)(deriveTemplate(_)(treeInfo.firstConstructor(_).duplicate :: Nil))) match {
+      case ClassDef(_, _, _, Template(_, _, DefDef(_, _, _, vparamss, _, _) :: Nil)) => vparamss
+      case x                                                                         => throw new MatchError(x)
+    }
   }
 
   private def constrTparamsInvariant(cdef: ClassDef): List[TypeDef] = {
-    val prunedClassDef = deriveClassDef(cdef)(tmpl => Template(Nil, noSelfType, Nil))
-    val ClassDef(_, _, tparams, _) = resetAttrs(prunedClassDef.duplicate)
-    val tparamsInvariant = tparams.map(tparam => copyTypeDef(tparam)(mods = tparam.mods &~ (COVARIANT | CONTRAVARIANT)))
-    tparamsInvariant
-  }
-
-  /** The return value of an unapply method of a case class C[Ts]
-   *  @param param  The name of the parameter of the unapply method, assumed to be of type C[Ts]
-   *  @param caseclazz  The case class C[Ts]
-   */
-  private def caseClassUnapplyReturnValue(param: Name, caseclazz: ClassDef) = {
-    def caseFieldAccessorValue(selector: ValDef): Tree = {
-      // Selecting by name seems to be the most straight forward way here to
-      // avoid forcing the symbol of the case class in order to list the accessors.
-      def selectByName = Ident(param) DOT caseAccessorName(caseclazz.symbol, selector.name)
-      // But, that gives a misleading error message in neg/t1422.scala, where a case
-      // class has an illegal private[this] parameter. We can detect this by checking
-      // the modifiers on the param accessors.
-      // We just generate a call to that param accessor here, which gives us an inaccessible
-      // symbol error, as before.
-      def localAccessor = caseclazz.impl.body find {
-        case t @ ValOrDefDef(mods, selector.name, _, _) => mods.isPrivateLocal
-        case _                                          => false
-      }
-      localAccessor.fold(selectByName)(Ident(param) DOT _.symbol)
-    }
-
-    // Working with trees, rather than symbols, to avoid cycles like scala/bug#5082
-    constrParamss(caseclazz).take(1).flatten match {
-      case Nil => TRUE
-      case xs  => SOME(xs map caseFieldAccessorValue: _*)
+    resetAttrs(deriveClassDef(cdef)(_ => Template(Nil, noSelfType, Nil)).duplicate) match {
+      case ClassDef(_, _, tparams, _) => tparams.map(tparam => copyTypeDef(tparam)(mods = tparam.mods &~ (COVARIANT | CONTRAVARIANT)))
+      case x                          => throw new MatchError(x)
     }
   }
+
+  private def applyShouldInheritAccess(mods: Modifiers) =
+    currentRun.isScala3 && (mods.hasFlag(PRIVATE) || (!mods.hasFlag(PROTECTED) && mods.hasAccessBoundary))
 
   /** The module corresponding to a case class; overrides toString to show the module's name
    */
@@ -101,7 +106,7 @@ trait Unapplies extends ast.TreeDSL {
     def inheritFromFun = !cdef.mods.hasAbstractFlag && cdef.tparams.isEmpty && (params match {
       case List(ps) if ps.length <= MaxFunctionArity => true
       case _ => false
-    })
+    }) && !applyShouldInheritAccess(constrMods(cdef))
     def createFun = {
       def primaries = params.head map (_.tpt)
       gen.scalaFunctionConstr(primaries, toIdent(cdef), abstractFun = true)
@@ -139,38 +144,79 @@ trait Unapplies extends ast.TreeDSL {
     )
   }
 
+
+  private def constrMods(cdef: ClassDef): Modifiers = treeInfo.firstConstructorMods(cdef.impl.body)
+
   /** The apply method corresponding to a case class
    */
-  def caseModuleApplyMeth(cdef: ClassDef): DefDef = factoryMeth(caseMods, nme.apply, cdef)
+  def caseModuleApplyMeth(cdef: ClassDef): DefDef = {
+    val inheritedMods = constrMods(cdef)
+    val mods =
+      if (applyShouldInheritAccess(inheritedMods))
+        (caseMods | (inheritedMods.flags & PRIVATE)).copy(privateWithin = inheritedMods.privateWithin)
+      else
+        caseMods
+    factoryMeth(mods, nme.apply, cdef)
+  }
 
   /** The unapply method corresponding to a case class
    */
   def caseModuleUnapplyMeth(cdef: ClassDef): DefDef = {
-    val tparams    = constrTparamsInvariant(cdef)
-    val method     = constrParamss(cdef) match {
+    val tparams = constrTparamsInvariant(cdef)
+    val method = constrParamss(cdef) match {
       case xs :: _ if xs.nonEmpty && isRepeatedParamType(xs.last.tpt) => nme.unapplySeq
       case _                                                          => nme.unapply
     }
-    val cparams    = List(ValDef(Modifiers(PARAM | SYNTHETIC), unapplyParamName, classType(cdef, tparams), EmptyTree))
-    val resultType = if (!settings.isScala212) TypeTree() else { // fix for scala/bug#6541 under -Xsource:2.12
-    def repeatedToSeq(tp: Tree) = tp match {
+    val cparams = List(ValDef(Modifiers(PARAM | SYNTHETIC), unapplyParamName, classType(cdef, tparams), EmptyTree))
+    val resultType = { // fix for scala/bug#6541 under -Xsource:2.12
+      def repeatedToSeq(tp: Tree) = tp match {
         case AppliedTypeTree(Select(_, tpnme.REPEATED_PARAM_CLASS_NAME), tps) => AppliedTypeTree(gen.rootScalaDot(tpnme.Seq), tps)
         case _                                                                => tp
       }
+
       constrParamss(cdef) match {
         case Nil | Nil :: _ =>
           gen.rootScalaDot(tpnme.Boolean)
-        case params :: _ =>
+        case params :: _    =>
           val constrParamTypes = params.map(param => repeatedToSeq(param.tpt))
           AppliedTypeTree(gen.rootScalaDot(tpnme.Option), List(treeBuilder.makeTupleType(constrParamTypes)))
       }
     }
-    val ifNull     = if (constrParamss(cdef).head.isEmpty) FALSE else REF(NoneModule)
-    val body       = nullSafe({ case Ident(x) => caseClassUnapplyReturnValue(x, cdef) }, ifNull)(Ident(unapplyParamName))
 
-    atPos(cdef.pos.focus)(
-      DefDef(caseMods, method, tparams, List(cparams), resultType, body)
-    )
+    def selectCaseFieldAccessor(constrParam: ValDef): Tree = {
+      val unapplyParam = Ident(unapplyParamName)
+
+      // Selecting by name seems to be the most straight forward way here to
+      // avoid forcing the symbol of the case class in order to list the accessors.
+      //
+      // But, that gives a misleading error message in neg/t1422.scala, where a case
+      // class has an illegal private[this] parameter. We can detect this by checking
+      // the modifiers on the param accessors.
+      // We just generate a call to that param accessor here, which gives us an inaccessible
+      // symbol error, as before.
+      val accSel =
+        cdef.impl.body collectFirst {
+          case localAccessor@ValOrDefDef(mods, constrParam.name, _, _) if mods.isPrivateLocal => Select(unapplyParam, localAccessor.symbol)
+        } getOrElse Select(unapplyParam, caseAccessorName(cdef.symbol, constrParam.name))
+
+      constrParam.tpt match {
+        case AppliedTypeTree(Select(_, tpnme.REPEATED_PARAM_CLASS_NAME), tps) => Typed(accSel, AppliedTypeTree(gen.rootScalaDot(tpnme.Seq), tps))
+        case _                                                                => accSel
+      }
+    }
+
+    val body =
+      If(Ident(unapplyParamName) OBJ_EQ NULL,
+          if (constrParamss(cdef).head.isEmpty) FALSE else REF(NoneModule),
+          // Working with trees, rather than symbols, to avoid cycles like scala/bug#5082
+          constrParamss(cdef).take(1).flatten match {
+            case Nil => TRUE
+            case xs  => SOME(xs map selectCaseFieldAccessor: _*)
+          }
+        )
+
+
+    atPos(cdef.pos.focus)(DefDef(caseMods, method, tparams, List(cparams), resultType, body))
   }
 
   /**
@@ -224,8 +270,14 @@ trait Unapplies extends ast.TreeDSL {
       val classTpe = classType(cdef, tparams)
       val argss = mmap(paramss)(toIdent)
       val body: Tree = New(classTpe, argss)
+      val copyMods =
+        if (currentRun.isScala3) {
+          val inheritedMods = constrMods(cdef)
+          Modifiers(SYNTHETIC | (inheritedMods.flags & AccessFlags), inheritedMods.privateWithin)
+        }
+        else Modifiers(SYNTHETIC)
       val copyDefDef = atPos(cdef.pos.focus)(
-        DefDef(Modifiers(SYNTHETIC), nme.copy, tparams, paramss, TypeTree(), body)
+        DefDef(copyMods, nme.copy, tparams, paramss, TypeTree(), body)
       )
       Some(copyDefDef)
     }

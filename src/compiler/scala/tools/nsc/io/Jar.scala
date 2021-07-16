@@ -1,18 +1,25 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package io
 
-import scala.language.postfixOps
 import java.io.{DataOutputStream, InputStream, OutputStream}
 import java.util.jar._
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import Attributes.Name
 
+import scala.annotation.tailrec
 import scala.collection.AbstractIterable
 
 // Attributes.Name instances:
@@ -44,9 +51,9 @@ class Jar(file: File) extends AbstractIterable[JarEntry] {
   def mainClass     = manifest map (f => f(Name.MAIN_CLASS))
   /** The manifest-defined classpath String if available. */
   def classPathString: Option[String] =
-    for (m <- manifest ; cp <- m.attrs get Name.CLASS_PATH) yield cp
+    for (m <- manifest ; cp <- m.attrs.get(Name.CLASS_PATH)) yield cp
   def classPathElements: List[String] = classPathString match {
-    case Some(s)  => s split "\\s+" toList
+    case Some(s)  => s.split("\\s+").toList
     case _        => Nil
   }
 
@@ -77,6 +84,7 @@ class Jar(file: File) extends AbstractIterable[JarEntry] {
     Iterator continually in.getNextJarEntry() takeWhile (_ != null) foreach f
   }
   override def iterator: Iterator[JarEntry] = this.toList.iterator
+  override def isEmpty: Boolean = iterator.isEmpty
   override def toString = "" + file
 }
 
@@ -116,6 +124,7 @@ class JarWriter(val file: File, val manifest: Manifest) {
 
   private def transfer(in: InputStream, out: OutputStream) = {
     val buf = new Array[Byte](10240)
+    @tailrec
     def loop(): Unit = in.read(buf, 0, buf.length) match {
       case -1 => in.close()
       case n  => out.write(buf, 0, n) ; loop()
@@ -157,14 +166,13 @@ object Jar {
     def update(key: Attributes.Name, value: String) = attrs.put(key, value)
   }
 
-  // See http://docs.oracle.com/javase/7/docs/api/java/nio/file/Path.html
+  // See https://docs.oracle.com/javase/8/docs/api/java/nio/file/Path.html
   // for some ideas.
   private val ZipMagicNumber = List[Byte](80, 75, 3, 4)
-  private def magicNumberIsZip(f: Path) = f.isFile && (f.toFile.bytes().take(4).toList == ZipMagicNumber)
+  private def magicNumberIsZip(f: Path) = f.toFile.bytes().take(4).toList == ZipMagicNumber
 
-  def isJarOrZip(f: Path): Boolean = isJarOrZip(f, examineFile = true)
-  def isJarOrZip(f: Path, examineFile: Boolean): Boolean =
-    f.hasExtension("zip", "jar") || (examineFile && magicNumberIsZip(f))
+  // file exists and either has name.jar or magic number
+  def isJarOrZip(f: Path): Boolean = f.isFile && (Path.isExtensionJarOrZip(f.name) || magicNumberIsZip(f))
 
   def create(file: File, sourceDir: Directory, mainClass: String): Unit = {
     val writer = new Jar(file).jarWriter(Name.MAIN_CLASS -> mainClass)

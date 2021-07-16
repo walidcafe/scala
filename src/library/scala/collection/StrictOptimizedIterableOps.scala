@@ -1,13 +1,26 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package collection
 
 import scala.annotation.unchecked.uncheckedVariance
-import scala.language.higherKinds
+import scala.runtime.Statics
 
 /**
-  * Trait that overrides operations to take advantage of strict builders.
+  * Trait that overrides iterable operations to take advantage of strict builders.
   *
   * @tparam A  Elements type
+  * @tparam CC Collection type constructor
   * @tparam C  Collection type
   */
 trait StrictOptimizedIterableOps[+A, +CC[_], +C]
@@ -70,8 +83,17 @@ trait StrictOptimizedIterableOps[+A, +CC[_], +C]
   // the view-based implementations, but they turn out to be slightly faster because
   // a couple of indirection levels are removed
 
-  override def map[B](f: A => B): CC[B] = {
-    val b = iterableFactory.newBuilder[B]
+  override def map[B](f: A => B): CC[B] =
+    strictOptimizedMap(iterableFactory.newBuilder, f)
+
+  /**
+    * @param b Builder to use to build the resulting collection
+    * @param f Element transformation function
+    * @tparam B Type of elements of the resulting collection (e.g. `String`)
+    * @tparam C2 Type of the resulting collection (e.g. `List[String]`)
+    * @return The resulting collection
+    */
+  @inline protected[this] final def strictOptimizedMap[B, C2](b: mutable.Builder[B, C2], f: A => B): C2 = {
     val it = iterator
     while (it.hasNext) {
       b += f(it.next())
@@ -79,8 +101,17 @@ trait StrictOptimizedIterableOps[+A, +CC[_], +C]
     b.result()
   }
 
-  override def flatMap[B](f: A => IterableOnce[B]): CC[B] = {
-    val b = iterableFactory.newBuilder[B]
+  override def flatMap[B](f: A => IterableOnce[B]): CC[B] =
+    strictOptimizedFlatMap(iterableFactory.newBuilder, f)
+
+  /**
+    * @param b Builder to use to build the resulting collection
+    * @param f Element transformation function
+    * @tparam B Type of elements of the resulting collection (e.g. `String`)
+    * @tparam C2 Type of the resulting collection (e.g. `List[String]`)
+    * @return The resulting collection
+    */
+  @inline protected[this] final def strictOptimizedFlatMap[B, C2](b: mutable.Builder[B, C2], f: A => IterableOnce[B]): C2 = {
     val it = iterator
     while (it.hasNext) {
       b ++= f(it.next())
@@ -88,20 +119,51 @@ trait StrictOptimizedIterableOps[+A, +CC[_], +C]
     b.result()
   }
 
-  override def collect[B](pf: PartialFunction[A, B]): CC[B] = {
-    val b = iterableFactory.newBuilder[B]
+  /**
+    * @param that Elements to concatenate to this collection
+    * @param b Builder to use to build the resulting collection
+    * @tparam B Type of elements of the resulting collections (e.g. `Int`)
+    * @tparam C2 Type of the resulting collection (e.g. `List[Int]`)
+    * @return The resulting collection
+    */
+  @inline protected[this] final def strictOptimizedConcat[B >: A, C2](that: IterableOnce[B], b: mutable.Builder[B, C2]): C2 = {
+    b ++= this
+    b ++= that
+    b.result()
+  }
+
+  override def collect[B](pf: PartialFunction[A, B]): CC[B] =
+    strictOptimizedCollect(iterableFactory.newBuilder, pf)
+
+  /**
+    * @param b Builder to use to build the resulting collection
+    * @param pf Element transformation partial function
+    * @tparam B Type of elements of the resulting collection (e.g. `String`)
+    * @tparam C2 Type of the resulting collection (e.g. `List[String]`)
+    * @return The resulting collection
+    */
+  @inline protected[this] final def strictOptimizedCollect[B, C2](b: mutable.Builder[B, C2], pf: PartialFunction[A, B]): C2 = {
+    val marker = Statics.pfMarker
     val it = iterator
     while (it.hasNext) {
       val elem = it.next()
-      if (pf.isDefinedAt(elem)) {
-        b += pf.apply(elem)
-      }
+      val v = pf.applyOrElse(elem, ((x: A) => marker).asInstanceOf[Function[A, B]])
+      if (marker ne v.asInstanceOf[AnyRef]) b += v
     }
     b.result()
   }
 
-  override def flatten[B](implicit toIterableOnce: A => IterableOnce[B]): CC[B] = {
-    val b = iterableFactory.newBuilder[B]
+  override def flatten[B](implicit toIterableOnce: A => IterableOnce[B]): CC[B] =
+    strictOptimizedFlatten(iterableFactory.newBuilder)
+
+  /**
+    * @param b Builder to use to build the resulting collection
+    * @param toIterableOnce Evidence that `A` can be seen as an `IterableOnce[B]`
+    * @tparam B Type of elements of the resulting collection (e.g. `Int`)
+    * @tparam C2 Type of the resulting collection (e.g. `List[Int]`)
+    * @return The resulting collection
+    */
+  @inline protected[this] final def strictOptimizedFlatten[B, C2](b: mutable.Builder[B, C2])(implicit toIterableOnce: A => IterableOnce[B]): C2 = {
     val it = iterator
     while (it.hasNext) {
       b ++= toIterableOnce(it.next())
@@ -109,8 +171,17 @@ trait StrictOptimizedIterableOps[+A, +CC[_], +C]
     b.result()
   }
 
-  override def zip[B](that: Iterable[B]): CC[(A @uncheckedVariance, B)] = {
-    val b = iterableFactory.newBuilder[(A, B)]
+  override def zip[B](that: IterableOnce[B]): CC[(A @uncheckedVariance, B)] =
+    strictOptimizedZip(that, iterableFactory.newBuilder[(A, B)])
+
+  /**
+    * @param that Collection to zip with this collection
+    * @param b Builder to use to build the resulting collection
+    * @tparam B Type of elements of the second collection (e.g. `String`)
+    * @tparam C2 Type of the resulting collection (e.g. `List[(Int, String)]`)
+    * @return The resulting collection
+    */
+  @inline protected[this] final def strictOptimizedZip[B, C2](that: IterableOnce[B], b: mutable.Builder[(A, B), C2]): C2 = {
     val it1 = iterator
     val it2 = that.iterator
     while (it1.hasNext && it2.hasNext) {
@@ -159,4 +230,54 @@ trait StrictOptimizedIterableOps[+A, +CC[_], +C]
     b.result()
   }
 
+  // Optimized, push-based version of `partitionMap`
+  override def partitionMap[A1, A2](f: A => Either[A1, A2]): (CC[A1], CC[A2]) = {
+    val l = iterableFactory.newBuilder[A1]
+    val r = iterableFactory.newBuilder[A2]
+    foreach { x =>
+      f(x) match {
+        case Left(x1) => l += x1
+        case Right(x2) => r += x2
+      }
+    }
+    (l.result(), r.result())
+  }
+
+  // Optimization avoids creation of second collection
+  override def tapEach[U](f: A => U): C  = {
+    foreach(f)
+    coll
+  }
+
+  /** A collection containing the last `n` elements of this collection.
+    * $willForceEvaluation
+    */
+  override def takeRight(n: Int): C = {
+    val b = newSpecificBuilder
+    b.sizeHintBounded(n, toIterable)
+    val lead = iterator drop n
+    val it = iterator
+    while (lead.hasNext) {
+      lead.next()
+      it.next()
+    }
+    while (it.hasNext) b += it.next()
+    b.result()
+  }
+
+  /** The rest of the collection without its `n` last elements. For
+    *  linear, immutable collections this should avoid making a copy.
+    *  $willForceEvaluation
+    */
+  override def dropRight(n: Int): C = {
+    val b = newSpecificBuilder
+    if (n >= 0) b.sizeHint(toIterable, delta = -n)
+    val lead = iterator drop n
+    val it = iterator
+    while (lead.hasNext) {
+      b += it.next()
+      lead.next()
+    }
+    b.result()
+  }
 }

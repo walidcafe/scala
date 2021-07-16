@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package backend.jvm
 
@@ -163,7 +175,7 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
   private[this] lazy val _jlCloneableRef            : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(JavaCloneableClass))        // java/lang/Cloneable
 
   def                     jiSerializableRef         : ClassBType = _jiSerializableRef.get
-  private[this] lazy val _jiSerializableRef         : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(JavaSerializableClass))     // java/io/Serializable
+  private[this] lazy val _jiSerializableRef         : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(SerializableClass))     // java/io/Serializable
 
   def                     jlClassCastExceptionRef   : ClassBType = _jlClassCastExceptionRef.get
   private[this] lazy val _jlClassCastExceptionRef   : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(ClassCastExceptionClass))   // java/lang/ClassCastException
@@ -357,17 +369,12 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
     })
   }
 
-  def SSymbol_apply: Symbol = _SSymbol_apply.get
-  private[this] lazy val _SSymbol_apply: LazyVar[Symbol] = runLazy {
-    getMember(SymbolModule, nme.apply)
-  }
-
   def lambdaMetaFactoryMetafactoryHandle: Handle = _lambdaMetaFactoryMetafactoryHandle.get
   private[this] lazy val _lambdaMetaFactoryMetafactoryHandle: LazyVar[Handle] = runLazy {
     new Handle(Opcodes.H_INVOKESTATIC,
       coreBTypes.jliLambdaMetafactoryRef.internalName, sn.Metafactory.toString,
       MethodBType(
-        List(
+        Array(
           coreBTypes.jliMethodHandlesLookupRef,
           coreBTypes.StringRef,
           coreBTypes.jliMethodTypeRef,
@@ -384,7 +391,7 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
     new Handle(Opcodes.H_INVOKESTATIC,
       coreBTypes.jliLambdaMetafactoryRef.internalName, sn.AltMetafactory.toString,
       MethodBType(
-        List(
+        Array(
           coreBTypes.jliMethodHandlesLookupRef,
           coreBTypes.StringRef,
           coreBTypes.jliMethodTypeRef,
@@ -399,7 +406,7 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
     new Handle(Opcodes.H_INVOKESTATIC,
       coreBTypes.srLambdaDeserialize.internalName, sn.Bootstrap.toString,
       MethodBType(
-        List(
+        Array(
           coreBTypes.jliMethodHandlesLookupRef,
           coreBTypes.StringRef,
           coreBTypes.jliMethodTypeRef,

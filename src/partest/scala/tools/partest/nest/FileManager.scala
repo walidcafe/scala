@@ -1,6 +1,13 @@
-/* NEST (New Scala Test)
- * Copyright 2007-2013 LAMP/EPFL
- * @author Philipp Haller
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 // $Id$
@@ -8,7 +15,7 @@
 package scala.tools.partest
 package nest
 
-import java.io.{ File, IOException }
+import java.io.{File, IOException}
 import java.net.URLClassLoader
 
 object FileManager {
@@ -47,7 +54,7 @@ object FileManager {
   def mapFile(file: File, replace: String => String): Unit = {
     val f = SFile(file)
 
-    f.printlnAll(f.lines.toList map replace: _*)
+    f.printlnAll(f.lines().toList map replace: _*)
   }
 
   def jarsWithPrefix(dir: Directory, name: String): Iterator[SFile] =
@@ -58,16 +65,6 @@ object FileManager {
 
   def joinPaths(paths: List[Path]) = ClassPath.join(paths.map(_.getAbsolutePath).distinct: _*)
 
-  /** Compares two files using difflib to produce a unified diff.
-   *
-   *  @param  original  the first file to be compared
-   *  @param  revised  the second file to be compared
-   *  @return the unified diff of the compared files or the empty string if they're equal
-   */
-  def compareFiles(original: File, revised: File): String = {
-    compareContents(io.Source.fromFile(original).getLines.toSeq, io.Source.fromFile(revised).getLines.toSeq, original.getName, revised.getName)
-  }
-
   /** Compares two lists of lines using difflib to produce a unified diff.
    *
    *  @param  origLines  the first seq of lines to be compared
@@ -77,7 +74,7 @@ object FileManager {
    *  @return the unified diff of the `origLines` and `newLines` or the empty string if they're equal
    */
   def compareContents(original: Seq[String], revised: Seq[String], originalName: String = "a", revisedName: String = "b"): String = {
-    import collection.JavaConverters._
+    import scala.jdk.CollectionConverters._
 
     val diff = difflib.DiffUtils.diff(original.asJava, revised.asJava)
     if (diff.getDeltas.isEmpty) ""
@@ -106,9 +103,8 @@ class FileManager(val testClassLoader: URLClassLoader) {
 
   lazy val testClassPath = testClassLoader.getURLs().map(url => Path(new File(url.toURI))).toList
 
-  def this(testClassPath: List[Path]) {
+  def this(testClassPath: List[Path]) =
     this(new URLClassLoader(testClassPath.toArray map (_.toURI.toURL)))
-  }
 
   def distKind = {
     val p = libraryUnderTest.getAbsolutePath

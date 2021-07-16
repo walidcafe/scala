@@ -1,3 +1,5 @@
+// scalac: -Yrangepos
+//
 import scala.language.implicitConversions
 
 object Test extends App {
@@ -25,14 +27,14 @@ object Test extends App {
     }
 
     f0.op0(effect)
-    println
+    println()
 
     object f1 extends Foo {
       println("f1")
     }
 
     f1.op1(effect)
-    println
+    println()
   }
 
   {
@@ -50,13 +52,13 @@ object Test extends App {
     }
 
     f0.op0(effect)
-    println
+    println()
 
     object f1 extends Foo {
       println("f1")
     }
 
     f1.op1(effect)
-    println
+    println()
   }
 }

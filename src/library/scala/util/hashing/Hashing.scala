@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package util.hashing
@@ -19,8 +23,6 @@ import scala.annotation.implicitNotFound
   *
   * Note: when using a custom `Hashing`, make sure to use it with the `Equiv`
   * such that if any two objects are equal, then their hash codes must be equal.
-  *
-  * @since 2.10
   */
 @implicitNotFound(msg = "No implicit Hashing defined for ${T}.")
 trait Hashing[T] extends Serializable {
@@ -32,7 +34,7 @@ object Hashing {
     def hash(x: T) = x.##
   }
 
-  implicit def default[T] = new Default[T]
+  implicit def default[T]: Default[T] = new Default[T]
 
   def fromFunction[T](f: T => Int) = new Hashing[T] {
     def hash(x: T) = f(x)

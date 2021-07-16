@@ -1,12 +1,19 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
+/*
+ * Scala (https://www.scala-lang.org)
  *
- * @author  Paul Phillips
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package ast
 
+import scala.annotation.unused
 import scala.language.implicitConversions
 
 /** A DSL for generating scala code.  The goal is that the
@@ -24,8 +31,6 @@ trait TreeDSL {
     // Add a null check to a Tree => Tree function
     def nullSafe[T](f: Tree => Tree, ifNull: Tree): Tree => Tree =
       tree => IF (tree MEMBER_== NULL) THEN ifNull ELSE f(tree)
-
-    def returning[T](x: T)(f: T => Unit): T = util.returning(x)(f)
 
     object LIT extends (Any => Literal) {
       def typed(x: Any)   = apply(x) setType ConstantType(Constant(x))
@@ -60,25 +65,27 @@ trait TreeDSL {
        *  a member called nme.EQ.  Not sure if that should happen, but we can be
        *  robust by dragging in Any regardless.
        */
-      def MEMBER_== (other: Tree)   = {
-        val opSym = if (target.tpe == null) NoSymbol else target.tpe member nme.EQ
-        if (opSym == NoSymbol) ANY_==(other)
-        else fn(target, opSym, other)
-      }
+      def MEMBER_== (other: Tree)   = fn(target, (if (target.tpe == null) NoSymbol else target.tpe member nme.EQ).orElse(Any_==), other)
       def ANY_EQ  (other: Tree)     = OBJ_EQ(other AS ObjectTpe)
       def ANY_==  (other: Tree)     = fn(target, Any_==, other)
       def ANY_!=  (other: Tree)     = fn(target, Any_!=, other)
-      def OBJ_EQ  (other: Tree)     = fn(target, Object_eq, other)
-      def OBJ_NE  (other: Tree)     = fn(target, Object_ne, other)
+      def OBJ_EQ  (other: Tree)     = fn(target, Object_eq,     other)
+      def OBJ_NE  (other: Tree)     = fn(target, Object_ne,     other)
+      def OBJ_==  (other: Tree)     = fn(target, Object_equals, other)
+      def OBJ_##                    = fn(target, Object_hashCode)
 
       def INT_>=  (other: Tree)     = fn(target, getMember(IntClass, nme.GE), other)
       def INT_==  (other: Tree)     = fn(target, getMember(IntClass, nme.EQ), other)
       def INT_-   (other: Tree)     = fn(target, getMember(IntClass, nme.MINUS), other)
 
       // generic operations on ByteClass, IntClass, LongClass
+      @unused("avoid warning for multiple parameters")
       def GEN_|   (other: Tree, kind: ClassSymbol)  = fn(target, getMember(kind, nme.OR), other)
+      @unused("avoid warning for multiple parameters")
       def GEN_&   (other: Tree, kind: ClassSymbol)  = fn(target, getMember(kind, nme.AND), other)
+      @unused("avoid warning for multiple parameters")
       def GEN_==  (other: Tree, kind: ClassSymbol)  = fn(target, getMember(kind, nme.EQ), other)
+      @unused("avoid warning for multiple parameters")
       def GEN_!=  (other: Tree, kind: ClassSymbol)  = fn(target, getMember(kind, nme.NE), other)
 
       /** Apply, Select, Match **/
@@ -122,8 +129,10 @@ trait TreeDSL {
     }
     class TryStart(body: Tree, catches: List[CaseDef], fin: Tree) {
       def CATCH(xs: CaseDef*) = new TryStart(body, xs.toList, fin)
-      def ENDTRY              = Try(body, catches, fin)
+      def FINALLY(end: END.type) = Try(body, catches, fin)
+      def FINALLY(fin1: Tree) = Try(body, catches, fin1)
     }
+    object END
 
     def CASE(pat: Tree): CaseStart  = new CaseStart(pat, EmptyTree)
     def DEFAULT: CaseStart          = new CaseStart(Ident(nme.WILDCARD), EmptyTree)
@@ -131,7 +140,17 @@ trait TreeDSL {
     def NEW(tpt: Tree, args: Tree*): Tree   = New(tpt, List(args.toList))
 
     def NOT(tree: Tree)   = Select(tree, Boolean_not)
-    def AND(guards: Tree*) = if (guards.isEmpty) EmptyTree else guards reduceLeft gen.mkAnd
+    def AND(guards: Tree*) = {
+      def binaryTreeAnd(tests: Seq[Tree]): Tree = tests match{
+        case Seq() => EmptyTree
+        case Seq(single) => single
+        case multiple =>
+          val (before, after) = multiple.splitAt(tests.size / 2)
+          gen.mkAnd(binaryTreeAnd(before), binaryTreeAnd(after))
+      }
+
+      binaryTreeAnd(guards)
+    }
 
     def IF(tree: Tree)    = new IfStart(tree, EmptyTree)
     def TRY(tree: Tree)   = new TryStart(tree, Nil, EmptyTree)
@@ -139,8 +158,8 @@ trait TreeDSL {
     def SOME(xs: Tree*)   = Apply(SomeClass.companionSymbol, gen.mkTuple(xs.toList))
 
     /** Typed trees from symbols. */
-    def REF(sym: Symbol)            = gen.mkAttributedRef(sym)
-    def REF(pre: Type, sym: Symbol) = gen.mkAttributedRef(pre, sym)
+    def REF(sym: Symbol): RefTree            = gen.mkAttributedRef(sym)
+    def REF(pre: Type, sym: Symbol): RefTree = gen.mkAttributedRef(pre, sym)
 
     /** Implicits - some of these should probably disappear **/
     implicit def mkTreeMethods(target: Tree): TreeMethods = new TreeMethods(target)

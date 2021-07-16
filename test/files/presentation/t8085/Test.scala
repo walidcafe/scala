@@ -4,13 +4,15 @@ import scala.tools.nsc.interactive.Response
 
 object Test extends InteractiveTest {
 
+  override def argsString = "-sourcepath src"
+
   override def execute(): Unit = {
     val src = loadSourceAndWaitUntilTypechecked("NodeScalaSuite.scala")
     checkErrors(src)
   }
 
   private def loadSourceAndWaitUntilTypechecked(sourceName: String): SourceFile = {
-    val sourceFile = sourceFiles.find(_.file.name == sourceName).head
+    val sourceFile = sourceFiles.find(_.file.name == sourceName).get
     askReload(List(sourceFile)).get
     askLoadedTyped(sourceFile).get
     sourceFile

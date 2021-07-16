@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.doc
 package doclet
 
@@ -14,8 +26,8 @@ abstract class Generator {
 
   /** A series of tests that must be true before generation can be done. This is used by data provider traits to
     * confirm that they have been correctly initialised before allowing generation to proceed. */
-  protected val checks: mutable.Set[()=>Boolean] =
-    mutable.Set.empty[()=>Boolean]
+  protected val checks: mutable.Set[() => Boolean] =
+    mutable.Set.empty[() => Boolean]
 
   /** Outputs documentation (as a side effect). */
   def generate(): Unit = {

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -151,7 +158,7 @@ object ShowPickled extends Names {
         val accessBoundary = (
           for (idx <- privateWithin) yield {
             val s = entryList nameAt idx
-            idx + "(" + s + ")"
+            "" + idx + "(" + s + ")"
           }
         )
         val flagString = {
@@ -183,7 +190,7 @@ object ShowPickled extends Names {
      */
     def printEntry(i: Int): Unit = {
       buf.readIndex = index(i)
-      p(i + "," + buf.readIndex + ": ")
+      p("" + i + "," + buf.readIndex + ": ")
       val tag = buf.readByte()
       out.print(tag2string(tag))
       val len = buf.readNat()

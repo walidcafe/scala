@@ -1,18 +1,24 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author Lex Spoon
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package plugins
 
-import scala.tools.nsc.io.Jar
-import scala.reflect.internal.util.ScalaClassLoader
-import scala.reflect.io.{Directory, File, Path}
-import java.io.InputStream
-
+import java.util.jar
 import scala.collection.mutable
+import scala.reflect.internal.util.ScalaClassLoader
+import scala.reflect.io.{AbstractFile, File, Path}
 import scala.tools.nsc.classpath.FileBasedCache
+import scala.tools.nsc.io.Jar
 import scala.util.{Failure, Success, Try}
 
 /** Information about a plugin loaded from a jar file.
@@ -24,7 +30,6 @@ import scala.util.{Failure, Success, Try}
  *  }}}
  *
  *  @author Lex Spoon
- *  @version 1.0, 2007-5-21
  */
 abstract class Plugin {
   /** The name of this plugin */
@@ -65,7 +70,7 @@ abstract class Plugin {
     true
   }
 
-  @deprecated("use Plugin#init instead", since="2.11.0")
+  @deprecatedOverriding("use Plugin#init instead", since="2.11.0")
   def processOptions(options: List[String], error: String => Unit): Unit = {
     if (!options.isEmpty) error(s"Error: $name takes no options")
   }
@@ -75,51 +80,38 @@ abstract class Plugin {
    *  should be listed with the `-P:plugname:` part included.
    */
   val optionsHelp: Option[String] = None
+
+  /**
+   * A callback to allow a plugin to add additional resources to the generated output.
+   * This allows a plug to, for instance, package resources or services into a jar, or add artifacts specific to a
+   * build environment. Typically this extension point is used when writing to a jar, to avoid the build system
+   * having an additional step to add these resources, and therefore speed up the build process.
+   * The default implementation is a NO-OP
+   * @param writer the writer associated with the targets
+   */
+  def writeAdditionalOutputs(writer: OutputFileWriter): Unit = {}
+
+  /**
+   * A callback to allow a plugin to customise the manifest of a jar. This is only called if the output is a jar.
+   * In the case of a multi-output compile, it is called once for each output (if the output is a jar).
+   * Typically this extension point is to avoid the build system having an additional step
+   * to add this information, while would otherwise require the jar to be rebuilt (as the manifest is required
+   * to be the first entry in a jar).
+   * The default implementation is a NO-OP
+   *
+   * @param file the file that will contains this manifest. Int the case of a multi-output compile, the plugin can
+   *             use this to differentiate the outputs
+   * @param manifest the manifest that will be written
+   */
+  def augmentManifest(file: AbstractFile, manifest: jar.Manifest): Unit = {}
+
 }
 
-/** ...
- *
- *  @author Lex Spoon
- *  @version 1.0, 2007-5-21
- */
 object Plugin {
 
-  private val PluginXML = "scalac-plugin.xml"
+  val PluginXML = "scalac-plugin.xml"
 
-  private val pluginClassLoadersCache = new FileBasedCache[ScalaClassLoader]()
-
-  /** Create a class loader with the specified locations plus
-   *  the loader that loaded the Scala compiler.
-   *
-   *  If the class loader has already been created before and the
-   *  file stamps are the same, the previous loader is returned to
-   *  mitigate the cost of dynamic classloading as it has been
-   *  measured in https://github.com/scala/scala-dev/issues/458.
-   */
-  private def loaderFor(locations: Seq[Path], disableCache: Boolean): ScalaClassLoader = {
-    def newLoader = () => {
-      val compilerLoader = classOf[Plugin].getClassLoader
-      val urls = locations map (_.toURL)
-      ScalaClassLoader fromURLs (urls, compilerLoader)
-    }
-
-    if (disableCache || locations.exists(!Jar.isJarOrZip(_))) newLoader()
-    else pluginClassLoadersCache.getOrCreate(locations.map(_.jfile.toPath()), newLoader)
-  }
-
-  /** Try to load a plugin description from the specified location.
-   */
-  private def loadDescriptionFromJar(jarp: Path): Try[PluginDescription] = {
-    // XXX Return to this once we have more ARM support
-    def read(is: Option[InputStream]) = is match {
-      case None     => throw new PluginLoadException(jarp.path, s"Missing $PluginXML in $jarp")
-      case Some(is) => PluginDescription.fromXML(is)
-    }
-    Try(new Jar(jarp.jfile).withEntryStream(PluginXML)(read))
-  }
-
-  private def loadDescriptionFromFile(f: Path): Try[PluginDescription] =
-    Try(PluginDescription.fromXML(new java.io.FileInputStream(f.jfile)))
+  private[nsc] val pluginClassLoadersCache = new FileBasedCache[Unit, ScalaClassLoader.URLClassLoader]()
 
   type AnyClass = Class[_]
 
@@ -130,7 +122,7 @@ object Plugin {
     try {
       Success[AnyClass](loader loadClass classname)
     } catch {
-      case NonFatal(e) =>
+      case NonFatal (_) =>
         Failure(new PluginLoadException(classname, s"Error: unable to load class: $classname"))
       case e: NoClassDefFoundError =>
         Failure(new PluginLoadException(classname, s"Error: class not found: ${e.getMessage} required by $classname"))
@@ -148,44 +140,27 @@ object Plugin {
     paths: List[List[Path]],
     dirs: List[Path],
     ignoring: List[String],
-    disableClassLoaderCache: Boolean): List[Try[AnyClass]] =
+    findPluginClassloader: (Seq[Path] => ClassLoader)): List[Try[AnyClass]] =
   {
-    // List[(jar, Try(descriptor))] in dir
-    def scan(d: Directory) =
-      d.files.toList sortBy (_.name) filter (Jar isJarOrZip _) map (j => (j, loadDescriptionFromJar(j)))
-
-    type PDResults = List[Try[(PluginDescription, ScalaClassLoader)]]
-
-    // scan plugin dirs for jars containing plugins, ignoring dirs with none and other jars
-    val fromDirs: PDResults = dirs filter (_.isDirectory) flatMap { d =>
-      scan(d.toDirectory) collect {
-        case (j, Success(pd)) => Success((pd, loaderFor(Seq(j), disableClassLoaderCache)))
+    def pluginResource(classpath: List[Path], loader: ClassLoader) =
+      loader.getResource(PluginXML) match {
+        case null => Failure(new MissingPluginException(classpath))
+        case url =>
+          val inputStream = url.openStream
+          try Try((PluginDescription.fromXML(inputStream), loader)) finally inputStream.close()
       }
-    }
+    def targeted(targets: List[List[Path]]) = targets.filter(_.nonEmpty).map(classpath => pluginResource(classpath, findPluginClassloader(classpath)))
+    def dirList(dir: Path) = if (dir.isDirectory) dir.toDirectory.files.filter(Jar.isJarOrZip).toList.sortBy(_.name) else Nil
 
-    // scan jar paths for plugins, taking the first plugin you find.
-    // a path element can be either a plugin.jar or an exploded dir.
-    def findDescriptor(ps: List[Path]) = {
-      def loop(qs: List[Path]): Try[PluginDescription] = qs match {
-        case Nil       => Failure(new MissingPluginException(ps))
-        case p :: rest =>
-          if (p.isDirectory) loadDescriptionFromFile(p.toDirectory / PluginXML) orElse loop(rest)
-          else if (p.isFile) loadDescriptionFromJar(p.toFile) orElse loop(rest)
-          else loop(rest)
-      }
-      loop(ps)
-    }
-    val fromPaths: PDResults = paths map (p => (p, findDescriptor(p))) map {
-      case (p, Success(pd)) => Success((pd, loaderFor(p, disableClassLoaderCache)))
-      case (_, Failure(e))  => Failure(e)
-    }
+    // ask plugin loaders for plugin resources, but ignore if none in -Xpluginsdir
+    val fromLoaders = targeted(paths) ++ targeted(dirs.map(dirList)).filter(_.isSuccess)
 
     val seen = mutable.HashSet[String]()
-    val enabled = (fromPaths ::: fromDirs) map {
-      case Success((pd, loader)) if seen(pd.classname)        =>
+    val enabled = fromLoaders map {
+      case Success((pd, _)) if seen(pd.classname)        =>
         // a nod to scala/bug#7494, take the plugin classes distinctly
         Failure(new PluginLoadException(pd.name, s"Ignoring duplicate plugin ${pd.name} (${pd.classname})"))
-      case Success((pd, loader)) if ignoring contains pd.name =>
+      case Success((pd, _)) if ignoring contains pd.name =>
         Failure(new PluginLoadException(pd.name, s"Disabling plugin ${pd.name}"))
       case Success((pd, loader)) =>
         seen += pd.classname
@@ -199,9 +174,8 @@ object Plugin {
   /** Instantiate a plugin class, given the class and
    *  the compiler it is to be used in.
    */
-  def instantiate(clazz: AnyClass, global: Global): Plugin = {
-    (clazz getConstructor classOf[Global] newInstance global).asInstanceOf[Plugin]
-  }
+  def instantiate(clazz: AnyClass, global: Global): Plugin =
+    clazz.getConstructor(classOf[Global]).newInstance(global).asInstanceOf[Plugin]
 }
 
 class PluginLoadException(val path: String, message: String, cause: Exception) extends Exception(message, cause) {

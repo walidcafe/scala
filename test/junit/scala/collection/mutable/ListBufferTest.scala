@@ -2,10 +2,11 @@ package scala.collection.mutable
 
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 
-@RunWith(classOf[JUnit4])
+import scala.tools.testkit.AssertUtil.assertSameElements
+
+import scala.annotation.nowarn
+
 class ListBufferTest {
 
   @Test
@@ -27,7 +28,7 @@ class ListBufferTest {
   }
 
   @Test
-  def testFlatMapInPlace: Unit = {
+  def testFlatMapInPlace(): Unit = {
     val xs = ListBuffer(3, 4, 5)
     val ys = List(-1, -2, -3, -4, -5, -6)
 
@@ -37,7 +38,7 @@ class ListBufferTest {
   }
 
   @Test
-  def testFilterInPlace: Unit = {
+  def testFilterInPlace(): Unit = {
     assertEquals(ListBuffer(), ListBuffer.range(0, 100).filterInPlace(_ => false))
     assertEquals(ListBuffer.range(0, 100), ListBuffer.range(0, 100).filterInPlace(_ => true))
     assertEquals(ListBuffer.range(start = 0, end = 100, step = 2), ListBuffer.range(0, 100).filterInPlace(_ % 2 == 0))
@@ -45,7 +46,7 @@ class ListBufferTest {
   }
 
   @Test
-  def testTakeInPlace: Unit = {
+  def testTakeInPlace(): Unit = {
     assertEquals(ListBuffer(), ListBuffer().takeInPlace(10))
     assertEquals(ListBuffer(), ListBuffer.range(0, 10).takeInPlace(-1))
     assertEquals(ListBuffer.range(0, 10), ListBuffer.range(0, 10).takeInPlace(10))
@@ -53,7 +54,7 @@ class ListBufferTest {
   }
 
   @Test
-  def testTakeRightInPlace: Unit = {
+  def testTakeRightInPlace(): Unit = {
     assertEquals(ListBuffer(), ListBuffer().takeRightInPlace(10))
     assertEquals(ListBuffer(), ListBuffer.range(0, 10).takeRightInPlace(-1))
     assertEquals(ListBuffer.range(0, 10), ListBuffer.range(0, 10).takeRightInPlace(10))
@@ -61,14 +62,14 @@ class ListBufferTest {
   }
 
   @Test
-  def testTakeWhileInPlace: Unit = {
+  def testTakeWhileInPlace(): Unit = {
     assertEquals(ListBuffer(), ListBuffer[Int]().takeWhileInPlace(_ < 50))
     assertEquals(ListBuffer.range(0, 10), ListBuffer.range(0, 10).takeWhileInPlace(_ < 50))
     assertEquals(ListBuffer.range(0, 50), ListBuffer.range(0, 100).takeWhileInPlace(_ < 50))
   }
 
   @Test
-  def testDropInPlace: Unit = {
+  def testDropInPlace(): Unit = {
     assertEquals(ListBuffer(), ListBuffer().dropInPlace(10))
     assertEquals(ListBuffer.range(0, 10), ListBuffer.range(0, 10).dropInPlace(-1))
     assertEquals(ListBuffer(), ListBuffer.range(0, 10).dropInPlace(10))
@@ -76,7 +77,7 @@ class ListBufferTest {
   }
 
   @Test
-  def testDropRightInPlace: Unit = {
+  def testDropRightInPlace(): Unit = {
     assertEquals(ListBuffer(), ListBuffer().dropRightInPlace(10))
     assertEquals(ListBuffer.range(0, 10), ListBuffer.range(0, 10).dropRightInPlace(-1))
     assertEquals(ListBuffer(), ListBuffer.range(0, 10).dropRightInPlace(10))
@@ -84,14 +85,14 @@ class ListBufferTest {
   }
 
   @Test
-  def testDropWhileInPlace: Unit = {
+  def testDropWhileInPlace(): Unit = {
     assertEquals(ListBuffer(), ListBuffer[Int]().dropWhileInPlace(_ < 50))
     assertEquals(ListBuffer(), ListBuffer.range(0, 10).dropWhileInPlace(_ < 50))
     assertEquals(ListBuffer.range(50, 100), ListBuffer.range(0, 100).dropWhileInPlace(_ < 50))
   }
 
   @Test
-  def testRemove: Unit = {
+  def testRemove(): Unit = {
     val b1 = ListBuffer(0, 1, 2)
     assertEquals(0, b1.remove(0))
     assertEquals(ListBuffer(1, 2), b1)
@@ -106,17 +107,17 @@ class ListBufferTest {
   }
 
   @Test(expected = classOf[IndexOutOfBoundsException])
-  def removeWithNegativeIndex: Unit = {
+  def removeWithNegativeIndex(): Unit = {
     ListBuffer(0, 1, 2).remove(-1)
   }
 
   @Test(expected = classOf[IndexOutOfBoundsException])
-  def removeWithTooLargeIndex: Unit = {
+  def removeWithTooLargeIndex(): Unit = {
     ListBuffer(0).remove(1)
   }
 
   @Test
-  def testRemoveMany: Unit = {
+  def testRemoveMany(): Unit = {
     def testRemoveMany(idx: Int, count: Int, expectation: ListBuffer[Int]): Unit = {
       val buffer = ListBuffer(0, 1, 2)
       buffer.remove(idx, count)
@@ -133,27 +134,28 @@ class ListBufferTest {
   }
 
   @Test(expected = classOf[IndexOutOfBoundsException])
-  def removeManyWithNegativeIndex: Unit = {
+  def removeManyWithNegativeIndex(): Unit = {
     ListBuffer(0, 1, 2).remove(idx = -1, count = 1)
   }
 
   @Test(expected = classOf[IndexOutOfBoundsException])
-  def removeManyWithTooLargeIndex: Unit = {
+  def removeManyWithTooLargeIndex(): Unit = {
     ListBuffer(0).remove(idx = 1, count = 1)
   }
 
   @Test(expected = classOf[IllegalArgumentException])
-  def removeManyWithNegativeCount: Unit = {
+  def removeManyWithNegativeCount(): Unit = {
     ListBuffer(0).remove(idx = 0, count = -1)
   }
 
   @Test(expected = classOf[IndexOutOfBoundsException])
-  def removeManyWithTooLargeCount: Unit = {
+  def removeManyWithTooLargeCount(): Unit = {
     ListBuffer(0).remove(idx = 0, count = 100)
   }
 
+  @nowarn("cat=deprecation")
   @Test
-  def testTrimStart: Unit = {
+  def testTrimStart(): Unit = {
     val b1 = ListBuffer()
     b1.trimStart(10)
     assertEquals(ListBuffer(), b1)
@@ -171,8 +173,9 @@ class ListBufferTest {
     assertEquals(ListBuffer.range(10, 100), b4)
   }
 
+  @nowarn("cat=deprecation")
   @Test
-  def testTrimEnd: Unit = {
+  def testTrimEnd(): Unit = {
     val b1 = ListBuffer()
     b1.trimEnd(10)
     assertEquals(ListBuffer(), b1)
@@ -191,7 +194,7 @@ class ListBufferTest {
   }
 
   @Test
-  def testPatch: Unit = {
+  def testPatch(): Unit = {
     val buffer = ListBuffer(0, 1, 2, 3)
     val patch = List(-3, -2, -1)
     assertEquals(ListBuffer(-3, -2, -1, 0, 1, 2, 3), buffer.patch(from = -1, patch, replaced = -1))
@@ -204,7 +207,7 @@ class ListBufferTest {
   }
 
   @Test
-  def testPatchInPlace: Unit = {
+  def testPatchInPlace(): Unit = {
     def testPatchInPlace(from: Int, replaced: Int, expectation: ListBuffer[Int]) =
       assertEquals(expectation, ListBuffer(0, 1, 2).patchInPlace(from, patch = List(-3, -2, -1), replaced))
 
@@ -215,5 +218,61 @@ class ListBufferTest {
     testPatchInPlace(from = 2, replaced = 1, expectation = ListBuffer(0, 1, -3, -2, -1))
     testPatchInPlace(from = 10, replaced = 10, expectation = ListBuffer(0, 1, 2, -3, -2, -1))
     testPatchInPlace(from = 0, replaced = 100, expectation = ListBuffer(-3, -2, -1))
+    assertEquals(ListBuffer(), ListBuffer().patchInPlace(0, Nil, -1)) // scala/bug#11438
+  }
+
+  @Test
+  def testUpdate(): Unit = {
+    val b = ListBuffer.empty[String] += "a"
+    assertEquals(Seq("a"), b)
+    b.update(0, "a1")
+    assertEquals(Seq("a1"), b)
+    b += "b"
+    assertEquals(Seq("a1", "b"), b)
+  }
+
+  /* tests for scala/bug#12121 */
+
+  @Test
+  def self_addAll(): Unit = {
+    val b = ListBuffer(1, 2, 3)
+    b ++= b
+    assertSameElements(List(1, 2, 3, 1, 2, 3), b)
+  }
+
+  @Test
+  def self_prependAll(): Unit = {
+    val b = ListBuffer(1, 2, 3)
+    b prependAll b
+    assertSameElements(List(1, 2, 3, 1, 2, 3), b)
+  }
+
+  @Test
+  def self_insertAll(): Unit = {
+    val b1 = ListBuffer(1, 2, 3)
+    b1.insertAll(1, b1)
+    assertSameElements(List(1, 1, 2, 3, 2, 3), b1)
+
+    val b2 = ListBuffer(1, 2, 3)
+    b2.insertAll(3, b2)
+    assertSameElements(List(1, 2, 3, 1, 2, 3), b2)
+  }
+
+  @Test
+  def self_subtractAll(): Unit = {
+    val b = ListBuffer(1, 2, 3)
+    b --= b
+    assertSameElements(Nil, b)
+  }
+
+  @Test
+  def self_patchInPlace(): Unit = {
+    val b1 = ListBuffer(1, 2, 3)
+    b1.patchInPlace(1, b1, 1)
+    assertSameElements(List(1, 1, 2, 3, 3), b1)
+
+    val b2 = ListBuffer(1, 2, 3)
+    b2.patchInPlace(3, b2, 1)
+    assertSameElements(List(1, 2, 3, 1, 2, 3), b2)
   }
 }

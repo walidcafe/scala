@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author  Pedro Furlanetto
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -8,7 +15,8 @@ package tools.nsc
 package doc
 package model
 
-import scala.collection._
+import scala.collection.immutable.{SortedMap, SortedSet}
+import scala.collection.mutable
 
 object IndexModelFactory {
 
@@ -16,27 +24,24 @@ object IndexModelFactory {
 
     lazy val (firstLetterIndex, hasDeprecatedMembers): (Map[Char, SymbolMap], Boolean) = {
 
-      object result extends mutable.HashMap[Char,SymbolMap] {
-
+      object result {
+        val map = mutable.HashMap.empty[Char, SymbolMap]
         var deprecated = false
 
         /* symbol name ordering */
-        implicit def orderingMap = math.Ordering.String
+        implicit def orderingMap: Ordering[String] = math.Ordering.String
 
-        def addMember(d: MemberEntity) = {
+        def addMember(d: MemberEntity): Unit = {
           val firstLetter = {
             val ch = d.name.head.toLower
             if(ch.isLetterOrDigit) ch else '_'
           }
-          val letter = this.get(firstLetter).getOrElse {
-            immutable.SortedMap[String, SortedSet[MemberEntity]]()
-          }
-          val members = letter.get(d.name).getOrElse {
-            SortedSet.empty[MemberEntity](Ordering.by { _.toString })
-          } + d
-          if (!deprecated && members.find(_.deprecation.isDefined).isDefined)
+          val map = this.map
+          val letter = map.getOrElse(firstLetter, SortedMap.empty[String, SortedSet[MemberEntity]])
+          val members = letter.getOrElse(d.name, SortedSet.empty[MemberEntity](Ordering.by { _.toString })) + d
+          if (!deprecated && members.exists(_.deprecation.isDefined))
             deprecated = true
-          this(firstLetter) = letter + (d.name -> members)
+          map(firstLetter) = letter + (d.name -> members)
         }
       }
 
@@ -54,7 +59,7 @@ object IndexModelFactory {
 
       gather(universe.rootPackage)
 
-      (result.toMap, result.deprecated)
+      (result.map.toMap, result.deprecated)
     }
   }
 }

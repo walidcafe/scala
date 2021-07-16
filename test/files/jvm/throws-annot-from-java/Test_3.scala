@@ -4,20 +4,20 @@ object Test extends ReplTest {
 	def code = """:power
 :paste
 {
-  val clazz = rootMirror.getClassByName(newTermName("test.ThrowsDeclaration_2"));
+  val clazz = rootMirror.getClassByName("test.ThrowsDeclaration_2");
   {
   	val method = clazz.info.member(newTermName("foo"))
-  	val throwsAnn = method.annotations.head
+  	val throwsAnn = method.initialize.annotations.head
   	val atp = throwsAnn.atp
   	println("foo")
   	println("atp.typeParams.isEmpty: " + atp.typeParams.isEmpty)
   	println(throwsAnn)
   }
-  println
+  println()
 
   {
   	val method = clazz.info.member(newTermName("bar"))
-  	val throwsAnn = method.annotations.head
+  	val throwsAnn = method.initialize.annotations.head
   	val Literal(const) = throwsAnn.args.head
   	val tp = const.typeValue
   	println("bar")

@@ -1,8 +1,19 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package backend.jvm
 
 import scala.collection.mutable.ListBuffer
-import scala.reflect.internal.util.Statistics
 import scala.tools.asm.tree.ClassNode
 
 abstract class CodeGen[G <: Global](val global: G) extends PerRunInit {
@@ -37,15 +48,17 @@ abstract class CodeGen[G <: Global](val global: G) extends PerRunInit {
           log(s"No mirror class for module with linked class: ${sym.fullName}")
       }
     } catch {
+      case ex: InterruptedException => throw ex
       case ex: Throwable =>
-        ex.printStackTrace()
-        error(s"Error while emitting ${unit.source}\n${ex.getMessage}")
+        if (settings.isDebug) ex.printStackTrace()
+        globalError(s"Error while emitting ${unit.source}\n${ex.getMessage}")
     }
 
     def genClassDefs(tree: Tree): Unit = tree match {
       case EmptyTree => ()
       case PackageDef(_, stats) => stats foreach genClassDefs
       case cd: ClassDef => frontendAccess.frontendSynch(genClassDef(cd))
+      case x            => throw new MatchError(x)
     }
 
     statistics.timed(statistics.bcodeGenStat) {

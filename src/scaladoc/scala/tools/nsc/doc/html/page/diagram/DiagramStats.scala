@@ -1,14 +1,23 @@
-/**
- * @author Vlad Ureche
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.nsc.doc
 package html.page.diagram
 
 object DiagramStats {
 
   class TimeTracker(title: String) {
-    var totalTime: Long = 0l
-    var maxTime: Long = 0l
+    var totalTime: Long = 0L
+    var maxTime: Long = 0L
     var instances: Int = 0
 
     def addTime(ms: Long) = {

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package codegen
 
@@ -39,7 +51,7 @@ trait GenAnnotationInfos {
     }
 
     // if you reify originals of anns, you get SO when trying to reify AnnotatedTypes, so screw it - after all, it's not that important
-    val Apply(Select(New(tpt), name), args) = annotationToTree(ann)
+    val Apply(Select(New(tpt), name), args) = annotationToTree(ann): @unchecked
     val reifiedAtp = mirrorCall(nme.Select, mirrorCall(nme.New, mirrorCall(nme.TypeTree, reifyType(tpt.tpe))), reify(name))
     val reifiedAnnRepr = mirrorCall(nme.Apply, reifiedAtp, reifyList(args))
     mirrorFactoryCall(nme.Annotation, reifiedAnnRepr)

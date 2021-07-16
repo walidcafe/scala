@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -95,6 +102,17 @@ abstract class TreeBuilder {
   def makeCaseDef(pat: Tree, guard: Tree, rhs: Tree): CaseDef =
     CaseDef(gen.patvarTransformer.transform(pat), guard, rhs)
 
+  /** At parser, rejigger non-case catch expression.
+   *
+   *  Match is eliminated by unwrapping. Other expression
+   *  becomes a single CaseDef with empty pattern and
+   *  expr tree as RHS.
+   */
+  def makeMatchFromExpr(catchExpr: Tree): List[CaseDef] = catchExpr match {
+    case Match(EmptyTree, cases) => cases
+    case _ => CaseDef(EmptyTree, EmptyTree, catchExpr) :: Nil
+  }
+
   /** Creates tree representing:
    *    { case x: Throwable =>
    *        val catchFn = catchExpr
@@ -113,6 +131,18 @@ abstract class TreeBuilder {
         Apply(Select(catchFn, nme.apply), List(Ident(binder))),
         Throw(Ident(binder))
       )
+    ))
+    makeCaseDef(pat, EmptyTree, body)
+  }
+
+  /** Creates tree representing:
+   *    { case x: Throwable => catchExpr(x) }
+   */
+  def makeCatchFromFunc(catchFn: Tree): CaseDef = {
+    val binder = freshTermName()
+    val pat    = Bind(binder, Typed(Ident(nme.WILDCARD), Ident(tpnme.Throwable)))
+    val body   = atPos(catchFn.pos.makeTransparent)(Block(
+      Apply(Select(catchFn, nme.apply), List(Ident(binder))),
     ))
     makeCaseDef(pat, EmptyTree, body)
   }
@@ -136,5 +166,6 @@ abstract class TreeBuilder {
     }
   }
 
-  def makePatDef(mods: Modifiers, pat: Tree, rhs: Tree) = gen.mkPatDef(mods, pat, rhs)
+  final def makePatDef(mods: Modifiers, pat: Tree, rhs: Tree): List[ValDef] = makePatDef(mods, pat, rhs, rhs.pos)
+  def makePatDef(mods: Modifiers, pat: Tree, rhs: Tree, rhsPos: Position) = gen.mkPatDef(mods, pat, rhs, rhsPos)
 }

@@ -1,12 +1,18 @@
-/* NSC -- new Scala compiler
- * Copyright 2006-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala
 package reflect
 package internal
-
-import scala.language.postfixOps
 
 import scala.annotation.switch
 import java.lang.{ Character => JCharacter }
@@ -41,8 +47,7 @@ trait Chars {
 
   /** Convert a character to a backslash-u escape */
   def char2uescape(c: Char): String = {
-    @inline def hexChar(ch: Int): Char =
-      ( if (ch < 10) '0' else 'A' - 10 ) + ch toChar
+    @inline def hexChar(ch: Int): Char = ((if (ch < 10) '0' else 'A' - 10) + ch).toChar
 
     char2uescapeArray(2) = hexChar((c >> 12)     )
     char2uescapeArray(3) = hexChar((c >>  8) % 16)

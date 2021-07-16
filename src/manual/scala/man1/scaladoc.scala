@@ -13,7 +13,7 @@ object scaladoc extends Command {
 
   protected def cn = new Error().getStackTrace()(0).getClassName()
 
-  val scalaLink = Link("Scala 2", "http://scala-lang.org/")
+  val scalaLink = Link("Scala 2", "https://scala-lang.org/")
 
   val name = Section("NAME",
 
@@ -77,7 +77,11 @@ object scaladoc extends Command {
           "Define a URL to be concatenated with source locations for link to source files."),
         Definition(
           CmdOption("doc-external-doc", Argument("external-doc")),
-          "Define a comma-separated list of classpath_entry_path#doc_URL pairs describing external dependencies."))),
+          "Define a comma-separated list of classpath_entry_path#doc_URL pairs describing external dependencies."),
+        Definition(
+          CmdOption("jdk-api-doc-base", Argument("url")),
+          "Define a URL to be concatenated with source locations for link to Java API."))
+    ),
 
     Section("Compiler Options",
       DefinitionList(
@@ -120,7 +124,7 @@ object scaladoc extends Command {
             "Specify character encoding used by source files.",
             "The default value is platform-specific (Linux: " & Mono("\"UTF8\"") &
             ", Windows: " & Mono("\"Cp1252\"") & "). Executing the following " &
-            "code in the Scala interpreter will return the default value " &
+            "code in the Scala REPL will return the default value " &
             "on your system:",
             MBold("    scala> ") &
             Mono("new java.io.InputStreamReader(System.in).getEncoding"))))))

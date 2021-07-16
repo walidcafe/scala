@@ -1,10 +1,22 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package collection.immutable
 
-import collection.{AbstractIterator, Iterator, SeqFactory}
-import java.lang.String
-
-import scala.collection.mutable.Builder
+import scala.collection.Stepper.EfficientSplit
+import scala.collection.convert.impl.RangeStepper
+import scala.collection.{AbstractIterator, AnyStepper, IterableFactoryDefaults, Iterator, Stepper, StepperShape}
+import scala.util.hashing.MurmurHash3
 
 /** The `Range` class represents integer values in range
   *  ''[start;end)'' with non-zero step value `step`.
@@ -52,9 +64,22 @@ sealed abstract class Range(
   extends AbstractSeq[Int]
     with IndexedSeq[Int]
     with IndexedSeqOps[Int, IndexedSeq, IndexedSeq[Int]]
-    with StrictOptimizedSeqOps[Int, IndexedSeq, IndexedSeq[Int]] { range =>
+    with StrictOptimizedSeqOps[Int, IndexedSeq, IndexedSeq[Int]]
+    with IterableFactoryDefaults[Int, IndexedSeq]
+    with Serializable { range =>
 
   final override def iterator: Iterator[Int] = new RangeIterator(start, step, lastElement, isEmpty)
+
+  override final def stepper[S <: Stepper[_]](implicit shape: StepperShape[Int, S]): S with EfficientSplit = {
+    val st = new RangeStepper(start, step, 0, length)
+    val r =
+      if (shape.shape == StepperShape.IntShape) st
+      else {
+        assert(shape.shape == StepperShape.ReferenceShape, s"unexpected StepperShape: $shape")
+        AnyStepper.ofParIntStepper(st)
+      }
+    r.asInstanceOf[S with EfficientSplit]
+  }
 
   private[this] def gap           = end.toLong - start.toLong
   private[this] def isExact       = gap % step == 0
@@ -95,8 +120,10 @@ sealed abstract class Range(
   /** The last element of this range.  This method will return the correct value
     *  even if there are too many elements to iterate over.
     */
-  final override def last: Int = if (isEmpty) Nil.head else lastElement
-  final override def head: Int = if (isEmpty) Nil.head else start
+  final override def last: Int =
+    if (isEmpty) throw Range.emptyRangeError("last") else lastElement
+  final override def head: Int =
+    if (isEmpty) throw Range.emptyRangeError("head") else start
 
   /** Creates a new range containing all the elements of this range except the last one.
     *
@@ -104,12 +131,8 @@ sealed abstract class Range(
     *
     *  @return  a new range consisting of all the elements of this range except the last one.
     */
-  final override def init: Range = {
-    if (isEmpty)
-      Nil.init
-
-    dropRight(1)
-  }
+  final override def init: Range =
+    if (isEmpty) throw Range.emptyRangeError("init") else dropRight(1)
 
   /** Creates a new range containing all the elements of this range except the first one.
     *
@@ -118,11 +141,15 @@ sealed abstract class Range(
     *  @return  a new range consisting of all the elements of this range except the first one.
     */
   final override def tail: Range = {
-    if (isEmpty)
-      Nil.tail
+    if (isEmpty) throw Range.emptyRangeError("tail")
     if (numRangeElements == 1) newEmptyRange(end)
     else if(isInclusive) new Range.Inclusive(start + step, end, step)
     else new Range.Exclusive(start + step, end, step)
+  }
+
+  override def map[B](f: Int => B): IndexedSeq[B] = {
+    validateMaxLength()
+    super.map(f)
   }
 
   final protected def copy(start: Int = start, end: Int = end, step: Int = step, isInclusive: Boolean = isInclusive): Range =
@@ -150,7 +177,7 @@ sealed abstract class Range(
   @throws[IndexOutOfBoundsException]
   final def apply(idx: Int): Int = {
     validateMaxLength()
-    if (idx < 0 || idx >= numRangeElements) throw new IndexOutOfBoundsException(idx.toString)
+    if (idx < 0 || idx >= numRangeElements) throw new IndexOutOfBoundsException(s"$idx is out of bounds (min 0, max ${numRangeElements-1})")
     else start + (step * idx)
   }
 
@@ -165,6 +192,38 @@ sealed abstract class Range(
         i += step
       }
     }
+  }
+
+  override final def indexOf[@specialized(Int) B >: Int](elem: B, from: Int = 0): Int =
+    elem match {
+      case i: Int =>
+        val pos = posOf(i)
+        if (pos >= from) pos else -1
+      case _ => super.indexOf(elem, from)
+    }
+
+  override final def lastIndexOf[@specialized(Int) B >: Int](elem: B, end: Int = length - 1): Int =
+    elem match {
+      case i: Int =>
+        val pos = posOf(i)
+        if (pos <= end) pos else -1
+      case _ => super.lastIndexOf(elem, end)
+    }
+
+  private[this] def posOf(i: Int): Int =
+    if (contains(i)) (i - start) / step else -1
+
+  override def sameElements[B >: Int](that: IterableOnce[B]): Boolean = that match {
+    case other: Range =>
+      (this.length : @annotation.switch) match {
+        case 0 => other.isEmpty
+        case 1 => other.length == 1 && this.start == other.start
+        case n => other.length == n && (
+          (this.start == other.start)
+            && (this.step == other.step)
+        )
+      }
+    case _ => super.sameElements(that)
   }
 
   /** Creates a new range containing the first `n` elements of this range.
@@ -310,7 +369,7 @@ sealed abstract class Range(
     if (isInclusive) this
     else new Range.Inclusive(start, end, step)
 
-  final def contains(x: Int) = {
+  final def contains(x: Int): Boolean = {
     if (x == end && !isInclusive) false
     else if (step > 0) {
       if (x < start || x > end) false
@@ -320,6 +379,11 @@ sealed abstract class Range(
       if (x < end || x > start) false
       else (step == -1) || (((x - start) % step) == 0)
     }
+  }
+  /* Seq#contains has a type parameter so the optimised contains above doesn't override it */
+  override final def contains[B >: Int](elem: B): Boolean = elem match {
+    case i: Int => this.contains(i)
+    case _      => super.contains(elem)
   }
 
   final override def sum[B >: Int](implicit num: Numeric[B]): Int = {
@@ -348,16 +412,52 @@ sealed abstract class Range(
     if (ord eq Ordering.Int) {
       if (step > 0) head
       else last
+    } else if (Ordering.Int isReverseOf ord) {
+      if (step > 0) last
+      else head
     } else super.min(ord)
 
   final override def max[A1 >: Int](implicit ord: Ordering[A1]): Int =
     if (ord eq Ordering.Int) {
       if (step > 0) last
       else head
+    } else if (Ordering.Int isReverseOf ord) {
+      if (step > 0) head
+      else last
     } else super.max(ord)
 
+  override def tails: Iterator[Range] =
+    new AbstractIterator[Range] {
+      private[this] var i = 0
+      override def hasNext = i <= Range.this.length
+      override def next() = {
+        if (hasNext) {
+          val res = Range.this.drop(i)
+          i += 1
+          res
+        } else {
+          Iterator.empty.next()
+        }
+      }
+    }
 
-  final override def equals(other: Any) = other match {
+  override def inits: Iterator[Range] =
+    new AbstractIterator[Range] {
+      private[this] var i = 0
+      override def hasNext = i <= Range.this.length
+      override def next() = {
+        if (hasNext) {
+          val res = Range.this.dropRight(i)
+          i += 1
+          res
+        } else {
+          Iterator.empty.next()
+        }
+      }
+    }
+  override protected final def applyPreferredMaxLength: Int = Int.MaxValue
+
+  final override def equals(other: Any): Boolean = other match {
     case x: Range =>
       // Note: this must succeed for overfull ranges (length > Int.MaxValue)
       if (isEmpty) x.isEmpty                  // empty sequences are equal
@@ -372,7 +472,9 @@ sealed abstract class Range(
       super.equals(other)
   }
 
-  /* Note: hashCode can't be overridden without breaking Seq's equals contract. */
+  final override def hashCode: Int =
+    if(length >= 2) MurmurHash3.rangeHash(start, step, lastElement)
+    else super.hashCode
 
   final override def toString: String = {
     val preposition = if (isInclusive) "to" else "until"
@@ -381,7 +483,41 @@ sealed abstract class Range(
     s"${prefix}Range $start $preposition $end$stepped"
   }
 
-  final override protected[this] def writeReplace(): AnyRef = this
+  override protected[this] def className = "Range"
+
+  override def distinct: Range = this
+
+  override def grouped(size: Int): Iterator[Range] = {
+    require(size >= 1, f"size=$size%d, but size must be positive")
+    if (isEmpty) {
+      Iterator.empty
+    } else {
+      val s = size
+      new AbstractIterator[Range] {
+        private[this] var i = 0
+        override def hasNext = Range.this.length > i
+        override def next() =
+          if (hasNext) {
+            val x = Range.this.slice(i, i + s)
+            i += s
+            x
+          } else {
+            Iterator.empty.next()
+          }
+      }
+    }
+  }
+
+  override def sorted[B >: Int](implicit ord: Ordering[B]): IndexedSeq[Int] =
+    if (ord eq Ordering.Int) {
+      if (step > 0) {
+        this
+      } else {
+        reverse
+      }
+    } else {
+      super.sorted(ord)
+    }
 }
 
 /**
@@ -442,23 +578,23 @@ object Range {
 
   @SerialVersionUID(3L)
   final class Inclusive(start: Int, end: Int, step: Int) extends Range(start, end, step) {
-    def isInclusive = true
+    def isInclusive: Boolean = true
   }
 
   @SerialVersionUID(3L)
   final class Exclusive(start: Int, end: Int, step: Int) extends Range(start, end, step) {
-    def isInclusive = false
+    def isInclusive: Boolean = false
   }
 
   // BigInt and Long are straightforward generic ranges.
   object BigInt {
-    def apply(start: BigInt, end: BigInt, step: BigInt) = NumericRange(start, end, step)
-    def inclusive(start: BigInt, end: BigInt, step: BigInt) = NumericRange.inclusive(start, end, step)
+    def apply(start: BigInt, end: BigInt, step: BigInt): NumericRange.Exclusive[BigInt] = NumericRange(start, end, step)
+    def inclusive(start: BigInt, end: BigInt, step: BigInt): NumericRange.Inclusive[BigInt] = NumericRange.inclusive(start, end, step)
   }
 
   object Long {
-    def apply(start: Long, end: Long, step: Long) = NumericRange(start, end, step)
-    def inclusive(start: Long, end: Long, step: Long) = NumericRange.inclusive(start, end, step)
+    def apply(start: Long, end: Long, step: Long): NumericRange.Exclusive[Long] = NumericRange(start, end, step)
+    def inclusive(start: Long, end: Long, step: Long): NumericRange.Inclusive[Long] = NumericRange.inclusive(start, end, step)
   }
 
   // BigDecimal uses an alternative implementation of Numeric in which
@@ -469,9 +605,9 @@ object Range {
   object BigDecimal {
     implicit val bigDecAsIntegral: Numeric.BigDecimalAsIfIntegral = Numeric.BigDecimalAsIfIntegral
 
-    def apply(start: BigDecimal, end: BigDecimal, step: BigDecimal) =
+    def apply(start: BigDecimal, end: BigDecimal, step: BigDecimal): NumericRange.Exclusive[BigDecimal] =
       NumericRange(start, end, step)
-    def inclusive(start: BigDecimal, end: BigDecimal, step: BigDecimal) =
+    def inclusive(start: BigDecimal, end: BigDecimal, step: BigDecimal): NumericRange.Inclusive[BigDecimal] =
       NumericRange.inclusive(start, end, step)
   }
 
@@ -487,10 +623,12 @@ object Range {
   // indefinitely, for performance and because the compiler seems to bootstrap
   // off it and won't do so with our parameterized version without modifications.
   object Int {
-    def apply(start: Int, end: Int, step: Int) = NumericRange(start, end, step)
-    def inclusive(start: Int, end: Int, step: Int) = NumericRange.inclusive(start, end, step)
+    def apply(start: Int, end: Int, step: Int): NumericRange.Exclusive[Int] = NumericRange(start, end, step)
+    def inclusive(start: Int, end: Int, step: Int): NumericRange.Inclusive[Int] = NumericRange.inclusive(start, end, step)
   }
 
+  private def emptyRangeError(what: String): Throwable =
+    new NoSuchElementException(what + " on empty Range")
 }
 
 /**
@@ -515,5 +653,20 @@ private class RangeIterator(
     _hasNext = value != lastElement
     _next = value + step
     value
+  }
+
+  override def drop(n: Int): Iterator[Int] = {
+    if (n > 0) {
+      val longPos = _next.toLong + step * n
+      if (step > 0) {
+        _next = Math.min(lastElement, longPos).toInt
+        _hasNext = longPos <= lastElement
+      }
+      else if (step < 0) {
+        _next = Math.max(lastElement, longPos).toInt
+        _hasNext = longPos >= lastElement
+      }
+    }
+      this
   }
 }

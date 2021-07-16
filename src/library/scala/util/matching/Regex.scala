@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2007-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 /**
  * This package is concerned with regular expression (regex) matching against strings,
@@ -29,7 +33,8 @@ import java.util.regex.{ Pattern, Matcher }
  *  and, if it does, to extract or transform the parts that match.
  *
  *  === Usage ===
- *  This class delegates to the [[java.util.regex]] package of the Java Platform.
+
+ *  This class delegates to the [[https://docs.oracle.com/javase/8/docs/api/java/util/regex/package-summary.html java.util.regex]] package of the Java Platform.
  *  See the documentation for [[java.util.regex.Pattern]] for details about
  *  the regular expression syntax for pattern strings.
  *
@@ -55,7 +60,7 @@ import java.util.regex.{ Pattern, Matcher }
  *
  *  {{{
  *  "2004-01-20" match {
- *    case date(year, month, day) => s"$year was a good year for PLs."
+ *    case date(year, month, day) => s"\$year was a good year for PLs."
  *  }
  *  }}}
  *
@@ -74,7 +79,7 @@ import java.util.regex.{ Pattern, Matcher }
  *
  *  {{{
  *  "2004-01-20" match {
- *    case date(year, _*) => s"$year was a good year for PLs."
+ *    case date(year, _*) => s"\$year was a good year for PLs."
  *  }
  *  }}}
  *
@@ -125,7 +130,7 @@ import java.util.regex.{ Pattern, Matcher }
  *  val mi = date.findAllIn(dates)
  *  while (mi.hasNext) {
  *    val d = mi.next
- *    if (mi.group(1).toInt < 1960) println(s"$d: An oldie but goodie.")
+ *    if (mi.group(1).toInt < 1960) println(s"\$d: An oldie but goodie.")
  *  }
  *  }}}
  *
@@ -169,8 +174,8 @@ import java.util.regex.{ Pattern, Matcher }
  *  {{{
  *  val redacted    = date.replaceAllIn(dates, "XXXX-XX-XX")
  *  val yearsOnly   = date.replaceAllIn(dates, m => m.group(1))
- *  val months      = (0 to 11).map { i => val c = Calendar.getInstance; c.set(2014, i, 1); f"$c%tb" }
- *  val reformatted = date.replaceAllIn(dates, _ match { case date(y,m,d) => f"${months(m.toInt - 1)} $d, $y" })
+ *  val months      = (0 to 11).map { i => val c = Calendar.getInstance; c.set(2014, i, 1); f"\$c%tb" }
+ *  val reformatted = date.replaceAllIn(dates, _ match { case date(y,m,d) => f"\${months(m.toInt - 1)} \$d, \$y" })
  *  }}}
  *
  *  Pattern matching the `Match` against the `Regex` that created it does not reapply the `Regex`.
@@ -187,15 +192,11 @@ import java.util.regex.{ Pattern, Matcher }
  *
  *  @see [[java.util.regex.Pattern]]
  *
- *  @author  Thibaud Hottelier
- *  @author  Philipp Haller
- *  @author  Martin Odersky
- *
  *  @param pattern    The compiled pattern
  *  @param groupNames A mapping from names to indices in capture groups
  *
  *  @define replacementString
- *  In the replacement String, a dollar sign (`$`) followed by a number will be
+ *  In the replacement String, a dollar sign (`\$`) followed by a number will be
  *  interpreted as a reference to a group in the matched pattern, with numbers
  *  1 through 9 corresponding to the first nine groups, and 0 standing for the
  *  whole match. Any other character is an error. The backslash (`\`) character
@@ -279,12 +280,10 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
    *  @param  s     The string to match
    *  @return       The matches
    */
-  def unapplySeq(s: CharSequence): Option[List[String]] = s match {
-    case null => None
-    case _    =>
-      val m = pattern matcher s
-      if (runMatcher(m)) Some(List.tabulate(m.groupCount) { i => m.group(i + 1) })
-      else None
+  def unapplySeq(s: CharSequence): Option[List[String]] = {
+    val m = pattern.matcher(s)
+    if (runMatcher(m)) Some(List.tabulate(m.groupCount) { i => m.group(i + 1) })
+    else None
   }
 
   /** Tries to match the String representation of a [[scala.Char]].
@@ -336,12 +335,12 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
    *  and the result of that match is used.
    */
   def unapplySeq(m: Match): Option[List[String]] =
-    if (m == null || m.matched == null) None
+    if (m.matched == null) None
     else if (m.matcher.pattern == this.pattern) Regex.extractGroupsFromMatch(m)
     else unapplySeq(m.matched)
 
   //  @see UnanchoredRegex
-  protected def runMatcher(m: Matcher) = m.matches()
+  protected def runMatcher(m: Matcher): Boolean = m.matches()
 
   /** Return all non-overlapping matches of this `Regex` in the given character
    *  sequence as a [[scala.util.matching.Regex.MatchIterator]],
@@ -370,7 +369,7 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
    *  {{{
    *  val madhatter = "(h)(?=(at[^a]+))".r
    *  val madhats   = madhatter.findAllMatchIn(hathaway).map {
-   *    case madhatter(x,y) => s"$x$y"
+   *    case madhatter(x,y) => s"\$x\$y"
    *  }.toList                                       // List(hath, hatth, hattth, hatttt)
    *  }}}
    *
@@ -382,7 +381,7 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
    *  @return       A [[scala.util.matching.Regex.MatchIterator]] of matched substrings.
    *  @example      {{{for (words <- """\w+""".r findAllIn "A simple example.") yield words}}}
    */
-  def findAllIn(source: CharSequence) = new Regex.MatchIterator(source, this, groupNames)
+  def findAllIn(source: CharSequence): MatchIterator = new Regex.MatchIterator(source, this, groupNames)
 
   /** Return all non-overlapping matches of this regexp in given character sequence as a
    *  [[scala.collection.Iterator]] of [[scala.util.matching.Regex.Match]].
@@ -395,7 +394,7 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
     val matchIterator = findAllIn(source)
     new AbstractIterator[Match] {
       def hasNext = matchIterator.hasNext
-      def next: Match = {
+      def next(): Match = {
         matchIterator.next()
         new Match(matchIterator.source, matchIterator.matcher, matchIterator.groupNames).force
       }
@@ -496,7 +495,7 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
    * import scala.util.matching.Regex
    * val datePattern = new Regex("""(\d\d\d\d)-(\d\d)-(\d\d)""", "year", "month", "day")
    * val text = "From 2011-07-15 to 2011-07-17"
-   * val repl = datePattern replaceAllIn (text, m => s"${m group "month"}/${m group "day"}")
+   * val repl = datePattern replaceAllIn (text, m => s"\${m group "month"}/\${m group "day"}")
    * }}}
    *
    * $replacementString
@@ -519,7 +518,7 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
    * {{{
    * import scala.util.matching.Regex._
    *
-   * val vars = Map("x" -> "a var", "y" -> """some $ and \ signs""")
+   * val vars = Map("x" -> "a var", "y" -> """some \$ and \ signs""")
    * val text = "A text with variables %x, %y and %z."
    * val varPattern = """%(\w+)""".r
    * val mapper = (m: Match) => vars get (m group 1) map (quoteReplacement(_))
@@ -566,7 +565,7 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
    *  the entire String matches in extractor patterns and [[Regex#matches]].
    *
    *  Normally, matching on `date` behaves as though the pattern were
-   *  enclosed in anchors, `"^pattern$"`.
+   *  enclosed in anchors, `"^pattern\$"`.
    *
    *  The unanchored `Regex` behaves as though those anchors were removed.
    *
@@ -580,7 +579,7 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
    *  val date(year, month, day) = "Date 2011-07-15"                       // OK
    *
    *  val copyright: String = "Date of this document: 2011-07-15" match {
-   *    case date(year, month, day) => s"Copyright $year"                  // OK
+   *    case date(year, month, day) => s"Copyright \$year"                  // OK
    *    case _                      => "No copyright"
    *  }
    *  }}}
@@ -593,7 +592,7 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
   def regex: String = pattern.pattern
 
   /** The string defining the regular expression */
-  override def toString = regex
+  override def toString: String = regex
 }
 
 /** A [[Regex]] that finds the first match when used in a pattern match.
@@ -601,8 +600,8 @@ class Regex private[matching](val pattern: Pattern, groupNames: String*) extends
  *  @see [[Regex#unanchored]]
  */
 trait UnanchoredRegex extends Regex {
-  override protected def runMatcher(m: Matcher) = m.find()
-  override def unanchored = this
+  override protected def runMatcher(m: Matcher): Boolean = m.find()
+  override def unanchored: UnanchoredRegex = this
 }
 
 /** This object defines inner classes that describe
@@ -711,7 +710,7 @@ object Regex {
     )
 
     /** The matched string; equivalent to `matched.toString`. */
-    override def toString = matched
+    override def toString: String = matched
   }
 
   /** Provides information about a successful match. */
@@ -720,13 +719,13 @@ object Regex {
               val groupNames: Seq[String]) extends MatchData {
 
     /** The index of the first matched character. */
-    val start = matcher.start
+    val start: Int = matcher.start
 
     /** The index following the last matched character. */
-    val end = matcher.end
+    val end: Int = matcher.end
 
     /** The number of subgroups. */
-    def groupCount = matcher.groupCount
+    def groupCount: Int = matcher.groupCount
 
     private[this] lazy val starts: Array[Int] =
       Array.tabulate(groupCount + 1) { matcher.start }
@@ -734,10 +733,10 @@ object Regex {
       Array.tabulate(groupCount + 1) { matcher.end }
 
     /** The index of the first matched character in group `i`. */
-    def start(i: Int) = starts(i)
+    def start(i: Int): Int = starts(i)
 
     /** The index following the last matched character in group `i`. */
-    def end(i: Int) = ends(i)
+    def end(i: Int): Int = ends(i)
 
     /** The match itself with matcher-dependent lazy vals forced,
      *  so that match is valid even once matcher is advanced.
@@ -768,7 +767,7 @@ object Regex {
    *
    *  val date = """(\d\d\d\d)-(\d\d)-(\d\d)""".r
    *  val text = "The doc spree happened on 2011-07-15."
-   *  val day = date replaceAllIn(text, _ match { case Groups(_, month, day) => s"$month/$day" })
+   *  val day = date replaceAllIn(text, _ match { case Groups(_, month, day) => s"\$month/\$day" })
    *  }}}
    */
   object Groups {
@@ -828,7 +827,7 @@ object Regex {
     }
 
     /** Report emptiness. */
-    override def toString = super[AbstractIterator].toString
+    override def toString: String = super[AbstractIterator].toString
 
     // ensure we're at a match
     private[this] def ensure(): Unit = nextSeen match {
@@ -851,19 +850,19 @@ object Regex {
     def end(i: Int): Int = { ensure() ; matcher.end(i) }
 
     /** The number of subgroups. */
-    def groupCount = { ensure() ; matcher.groupCount }
+    def groupCount: Int = { ensure() ; matcher.groupCount }
 
     /** Convert to an iterator that yields MatchData elements instead of Strings. */
     def matchData: Iterator[Match] = new AbstractIterator[Match] {
       def hasNext = self.hasNext
-      def next = { self.next(); new Match(source, matcher, groupNames).force }
+      def next() = { self.next(); new Match(source, matcher, groupNames).force }
     }
 
     /** Convert to an iterator that yields MatchData elements instead of Strings and has replacement support. */
     private[matching] def replacementData = new AbstractIterator[Match] with Replacement {
       def matcher = self.matcher
       def hasNext = self.hasNext
-      def next = { self.next(); new Match(source, matcher, groupNames).force }
+      def next() = { self.next(); new Match(source, matcher, groupNames).force }
     }
   }
 
@@ -889,21 +888,21 @@ object Regex {
    *
    *  All regex metacharacters in the input match themselves literally in the output.
    *
-   *  @example {{{List("US$", "CAN$").map(Regex.quote).mkString("|").r}}}
+   *  @example {{{List("US\$", "CAN\$").map(Regex.quote).mkString("|").r}}}
    */
   def quote(text: String): String = Pattern quote text
 
   /** Quotes replacement strings to be used in replacement methods.
    *
    *  Replacement methods give special meaning to backslashes (`\`) and
-   *  dollar signs (`$`) in replacement strings, so they are not treated
+   *  dollar signs (`\$`) in replacement strings, so they are not treated
    *  as literals. This method escapes these characters so the resulting
    *  string can be used as a literal replacement representing the input
    *  string.
    *
    *  @param text The string one wishes to use as literal replacement.
    *  @return A string that can be used to replace matches with `text`.
-   *  @example {{{"CURRENCY".r.replaceAllIn(input, Regex quoteReplacement "US$")}}}
+   *  @example {{{"CURRENCY".r.replaceAllIn(input, Regex quoteReplacement "US\$")}}}
    */
   def quoteReplacement(text: String): String = Matcher quoteReplacement text
 }

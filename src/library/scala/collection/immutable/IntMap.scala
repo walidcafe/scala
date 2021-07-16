@@ -1,24 +1,25 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.collection
 package immutable
-
-import java.io.{ObjectInputStream, ObjectOutputStream}
-import java.lang.IllegalStateException
 
 import scala.collection.generic.{BitOperations, DefaultSerializationProxy}
 import scala.collection.mutable.{Builder, ImmutableBuilder}
 import scala.annotation.tailrec
 import scala.annotation.unchecked.uncheckedVariance
+import scala.language.implicitConversions
 
 /** Utility class for integer maps.
-  *  @author David MacIver
   */
 private[immutable] object IntMapUtils extends BitOperations.Int {
   def branchMask(i: Int, j: Int) = highestOneBit(i ^ j)
@@ -42,7 +43,6 @@ import IntMapUtils._
 /** A companion object for integer maps.
   *
   *  @define Coll  `IntMap`
-  *  @since 2.7
   */
 object IntMap {
   def empty[T] : IntMap[T]  = IntMap.Nil
@@ -95,17 +95,13 @@ object IntMap {
 
   implicit def toBuildFrom[V](factory: IntMap.type): BuildFrom[Any, (Int, V), IntMap[V]] = ToBuildFrom.asInstanceOf[BuildFrom[Any, (Int, V), IntMap[V]]]
   private[this] object ToBuildFrom extends BuildFrom[Any, (Int, AnyRef), IntMap[AnyRef]] {
-    def fromSpecificIterable(from: Any)(it: scala.collection.Iterable[(Int, AnyRef)]) = IntMap.from(it)
+    def fromSpecific(from: Any)(it: IterableOnce[(Int, AnyRef)]) = IntMap.from(it)
     def newBuilder(from: Any) = IntMap.newBuilder[AnyRef]
   }
 
-  // scalac generates a `readReplace` method to discard the deserialized state (see https://github.com/scala/bug/issues/10412).
-  // This prevents it from serializing it in the first place:
-  private[this] def writeObject(out: ObjectOutputStream): Unit = ()
-  private[this] def readObject(in: ObjectInputStream): Unit = ()
+  implicit def iterableFactory[V]: Factory[(Int, V), IntMap[V]] = toFactory(this)
+  implicit def buildFromIntMap[V]: BuildFrom[IntMap[_], (Int, V), IntMap[V]] = toBuildFrom(this)
 }
-
-import IntMap._
 
 // Iterator over a non-empty IntMap.
 private[immutable] abstract class IntMapIterator[V, T](it: IntMap[V]) extends AbstractIterator[T] {
@@ -134,6 +130,7 @@ private[immutable] abstract class IntMapIterator[V, T](it: IntMap[V]) extends Ab
   def valueOf(tip: IntMap.Tip[V]): T
 
   def hasNext = index != 0
+  @tailrec
   final def next(): T =
     pop match {
       case IntMap.Bin(_,_, t@IntMap.Tip(_, _), right) => {
@@ -167,26 +164,25 @@ private[immutable] class IntMapKeyIterator[V](it: IntMap[V]) extends IntMapItera
 import IntMap._
 
 /** Specialised immutable map structure for integer keys, based on
-  *  [[http://ittc.ku.edu/~andygill/papers/IntMap98.pdf Fast Mergeable Integer Maps]]
+  *  [[https://ittc.ku.edu/~andygill/papers/IntMap98.pdf Fast Mergeable Integer Maps]]
   *  by Okasaki and Gill. Essentially a trie based on binary digits of the integers.
   *
   *  '''Note:''' This class is as of 2.8 largely superseded by HashMap.
   *
   *  @tparam T    type of the values associated with integer keys.
   *
-  *  @since 2.7
   *  @define Coll `immutable.IntMap`
   *  @define coll immutable integer map
   *  @define mayNotTerminateInf
   *  @define willNotTerminateInf
   */
 sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
-  with MapOps[Int, T, Map, IntMap[T]]
-  with StrictOptimizedIterableOps[(Int, T), Iterable, IntMap[T]] {
+  with StrictOptimizedMapOps[Int, T, Map, IntMap[T]]
+  with Serializable {
 
-  override protected def fromSpecificIterable(coll: scala.collection.Iterable[(Int, T) @uncheckedVariance]): IntMap[T] =
-    intMapFromIterable[T](coll)
-  protected def intMapFromIterable[V2](coll: scala.collection.Iterable[(Int, V2)]): IntMap[V2] = {
+  override protected def fromSpecific(coll: scala.collection.IterableOnce[(Int, T) @uncheckedVariance]): IntMap[T] =
+    intMapFrom[T](coll)
+  protected def intMapFrom[V2](coll: scala.collection.IterableOnce[(Int, V2)]): IntMap[V2] = {
     val b = IntMap.newBuilder[V2]
     b.sizeHint(coll)
     b.addAll(coll)
@@ -224,6 +220,12 @@ sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
     case IntMap.Nil =>
   }
 
+  override def foreachEntry[U](f: (IntMapUtils.Int, T) => U): Unit = this match {
+    case IntMap.Bin(_, _, left, right) => { left.foreachEntry(f); right.foreachEntry(f) }
+    case IntMap.Tip(key, value) => f(key, value)
+    case IntMap.Nil =>
+  }
+
   override def keysIterator: Iterator[Int] = this match {
     case IntMap.Nil => Iterator.empty
     case _ => new IntMapKeyIterator(this)
@@ -235,7 +237,7 @@ sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
     *
     * @param f The loop body
     */
-  final def foreachKey(f: Int => Unit): Unit = this match {
+  final def foreachKey[U](f: Int => U): Unit = this match {
     case IntMap.Bin(_, _, left, right) => { left.foreachKey(f); right.foreachKey(f) }
     case IntMap.Tip(key, _) => f(key)
     case IntMap.Nil =>
@@ -252,16 +254,16 @@ sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
     *
     * @param f The loop body
     */
-  final def foreachValue(f: T => Unit): Unit = this match {
+  final def foreachValue[U](f: T => U): Unit = this match {
     case IntMap.Bin(_, _, left, right) => { left.foreachValue(f); right.foreachValue(f) }
     case IntMap.Tip(_, value) => f(value)
     case IntMap.Nil =>
   }
 
-  override def className = "IntMap"
+  override protected[this] def className = "IntMap"
 
-  override def isEmpty = this == IntMap.Nil
-
+  override def isEmpty = this eq IntMap.Nil
+  override def knownSize: Int = if (isEmpty) 0 else super.knownSize
   override def filter(f: ((Int, T)) => Boolean): IntMap[T] = this match {
     case IntMap.Bin(prefix, mask, left, right) => {
       val (newleft, newright) = (left.filter(f), right.filter(f))
@@ -286,12 +288,14 @@ sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
     case IntMap.Bin(_, _, left, right) => left.size + right.size
   }
 
+  @tailrec
   final def get(key: Int): Option[T] = this match {
     case IntMap.Bin(prefix, mask, left, right) => if (zero(key, mask)) left.get(key) else right.get(key)
     case IntMap.Tip(key2, value) => if (key == key2) Some(value) else None
     case IntMap.Nil => None
   }
 
+  @tailrec
   final override def getOrElse[S >: T](key: Int, default: => S): S = this match {
     case IntMap.Nil => default
     case IntMap.Tip(key2, value) => if (key == key2) value else default
@@ -299,6 +303,7 @@ sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
       if (zero(key, mask)) left.getOrElse(key, default) else right.getOrElse(key, default)
   }
 
+  @tailrec
   final override def apply(key: Int): T = this match {
     case IntMap.Bin(prefix, mask, left, right) => if (zero(key, mask)) left(key) else right(key)
     case IntMap.Tip(key2, value) => if (key == key2) value else throw new IllegalArgumentException("Key not found")
@@ -318,17 +323,17 @@ sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
     case IntMap.Nil => IntMap.Tip(key, value)
   }
 
-  def map[V2](f: ((Int, T)) => (Int, V2)): IntMap[V2] = intMapFromIterable(new View.Map(toIterable, f))
+  def map[V2](f: ((Int, T)) => (Int, V2)): IntMap[V2] = intMapFrom(new View.Map(toIterable, f))
 
-  def flatMap[V2](f: ((Int, T)) => IterableOnce[(Int, V2)]): IntMap[V2] = intMapFromIterable(new View.FlatMap(toIterable, f))
+  def flatMap[V2](f: ((Int, T)) => IterableOnce[(Int, V2)]): IntMap[V2] = intMapFrom(new View.FlatMap(toIterable, f))
 
-  override def concat[V1 >: T](that: collection.Iterable[(Int, V1)]): IntMap[V1] =
-    super.concat(that).asInstanceOf[IntMap[V1]] // Already has corect type but not declared as such
+  override def concat[V1 >: T](that: collection.IterableOnce[(Int, V1)]): IntMap[V1] =
+    super.concat(that).asInstanceOf[IntMap[V1]] // Already has correct type but not declared as such
 
-  override def ++ [V1 >: T](that: collection.Iterable[(Int, V1)]): IntMap[V1] = concat(that)
+  override def ++ [V1 >: T](that: collection.IterableOnce[(Int, V1)]): IntMap[V1] = concat(that)
 
   def collect[V2](pf: PartialFunction[(Int, T), (Int, V2)]): IntMap[V2] =
-    flatMap(kv => if (pf.isDefinedAt(kv)) new View.Single(pf(kv)) else View.Empty)
+    strictOptimizedCollect(IntMap.newBuilder[V2], pf)
 
   /**
     * Updates the map, using the provided function to resolve conflicts if the key is already present.
@@ -358,7 +363,7 @@ sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
     case IntMap.Nil => IntMap.Tip(key, value)
   }
 
-  def remove (key: Int): IntMap[T] = this match {
+  def removed (key: Int): IntMap[T] = this match {
     case IntMap.Bin(prefix, mask, left, right) =>
       if (!hasMatch(key, prefix, mask)) this
       else if (zero(key, mask)) bin(prefix, mask, left - key, right)
@@ -493,5 +498,5 @@ sealed abstract class IntMap[+T] extends AbstractMap[Int, T]
     case IntMap.Nil => throw new IllegalStateException("Empty set")
   }
 
-  override protected[this] def writeReplace(): AnyRef = new DefaultSerializationProxy(IntMap.toFactory[T](IntMap), this)
+  protected[this] def writeReplace(): AnyRef = new DefaultSerializationProxy(IntMap.toFactory[T](IntMap), this)
 }

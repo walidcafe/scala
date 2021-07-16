@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.interactive
 
 import java.io.Reader
@@ -158,7 +170,7 @@ class Lexer(rd: Reader) {
   /** If last-read character equals given character, reads next character,
    *  otherwise raises an error
    *  @param  c   the given character to compare with last-read character
-   *  @throws  MalformedInput if character does not match
+   *  @throws  Lexer.MalformedInput if character does not match
    */
   def acceptChar(c: Char) = if (ch == c) nextChar() else error("'"+c+"' expected")
 
@@ -174,7 +186,7 @@ class Lexer(rd: Reader) {
   }
 
   /** Skips whitespace and reads next lexeme into `token`
-   *  @throws  MalformedInput if lexeme not recognized as a valid token
+   *  @throws  Lexer.MalformedInput if lexeme not recognized as a valid token
    */
   def nextToken(): Unit = {
     sb.clear()
@@ -202,7 +214,7 @@ class Lexer(rd: Reader) {
 
   /** Reads a string literal, and forms a `StringLit` token from it.
    *  Last-read input character `ch` must be opening `"`-quote.
-   *  @throws  MalformedInput if lexeme not recognized as a string literal.
+   *  @throws  Lexer.MalformedInput if lexeme not recognized as a string literal.
    */
   def getString(): Unit = {
     def udigit() = {
@@ -241,7 +253,7 @@ class Lexer(rd: Reader) {
 
   /** Reads a numeric literal, and forms an `IntLit` or `FloatLit` token from it.
    *  Last-read input character `ch` must be either `-` or a digit.
-   *  @throws  MalformedInput if lexeme not recognized as a numeric literal.
+   *  @throws  Lexer.MalformedInput if lexeme not recognized as a numeric literal.
    */
   def getNumber(): Unit = {
     def digit() =
@@ -269,17 +281,17 @@ class Lexer(rd: Reader) {
 
   /** If current token equals given token, reads next token, otherwise raises an error.
    *  @param  t   the given token to compare current token with
-   *  @throws MalformedInput  if the two tokens do not match.
+   *  @throws Lexer.MalformedInput  if the two tokens do not match.
    */
   def accept(t: Token): Unit = {
     if (token == t) nextToken()
-    else error(t+" expected, but "+token+" found")
+    else error(s"$t expected, but $token found")
   }
 
   /** The current token is a delimiter consisting of given character, reads next token,
    *  otherwise raises an error.
    *  @param  ch   the given delimiter character to compare current token with
-   *  @throws MalformedInput  if the current token `token` is not a delimiter, or
+   *  @throws Lexer.MalformedInput  if the current token `token` is not a delimiter, or
    *                          consists of a character different from `c`.
    */
   def accept(ch: Char): Unit = {
@@ -289,7 +301,7 @@ class Lexer(rd: Reader) {
     }
   }
 
-  /** Always throws a `MalformedInput` exception with given error message.
+  /** Always throws a [[Lexer.MalformedInput]] exception with given error message.
    *  @param msg  the error message
    */
   def error(msg: String) = throw new MalformedInput(this, msg)

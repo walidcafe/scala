@@ -1,16 +1,22 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2007-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package reflect
 
-import scala.collection.mutable.{ ArraySeq, ArrayBuilder }
-import java.lang.{ Class => jClass }
+import scala.collection.mutable.{ArrayBuilder, ArraySeq}
+import java.lang.{Class => jClass}
+
+import scala.annotation.{nowarn, tailrec}
 
 @deprecated("use scala.reflect.ClassTag instead", "2.10.0")
 trait ClassManifestDeprecatedApis[T] extends OptManifest[T] {
@@ -21,6 +27,7 @@ trait ClassManifestDeprecatedApis[T] extends OptManifest[T] {
   def erasure: jClass[_] = runtimeClass
 
   private def subtype(sub: jClass[_], sup: jClass[_]): Boolean = {
+    @tailrec
     def loop(left: Set[jClass[_]], seen: Set[jClass[_]]): Boolean = {
       left.nonEmpty && {
         val next = left.head
@@ -59,8 +66,8 @@ trait ClassManifestDeprecatedApis[T] extends OptManifest[T] {
     //   List[String] <: AnyRef
     //   Map[Int, Int] <: Iterable[(Int, Int)]
     //
-    // Given the manifest for Map[A, B] how do I determine that a
-    // supertype has single type argument (A, B) ? I don't see how we
+    // Given the manifest for Map[K, V] how do I determine that a
+    // supertype has single type argument (K, V) ? I don't see how we
     // can say whether X <:< Y when type arguments are involved except
     // when the erasure is the same, even before considering variance.
     !cannotMatch && {
@@ -87,15 +94,12 @@ trait ClassManifestDeprecatedApis[T] extends OptManifest[T] {
     case _                   => false
   }
 
-  protected def arrayClass[T](tp: jClass[_]): jClass[Array[T]] =
-    java.lang.reflect.Array.newInstance(tp, 0).getClass.asInstanceOf[jClass[Array[T]]]
+  protected def arrayClass[A](tp: jClass[_]): jClass[Array[A]] =
+    java.lang.reflect.Array.newInstance(tp, 0).getClass.asInstanceOf[jClass[Array[A]]]
 
   @deprecated("use wrap instead", "2.10.0")
   def arrayManifest: ClassManifest[Array[T]] =
     ClassManifest.classType[Array[T]](arrayClass[T](runtimeClass), this)
-
-  override def newArray(len: Int): Array[T] =
-    java.lang.reflect.Array.newInstance(runtimeClass, len).asInstanceOf[Array[T]]
 
   @deprecated("use wrap.newArray instead", "2.10.0")
   def newArray2(len: Int): Array[Array[T]] =
@@ -148,6 +152,7 @@ trait ClassManifestDeprecatedApis[T] extends OptManifest[T] {
  *  so we need to somehow nudge them into migrating prior to removing stuff out of the blue.
  *  Hence we've introduced this design decision as the lesser of two evils.
  */
+@nowarn("""cat=deprecation&origin=scala\.reflect\.ClassManifest.*""")
 object ClassManifestFactory {
   val Byte    = ManifestFactory.Byte
   val Short   = ManifestFactory.Short
@@ -200,7 +205,7 @@ object ClassManifestFactory {
   def classType[T](prefix: OptManifest[_], clazz: jClass[_], args: OptManifest[_]*): ClassManifest[T] =
     new ClassTypeManifest[T](Some(prefix), clazz, args.toList)
 
-  def arrayType[T](arg: OptManifest[_]): ClassManifest[Array[T]] = arg match {
+  def arrayType[T](arg: OptManifest[_]): ClassManifest[Array[T]] = (arg: @unchecked) match {
     case NoManifest          => Object.asInstanceOf[ClassManifest[Array[T]]]
     case m: ClassManifest[_] => m.asInstanceOf[ClassManifest[T]].arrayManifest
   }
@@ -229,6 +234,7 @@ object ClassManifestFactory {
 
 /** Manifest for the class type `clazz[args]`, where `clazz` is
   * a top-level or static class */
+@nowarn("""cat=deprecation&origin=scala\.reflect\.ClassManifest""")
 @SerialVersionUID(1L)
 private class ClassTypeManifest[T](
   prefix: Option[OptManifest[_]],

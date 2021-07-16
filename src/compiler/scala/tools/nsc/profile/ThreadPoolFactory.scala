@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.profile
 
 import java.util.concurrent.ThreadPoolExecutor.AbortPolicy
@@ -86,9 +98,9 @@ object ThreadPoolFactory {
       val data = new ThreadProfileData
       localData.set(data)
 
-      val profileStart = profiler.snapThread(0)
+      val profileStart = RealProfiler.snapThread(0)
       try worker.run finally {
-        val snap = profiler.snapThread(data.idleNs)
+        val snap = RealProfiler.snapThread(data.idleNs)
         val threadRange = ProfileRange(profileStart, snap, phase, shortId, data.taskCount, Thread.currentThread())
         profiler.completeBackground(threadRange)
       }

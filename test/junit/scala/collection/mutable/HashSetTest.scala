@@ -6,7 +6,7 @@ import org.junit.Assert._
 class HashSetTest {
   // based on run/hashset.scala partest
   @Test
-  def testPar: Unit = {
+  def testPar(): Unit = {
     val h1 = new HashSet[Int]
     for (i <- 0 until 20) h1 += i
     for (i <- 0 until 20) assertTrue(h1.contains(i))
@@ -28,7 +28,7 @@ class HashSetTest {
   }
 
   @Test
-  def si4894: Unit = {
+  def si4894(): Unit = {
     val hs = HashSet[Int]()
     hs ++= 1 to 10
     hs --= 1 to 10
@@ -36,23 +36,78 @@ class HashSetTest {
   }
 
   @Test
-  def mapInPlace_addOneToAll(): Unit = {
+  def addRemove(): Unit = {
     val hs = HashSet[Int]()
     hs += 1
-    hs += 2
-    hs += 3
-    hs.mapInPlace(_ + 1)
-    assertEquals(List(2, 3, 4), hs.toList.sorted)
+    assertFalse(hs.add(1))
+    assertFalse(hs.add(1))
+    assertTrue(hs.add(2))
+    assertFalse(hs.remove(3))
+    assertTrue(hs.remove(2))
+    assertTrue(hs.remove(1))
+    assertFalse(hs.remove(1))
   }
 
   @Test
-  def mapInPlace_reducedToOneElement(): Unit = {
-    val hs = HashSet[Int]()
-    hs += 1
-    hs += 2
-    hs += 3
-    hs.mapInPlace(_ => 1)
-    assert(hs.size == 1)
-    assert(hs.contains(1))
+  def iterator(): Unit = {
+    val hs = HashSet.from(1 to 5)
+    val it = hs.iterator
+    var s = 0
+    while(it.hasNext) s += it.next()
+    assertEquals((1 to 5).sum, s)
+  }
+
+  @Test
+  def equality(): Unit = {
+    val hs = HashSet[Any](1)
+    assertTrue(hs.contains(1.0))
+  }
+
+  case class PackageEntryImpl(name: String)
+
+  @Test
+  def addConflicting(): Unit = {
+    val hs = HashSet[PackageEntryImpl](PackageEntryImpl("javax"), PackageEntryImpl("java"))
+    assertFalse(hs.add(PackageEntryImpl("java")))
+  }
+
+  class Type1(val value:String)
+  class Type2(val value:String)
+
+  import scala.jdk.CollectionConverters._
+
+  @Test
+  def addAll(): Unit = {
+    val jhs: java.util.HashSet[Type1] = new java.util.HashSet[Type1]
+    jhs.add(new Type1("A"))
+    jhs.add(new Type1("B"))
+    val shs: scala.collection.mutable.Set[Type2] = jhs.asScala.map(x => new Type2(x.value))
+    assertEquals(jhs.size, shs.size)
+  }
+
+  class OnceOnly extends IterableOnce[Int] {
+    override def knownSize: Int = 1
+
+    var iterated:Boolean = false
+
+    override def iterator: Iterator[Int] = {
+      new Iterator[Int] {
+        assert(!iterated)
+        iterated = true
+        private var v = Option(42)
+        override def hasNext: Boolean = v.nonEmpty && knownSize > 0
+        override def next(): Int = {
+          val res = v.get
+          v = None
+          res
+        }
+      }
+    }
+  }
+
+  @Test
+  def addAllTest2(): Unit = {
+    val hs = HashSet.empty[Int]
+    hs.addAll(new OnceOnly)
   }
 }

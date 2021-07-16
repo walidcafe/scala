@@ -1,7 +1,7 @@
 import scala.tools.partest._
 
 object Test extends DirectTest {
-  override def extraSettings: String = "-usejavacp -Yrangepos -Xprint:patmat -Xprint-pos -d " + testOutput.path
+  override def extraSettings: String = "-usejavacp -Yrangepos -Vprint:patmat -Vprint-pos"
 
   override def code = """
 abstract class A[T] {
@@ -9,5 +9,5 @@ abstract class A[T] {
   val bar: Set[_ <: T]
 }""".trim
 
-  override def show(): Unit = Console.withErr(System.out)(compile())
+  override def show(): Unit = compile()
 }

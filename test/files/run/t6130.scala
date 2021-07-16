@@ -1,7 +1,7 @@
 import scala.tools.partest._
 
 object Test extends StoreReporterDirectTest {
-  override def extraSettings: String = "-usejavacp -Xprint:patmat -Ystop-after:patmat"
+  override def extraSettings: String = "-usejavacp -Vprint:patmat -Ystop-after:patmat"
 
   override def code =
     """trait T { type T ; val t: T }
@@ -52,7 +52,7 @@ object Test extends StoreReporterDirectTest {
     Console.withOut(baos)(Console.withErr(baos)(compile()))
     val out = baos.toString("UTF-8")
 
-    val unapplySelectorDummies = out.lines.filter(_.contains("<unapply-selector>")).map(_.trim).toList
+    val unapplySelectorDummies = out.linesIterator.filter(_.contains("<unapply-selector>")).map(_.trim).toList
     assert(unapplySelectorDummies.isEmpty, unapplySelectorDummies)
   }
 }

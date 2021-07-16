@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.collection.generic
 
 import java.io.{ObjectInputStream, ObjectOutputStream}
@@ -55,3 +67,21 @@ final class DefaultSerializationProxy[A](factory: Factory[A, Any], @transient pr
 
 @SerialVersionUID(3L)
 private[collection] case object SerializeEnd
+
+/** Mix-in trait to enable DefaultSerializationProxy for the standard collection types. Depending on the type
+  * it is mixed into, it will dynamically choose `iterableFactory`, `mapFactory`, `sortedIterableFactory` or
+  * `sortedMapFactory` for deserialization into the respective `CC` type. Override `writeReplace` or implement
+  * it directly without using this trait if you need a non-standard factory or if you want to use a different
+  * serialization scheme.
+  */
+trait DefaultSerializable extends Serializable { this: scala.collection.Iterable[_] =>
+  protected[this] def writeReplace(): AnyRef = {
+    val f: Factory[Any, Any] = this match {
+      case it: scala.collection.SortedMap[_, _] => it.sortedMapFactory.sortedMapFactory[Any, Any](it.ordering.asInstanceOf[Ordering[Any]]).asInstanceOf[Factory[Any, Any]]
+      case it: scala.collection.Map[_, _] => it.mapFactory.mapFactory[Any, Any].asInstanceOf[Factory[Any, Any]]
+      case it: scala.collection.SortedSet[_] => it.sortedIterableFactory.evidenceIterableFactory[Any](it.ordering.asInstanceOf[Ordering[Any]])
+      case it => it.iterableFactory.iterableFactory
+    }
+    new DefaultSerializationProxy(f, this)
+  }
+}

@@ -1,18 +1,22 @@
-/*     ___ ____ ___   __   ___   ___
-**    / _// __// _ | / /  / _ | / _ \    Scala classfile decoder
-**  __\ \/ /__/ __ |/ /__/ __ |/ ___/    (c) 2003-2013, LAMP/EPFL
-** /____/\___/_/ |_/____/_/ |_/_/        http://scala-lang.org/
-**
-*/
-
+/*
+ * Scala classfile decoder (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.tools.scalap
 package scalax
 package rules
 package scalasig
 
-import scala.language.postfixOps
 import scala.language.implicitConversions
+import scala.language.postfixOps
 
 import ClassFileParser._
 import scala.reflect.internal.pickling.ByteCodecs
@@ -25,12 +29,14 @@ object ScalaSigParser {
     import classFile._
 
     def getBytes(bytesElem: AnnotationElement): Array[Byte] = bytesElem.elementValue match {
-      case ConstValueIndex(index) => bytesForIndex(index)
+      case ConstValueIndex(index)     => bytesForIndex(index)
       case ArrayValue(signatureParts) => mergedLongSignatureBytes(signatureParts)
+      case x                          => throw new MatchError(x)
     }
 
     def mergedLongSignatureBytes(signatureParts: Seq[ElementValue]): Array[Byte] = signatureParts.iterator.flatMap {
       case ConstValueIndex(index) => bytesForIndex(index)
+      case x                      => throw new MatchError(x)
     }.toArray
 
     def bytesForIndex(index: Int) = constantWrapped(index).asInstanceOf[StringBytesPair].bytes
@@ -88,7 +94,7 @@ object ScalaSigAttributeParsers extends ByteCodeReader  {
   val scalaSig = nat ~ nat ~ symtab ^~~^ ScalaSig
 
   val utf8 = read(x => x.fromUTF8StringAndBytes.string)
-  val longValue = read(_ toLong)
+  val longValue = read(_.toLong)
 }
 
 case class ScalaSig(majorVersion: Int, minorVersion: Int, table: Seq[Int ~ ByteCode]) extends DefaultMemoisable {
@@ -111,7 +117,7 @@ case class ScalaSig(majorVersion: Int, minorVersion: Int, table: Seq[Int ~ ByteC
   implicit def applyRule[A](parser: ScalaSigParsers.Parser[A]) = ScalaSigParsers.expect(parser)(this)
 
   override def toString = "ScalaSig version " + majorVersion + "." + minorVersion + {
-    for (i <- 0 until table.size) yield i + ":\t" + parseEntry(i) // + "\n\t" + getEntry(i)
+    for (i <- 0 until table.size) yield "" + i + ":\t" + parseEntry(i) // + "\n\t" + getEntry(i)
   }.mkString("\n", "\n", "")
 
   lazy val symbols: Seq[Symbol] = ScalaSigParsers.symbols
@@ -164,7 +170,7 @@ object ScalaSigEntryParsers extends RulesWithState with MemoisableRules {
   val index = read(_.index)
   val key = read(_.entryType)
 
-  lazy val entry: EntryParser[Any] = symbol | typeEntry | literal | name | attributeInfo | annotInfo | children | get
+  lazy val entry: EntryParser[Any] = (symbol: EntryParser[Any]) | typeEntry | literal | name | attributeInfo | annotInfo | children | get
 
   val ref = byteCodeEntryParser(nat)
 
@@ -242,7 +248,9 @@ object ScalaSigEntryParsers extends RulesWithState with MemoisableRules {
       32 -~ longValue ^^ (java.lang.Double.longBitsToDouble),
       33 -~ nameRef,
       34 -^ null,
-      35 -~ typeRef)
+      35 -~ typeRef,
+      36 -~ symbolRef
+    )
 
   lazy val attributeInfo = 40 -~ symbolRef ~ typeRef ~ (constantRef?) ~ (nameRef ~ constantRef *) ^~~~^ AttributeInfo // sym_Ref info_Ref {constant_Ref} {nameRef constantRef}
   lazy val children = 41 -~ (nat*) ^^ Children //sym_Ref {sym_Ref}

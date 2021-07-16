@@ -14,8 +14,6 @@ package scala.tools.scalap
 package scalax
 package rules
 
-import language.postfixOps
-
 trait Name {
   def name: String
   override def toString = name
@@ -70,7 +68,7 @@ trait Rules {
   }
 
  /** Converts a rule into a function that throws an Exception on failure. */
-  def expect[In, Out, A, Any](rule: Rule[In, Out, A, Any]): In => A = (in) => rule(in) match {
+  def expect[In, Out, A, R](rule: Rule[In, Out, A, R]): In => A = (in) => rule(in) match {
     case Success(_, a) => a
     case Failure => throw new ScalaSigParserError("Unexpected failure")
     case Error(x) => throw new ScalaSigParserError("Unexpected error: " + x)
@@ -129,7 +127,7 @@ trait StateRules {
   /** Create a rule that succeeds with a list of all the provided rules that succeed.
       @param rules the rules to apply in sequence.
   */
-  def anyOf[A, X](rules: Seq[Rule[A, X]]) = allOf(rules.map(_ ?)) ^^ { opts => opts.flatMap(x => x) }
+  def anyOf[A, X](rules: Seq[Rule[A, X]]) = allOf(rules.map(_.?)) ^^ { opts => opts.flatMap(x => x) }
 
   /** Repeatedly apply a rule from initial value until finished condition is met. */
   def repeatUntil[T, X](rule: Rule[T => T, X])(finished: T => Boolean)(initial: T) = apply {

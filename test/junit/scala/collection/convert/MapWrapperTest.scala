@@ -1,18 +1,21 @@
 package scala.collection.convert
 
+import java.util
+
 import org.junit.Assert._
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
-import java.util
+
+import scala.jdk.CollectionConverters._
 
 @RunWith(classOf[JUnit4])
 class MapWrapperTest {
 
   /* Test for scala/bug#7883 */
+  @deprecated("Uses deprecated extension", since="2.13")
   @Test
   def testContains(): Unit = {
-    import scala.collection.JavaConverters.mapAsJavaMapConverter
     import scala.language.reflectiveCalls  // for accessing containsCounter
 
     // A HashMap which throws an exception when the iterator method is called.
@@ -51,7 +54,6 @@ class MapWrapperTest {
   // test for scala/bug#8504
   @Test
   def testHashCodeNulls(): Unit = {
-    import scala.collection.JavaConverters._
     val javaMap = Map(1 -> null).asJava
 
     // Before the fix for scala/bug#8504, this throws a NPE
@@ -61,7 +63,6 @@ class MapWrapperTest {
   // regression test for https://github.com/scala/bug/issues/10663
   @Test
   def testHashCodeEqualsMatchesJavaMap(): Unit = {
-    import scala.collection.JavaConverters._
     val jmap = new util.HashMap[String, String]()
     jmap.put("scala", "rocks")
     jmap.put("java interop is fun!", "ya!")

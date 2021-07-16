@@ -1,21 +1,24 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.io
 
 import java.io.{ InputStream, BufferedReader, InputStreamReader, PushbackReader }
 import Source.DefaultBufSize
 import scala.collection.{ Iterator, AbstractIterator }
+import scala.collection.mutable.StringBuilder
 
 /** This object provides convenience methods to create an iterable
  *  representation of a source file.
- *
- *  @author  Burak Emir, Paul Phillips
  */
 class BufferedSource(inputStream: InputStream, bufferSize: Int)(implicit val codec: Codec) extends Source {
   def this(inputStream: InputStream)(implicit codec: Codec) = this(inputStream, DefaultBufSize)(codec)
@@ -33,7 +36,7 @@ class BufferedSource(inputStream: InputStream, bufferSize: Int)(implicit val cod
     bufferedReader()
   }
 
-  override lazy val iter = (
+  override val iter = (
     Iterator
     continually (codec wrap charReader.read())
     takeWhile (_ != -1)
@@ -83,17 +86,29 @@ class BufferedSource(inputStream: InputStream, bufferSize: Int)(implicit val cod
 
   override def getLines(): Iterator[String] = new BufferedLineIterator
 
-  /** Efficiently converts the entire remaining input into a string. */
-  override def mkString = {
-    // Speed up slurping of whole data set in the simplest cases.
-    val allReader = decachedReader
-    val sb = new StringBuilder
-    val buf = new Array[Char](bufferSize)
-    var n = 0
-    while (n != -1) {
-      n = allReader.read(buf)
-      if (n>0) sb.appendAll(buf, 0, n)
-    }
-    sb.result
-  }
+  /** Efficiently appends the entire remaining input.
+   *
+   *  Note: This function may temporarily load the entire buffer into
+   *  memory.
+   */
+  override def addString(sb: StringBuilder, start: String, sep: String, end: String): StringBuilder =
+    if (sep.isEmpty) {
+      val allReader = decachedReader
+      val buf = new Array[Char](bufferSize)
+      val jsb = sb.underlying
+
+      if (start.length != 0) jsb.append(start)
+      var n = allReader.read(buf)
+      while (n != -1) {
+        jsb.append(buf, 0, n)
+        n = allReader.read(buf)
+      }
+      if (end.length != 0) jsb.append(end)
+      sb
+    // This case is expected to be uncommon, so we're reusing code at
+    // the cost of temporary memory allocations.
+    // mkString will callback into BufferedSource.addString to read
+    // the Buffer into a String, and then we use StringOps.addString
+    // for the interspersing of sep.
+    } else mkString.addString(sb, start, sep, end)
 }

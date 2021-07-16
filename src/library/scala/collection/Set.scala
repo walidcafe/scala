@@ -1,35 +1,83 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package collection
 
-import scala.annotation.unchecked.uncheckedVariance
-import scala.language.higherKinds
 import scala.util.hashing.MurmurHash3
 import java.lang.String
+
+import scala.annotation.nowarn
 
 /** Base trait for set collections.
   */
 trait Set[A]
   extends Iterable[A]
     with SetOps[A, Set, Set[A]]
-    with Equals {
+    with Equals
+    with IterableFactoryDefaults[A, Set] {
 
   def canEqual(that: Any) = true
 
+  /**
+   * Equality of sets is implemented using the lookup method [[contains]]. This method returns `true` if
+   *   - the argument `that` is a `Set`,
+   *   - the two sets have the same [[size]], and
+   *   - for every `element` this set, `other.contains(element) == true`.
+   *
+   * The implementation of `equals` checks the [[canEqual]] method, so subclasses of `Set` can narrow down the equality
+   * to specific set types. The `Set` implementations in the standard library can all be compared, their `canEqual`
+   * methods return `true`.
+   *
+   * Note: The `equals` method only respects the equality laws (symmetry, transitivity) if the two sets use the same
+   * element equivalence function in their lookup operation. For example, the element equivalence operation in a
+   * [[scala.collection.immutable.TreeSet]] is defined by its ordering. Comparing a `TreeSet` with a `HashSet` leads
+   * to unexpected results if `ordering.equiv(e1, e2)` (used for lookup in `TreeSet`) is different from `e1 == e2`
+   * (used for lookup in `HashSet`).
+   *
+   * {{{
+   *   scala> import scala.collection.immutable._
+   *   scala> val ord: Ordering[String] = _ compareToIgnoreCase _
+   *
+   *   scala> TreeSet("A")(ord) == HashSet("a")
+   *   val res0: Boolean = false
+   *
+   *   scala> HashSet("a") == TreeSet("A")(ord)
+   *   val res1: Boolean = true
+   * }}}
+   *
+   *
+   * @param that The set to which this set is compared
+   * @return `true` if the two sets are equal according to the description
+   */
   override def equals(that: Any): Boolean =
-    that match {
-      case set: Set[A] =>
-        (this eq set) ||
-          (set canEqual this) &&
-            (toIterable.size == set.size) &&
-            (this subsetOf set)
-      case _ => false
-    }
+    (this eq that.asInstanceOf[AnyRef]) || (that match {
+      case set: Set[A] if set.canEqual(this) =>
+        (this.size == set.size) && {
+          try this.subsetOf(set)
+          catch { case _: ClassCastException => false } // PR #9565 / scala/bug#12228
+        }
+      case _ =>
+        false
+    })
 
   override def hashCode(): Int = MurmurHash3.setHash(toIterable)
 
-  override def iterableFactory: IterableFactory[IterableCC] = Set
+  override def iterableFactory: IterableFactory[Set] = Set
 
-  def empty: IterableCC[A] = iterableFactory.empty
+  @nowarn("""cat=deprecation&origin=scala\.collection\.Iterable\.stringPrefix""")
+  override protected[this] def stringPrefix: String = "Set"
+
+  override def toString(): String = super[Iterable].toString() // Because `Function1` overrides `toString` too
 }
 
 /** Base trait for set operations
@@ -49,8 +97,7 @@ trait SetOps[A, +CC[_], +C <: SetOps[A, CC, C]]
     *  @param elem the element to test for membership.
     *  @return  `true` if `elem` is contained in this set, `false` otherwise.
     */
-  @deprecatedOverriding("This method should be final, but is not due to scala/bug#10853", "2.13.0")
-  /*@`inline` final*/ def apply(elem: A): Boolean = this.contains(elem)
+  @`inline` final def apply(elem: A): Boolean = this.contains(elem)
 
   /** Tests whether this set is a subset of another set.
     *
@@ -98,7 +145,8 @@ trait SetOps[A, +CC[_], +C <: SetOps[A, CC, C]]
     *  If the elements in 'This' type is ordered, then the subsets will also be in the same order.
     *  ListSet(1,2,3).subsets => {{1},{2},{3},{1,2},{1,3},{2,3},{1,2,3}}
     *
-    *  @author Eastsun
+    *  $willForceEvaluation
+    *
     */
   private class SubsetsItr(elms: IndexedSeq[A], len: Int) extends AbstractIterator[C] {
     private[this] val idxs = Array.range(0, len+1)
@@ -128,8 +176,6 @@ trait SetOps[A, +CC[_], +C <: SetOps[A, CC, C]]
     }
   }
 
-  override def toString(): String = super[IterableOps].toString() // Because `Function1` overrides `toString` too
-
   /** Computes the intersection between this set and another set.
     *
     *  @param   that  the set to intersect with.
@@ -152,8 +198,8 @@ trait SetOps[A, +CC[_], +C <: SetOps[A, CC, C]]
   /** Alias for `diff` */
   @`inline` final def &~ (that: Set[A]): C = this diff that
 
-  @deprecated("Use &~ or diff instead of --", "2.13.0")
-  @`inline` final def -- (that: Set[A]): C = diff(that)
+  @deprecated("Consider requiring an immutable Set", "2.13.0")
+  def -- (that: IterableOnce[A]): C = fromSpecific(coll.toSet.removedAll(that))
 
   @deprecated("Consider requiring an immutable Set or fall back to Set.diff", "2.13.0")
   def - (elem: A): C = diff(Set(elem))
@@ -174,16 +220,19 @@ trait SetOps[A, +CC[_], +C <: SetOps[A, CC, C]]
     *  @param that     the collection containing the elements to add.
     *  @return a new $coll with the given elements added, omitting duplicates.
     */
-  def concat(that: collection.Iterable[A]): C = fromSpecificIterable(new View.Concat(toIterable, that))
+  def concat(that: collection.IterableOnce[A]): C = fromSpecific(that match {
+    case that: collection.Iterable[A] => new View.Concat(toIterable, that)
+    case _ => iterator.concat(that.iterator)
+  })
 
   @deprecated("Consider requiring an immutable Set or fall back to Set.union", "2.13.0")
-  def + (elem: A): C = fromSpecificIterable(new View.Appended(toIterable, elem))
+  def + (elem: A): C = fromSpecific(new View.Appended(toIterable, elem))
 
   @deprecated("Use ++ with an explicit collection argument instead of + with varargs", "2.13.0")
-  def + (elem1: A, elem2: A, elems: A*): C = fromSpecificIterable(new View.Concat(new View.Appended(new View.Appended(toIterable, elem1), elem2), elems))
+  def + (elem1: A, elem2: A, elems: A*): C = fromSpecific(new View.Concat(new View.Appended(new View.Appended(toIterable, elem1), elem2), elems))
 
   /** Alias for `concat` */
-  @`inline` final def ++ (that: collection.Iterable[A]): C = concat(that)
+  @`inline` final def ++ (that: collection.IterableOnce[A]): C = concat(that)
 
   /** Computes the union between of set and another set.
     *
@@ -191,15 +240,10 @@ trait SetOps[A, +CC[_], +C <: SetOps[A, CC, C]]
     *  @return  a new set consisting of all elements that are in this
     *  set or in the given set `that`.
     */
-  @`inline` final def union(that: collection.Iterable[A]): C = concat(that)
+  @`inline` final def union(that: Set[A]): C = concat(that)
 
   /** Alias for `union` */
-  @`inline` final def | (that: collection.Iterable[A]): C = concat(that)
-
-  /** The empty set of the same type as this set
-    * @return  an empty set of type `C`.
-    */
-  def empty: C
+  @`inline` final def | (that: Set[A]): C = concat(that)
 }
 
 /**
@@ -211,5 +255,4 @@ trait SetOps[A, +CC[_], +C <: SetOps[A, CC, C]]
 object Set extends IterableFactory.Delegate[Set](immutable.Set)
 
 /** Explicit instantiation of the `Set` trait to reduce class file size in subclasses. */
-@SerialVersionUID(3L)
 abstract class AbstractSet[A] extends AbstractIterable[A] with Set[A]

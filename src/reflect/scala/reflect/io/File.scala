@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package reflect
@@ -37,9 +41,6 @@ object File {
  *  involving character data is called (with the latter taking
  *  precedence if supplied.) If neither is available, the value
  *  of scala.io.Codec.default is used.
- *
- *  @author  Paul Phillips
- *  @since   2.8
  *
  *  ''Note:  This is library is considered experimental and should not be used unless you know what you are doing.''
  */
@@ -102,15 +103,9 @@ class File(jfile: JFile)(implicit constructorCodec: Codec) extends Path(jfile) w
     try Some(slurp())
     catch { case _: IOException => None }
 
-  /** Reflection since we're into the java 6+ API.
+  /** Ignores SecurityException.
    */
-  def setExecutable(executable: Boolean, ownerOnly: Boolean = true): Boolean = {
-    type JBoolean = java.lang.Boolean
-    val method =
-      try classOf[JFile].getMethod("setExecutable", classOf[Boolean], classOf[Boolean])
-      catch { case _: NoSuchMethodException => return false }
-
-    try method.invoke(jfile, executable: JBoolean, ownerOnly: JBoolean).asInstanceOf[JBoolean].booleanValue
-    catch { case _: Exception => false }
-  }
+  def setExecutable(executable: Boolean, ownerOnly: Boolean = true): Boolean =
+    try jfile.setExecutable(executable, ownerOnly)
+    catch { case _: SecurityException => false }
 }

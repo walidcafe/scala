@@ -1,17 +1,24 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
-
 
 package scala.tools.nsc
 package io
 
-import java.io.{ FileInputStream, IOException }
+import java.io.{FileInputStream, IOException}
 import java.nio.{ByteBuffer, CharBuffer}
-import java.nio.channels.{ ReadableByteChannel, Channels }
+import java.nio.channels.{Channels, ClosedByInterruptException, ReadableByteChannel}
 import java.nio.charset.{CharsetDecoder, CoderResult}
-import scala.tools.nsc.reporters._
+import scala.annotation.tailrec
+import scala.reflect.internal.Reporter
 
 /** This class implements methods to read and decode source files. */
 class SourceReader(decoder: CharsetDecoder, reporter: Reporter) {
@@ -27,10 +34,10 @@ class SourceReader(decoder: CharsetDecoder, reporter: Reporter) {
   /** The output character buffer */
   private var chars: CharBuffer = CharBuffer.allocate(0x4000)
 
-  private def reportEncodingError(filename:String) = {
+  private def reportEncodingError(filename: String, e: Exception) = {
+    val advice = "Please try specifying another one using the -encoding option"
     reporter.error(scala.reflect.internal.util.NoPosition,
-                   "IO error while decoding "+filename+" with "+decoder.charset()+"\n"+
-                   "Please try specifying another one using the -encoding option")
+      s"IO error while decoding $filename with ${decoder.charset()}: ${e.getMessage}\n$advice")
   }
 
   /** Reads the specified file. */
@@ -38,7 +45,11 @@ class SourceReader(decoder: CharsetDecoder, reporter: Reporter) {
     val c = new FileInputStream(file).getChannel
 
     try read(c)
-    catch { case e: Exception => reportEncodingError("" + file) ; Array() }
+    catch {
+      case ex: InterruptedException => throw ex
+      case _: ClosedByInterruptException => throw new InterruptedException
+      case e: Exception => reportEncodingError("" + file, e) ; Array()
+    }
     finally c.close()
   }
 
@@ -47,11 +58,14 @@ class SourceReader(decoder: CharsetDecoder, reporter: Reporter) {
   def read(file: AbstractFile): Array[Char] = {
     try file match {
       case p: PlainFile        => read(p.file)
-      case z: ZipArchive#Entry => read(Channels.newChannel(z.input))
-      case _                   => read(ByteBuffer.wrap(file.toByteArray))
+      case z: ZipArchive#Entry => val c = Channels.newChannel(z.input); try read(c) finally c.close()
+      case vf: VirtualFile     => read(ByteBuffer.wrap(vf.unsafeToByteArray))
+      case f                   => val c = Channels.newChannel(f.input); try read(c) finally c.close()
     }
     catch {
-      case e: Exception => reportEncodingError("" + file) ; Array()
+      case ex: InterruptedException => throw ex
+      case _: ClosedByInterruptException => throw new InterruptedException
+      case e: Exception => reportEncodingError("" + file, e) ; Array()
     }
   }
 
@@ -103,6 +117,7 @@ object SourceReader {
    * argument indicates whether the byte buffer contains the last
    * chunk of the input file.
    */
+  @tailrec
   def decode(decoder: CharsetDecoder, bytes: ByteBuffer, chars: CharBuffer,
              endOfInput: Boolean): CharBuffer =
   {
@@ -122,6 +137,7 @@ object SourceReader {
    * allocating bigger ones if necessary and then flips and returns
    * the last allocated char buffer.
    */
+  @tailrec
   def flush(decoder: CharsetDecoder, chars: CharBuffer): CharBuffer = {
     val result: CoderResult = decoder.flush(chars)
     if (result.isUnderflow()) {

@@ -10,15 +10,15 @@ class Counter(r: Range) {
   def apply(x: Int) = {
     cnt += 1L
     if (cnt % 500000000L == 0L) {
-      println("Working: %s %d %d" format (str, cnt, x))
+      println(f"Working: $str $cnt%d $x%d")
     }
     if (cnt > (Int.MaxValue.toLong + 1) * 2) {
-      val msg = "Count exceeds maximum possible for an Int Range: %s" format str
+      val msg = s"Count exceeds maximum possible for an Int Range: $str"
       println(msg) // exception is likely to be eaten by an out of memory error
       sys error msg
     }
     if ((r.step > 0 && last.exists(_ > x)) || (r.step < 0 && last.exists(_ < x))) {
-      val msg = "Range %s wrapped: %d %s" format (str, x, last.toString)
+      val msg = f"Range $str wrapped: $x%d ${last.toString}"
       println(msg) // exception is likely to be eaten by an out of memory error
       sys error msg
     }
@@ -43,9 +43,9 @@ abstract class RangeTest(kind: String) extends Properties("Range "+kind) {
     size <- choose(1, 100)
     step <- choose(1, 101)
   } yield {
-    val signum = if (boundary == 0) 1 else boundary.signum
-    if (isStart) Range(boundary, boundary - size * boundary.signum, - step * signum)
-    else         Range(boundary - size * boundary.signum, boundary, step * signum)
+    val signum = if (boundary == 0) 1 else boundary.sign
+    if (isStart) Range(boundary, boundary - size * boundary.sign, - step * signum)
+    else         Range(boundary - size * boundary.sign, boundary, step * signum)
   }
 
 
@@ -230,6 +230,14 @@ abstract class RangeTest(kind: String) extends Properties("Range "+kind) {
     }
   }
 
+  property("tails") = forAll(myGen) { r =>
+    (r.size < 1024) ==> { r.tails.toList == r.toList.tails.toList }
+  }
+
+  property("inits") = forAll(myGen) { r =>
+    (r.size < 1024) ==> { r.inits.toList == r.toList.inits.toList }
+  }
+
   property("reverse.toSet.equal") = forAll(myGen) { r =>
 //    println("reverse.toSet.equal "+str(r))
     val reversed = r.reverse
@@ -242,6 +250,13 @@ abstract class RangeTest(kind: String) extends Properties("Range "+kind) {
       println(reversed.toSet)
     }
     aresame :| str(r)
+  }
+
+  property("grouped") = forAllNoShrink(
+    myGen,
+    Gen.posNum[Int],
+  ) { (r, size) =>
+    r.grouped(size).toSeq == r.toList.grouped(size).toSeq
   }
 }
 

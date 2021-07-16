@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2006-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package util
@@ -33,9 +37,6 @@ import java.lang.InheritableThreadLocal
  *  of the stack of bindings from the parent thread, and
  *  from then on the bindings for the new thread
  *  are independent of those for the original thread.
- *
- *  @author  Lex Spoon
- *  @since   2.6
  */
 class DynamicVariable[T](init: T) {
   private[this] val tl = new InheritableThreadLocal[T] {

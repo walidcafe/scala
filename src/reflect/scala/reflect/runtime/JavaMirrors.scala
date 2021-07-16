@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package runtime
@@ -8,35 +20,39 @@ import scala.ref.WeakReference
 import scala.collection.mutable.WeakHashMap
 import scala.collection.immutable.ArraySeq
 
-import java.lang.{Class => jClass, Package => jPackage}
+import java.lang.{ Class => jClass, Package => jPackage }
 import java.lang.reflect.{
   Method => jMethod, Constructor => jConstructor, Field => jField,
   Member => jMember, Type => jType, TypeVariable => jTypeVariable,
   Parameter => jParameter, GenericDeclaration, GenericArrayType,
   ParameterizedType, WildcardType, AnnotatedElement }
-import java.lang.annotation.{Annotation => jAnnotation}
+import java.lang.annotation.{ Annotation => jAnnotation }
 import java.io.IOException
-import scala.reflect.internal.{ MissingRequirementError, JavaAccFlags }
+import java.lang.ref.{ WeakReference => jWeakReference }
+
+import scala.reflect.internal.{ JavaAccFlags, MissingRequirementError }
 import internal.pickling.ByteCodecs
 import internal.pickling.UnPickler
 import scala.collection.mutable.ListBuffer
 import internal.Flags._
 import ReflectionUtils._
-import scala.runtime.{ScalaRunTime, BoxesRunTime}
+import scala.annotation.nowarn
+import scala.reflect.api.TypeCreator
+import scala.runtime.{ BoxesRunTime, ScalaRunTime }
 
 private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUniverse with TwoWayCaches { thisUniverse: SymbolTable =>
 
-  private lazy val mirrors = new WeakHashMap[ClassLoader, WeakReference[JavaMirror]]()
+  private lazy val mirrors = new WeakHashMap[ClassLoader, WeakReference[MirrorImpl]]()
 
   private def createMirror(owner: Symbol, cl: ClassLoader): Mirror = {
-    val jm = new JavaMirror(owner, cl)
-    mirrors(cl) = new WeakReference(jm)
+    val jm = new MirrorImpl(owner, cl)
+    mirrors(cl) = new WeakReference[MirrorImpl](jm)
     jm.init()
     jm
   }
 
-  override type Mirror = JavaMirror
-  implicit val MirrorTag: ClassTag[Mirror] = ClassTag[Mirror](classOf[JavaMirror])
+  override type Mirror = MirrorImpl
+  implicit val MirrorTag: ClassTag[Mirror] = ClassTag[Mirror](classOf[MirrorImpl])
 
   override lazy val rootMirror: Mirror = createMirror(NoSymbol, rootClassLoader)
 
@@ -53,10 +69,21 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
   }
 
   /** The API of a mirror for a reflective universe */
+  @nowarn("""cat=deprecation&origin=scala\.reflect\.runtime\.JavaMirrors\.JavaMirror""")
+  final type MirrorImpl = JavaMirror
+
+  /**
+   * The API of a mirror for a reflective universe.
+   *
+   * @deprecated this class's name shadows another; use [[MirrorImpl]] instead
+   */
+  @nowarn("msg=shadowing a nested class of a parent is deprecated")
+  @deprecated("use MirrorImpl instead", since = "2.13.4")
   class JavaMirror(owner: Symbol,
-    /* Class loader that is a mastermind behind the reflexive mirror */
-    val classLoader: ClassLoader
-  ) extends Roots(owner) with super.JavaMirror { thisMirror =>
+                   /* Class loader that is a mastermind behind the reflexive mirror */
+                   val classLoader: ClassLoader
+  ) extends Roots(owner)
+    with super.JavaMirror { thisMirror =>
 
     val universe: thisUniverse.type = thisUniverse
 
@@ -86,14 +113,39 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
 
 // ----------- Caching ------------------------------------------------------------------
 
-    private val classCache       = new TwoWayCache[jClass[_], ClassSymbol]
-    private val packageCache     = new TwoWayCache[Package, ModuleSymbol]
-    private val methodCache      = new TwoWayCache[jMethod, MethodSymbol]
-    private val constructorCache = new TwoWayCache[jConstructor[_], MethodSymbol]
-    private val fieldCache       = new TwoWayCache[jField, TermSymbol]
-    private val tparamCache      = new TwoWayCache[jTypeVariable[_ <: GenericDeclaration], TypeSymbol]
+    private[this] val classCache       = new TwoWayCache[jClass[_], ClassSymbol]
+    private[this] val packageCache     = new TwoWayCache[Package, ModuleSymbol]
+    private[this] val methodCache      = new TwoWayCache[jMethod, MethodSymbol]
+    private[this] val constructorCache = new TwoWayCache[jConstructor[_], MethodSymbol]
+    private[this] val fieldCache       = new TwoWayCache[jField, TermSymbol]
+    private[this] val tparamCache      = new TwoWayCache[jTypeVariable[_ <: GenericDeclaration], TypeSymbol]
 
-    private[runtime] def toScala[J: HasJavaClass, S](cache: TwoWayCache[J, S], key: J)(body: (JavaMirror, J) => S): S =
+    private[this] object typeTagCache extends ClassValue[jWeakReference[TypeTag[_]]]() {
+      val typeCreator = new ThreadLocal[TypeCreator]()
+
+      override protected def computeValue(cls: jClass[_]): jWeakReference[TypeTag[_]] = {
+        val creator = typeCreator.get()
+        assert(creator.getClass == cls, (creator, cls))
+        new jWeakReference(TypeTagImpl[AnyRef](thisMirror.asInstanceOf[Mirror], creator))
+      }
+    }
+
+    final def typeTag(typeCreator: TypeCreator): TypeTag[_] = {
+      typeTagCache.typeCreator.set(typeCreator)
+      try {
+        val ref = typeTagCache.get(typeCreator.getClass)
+        var tag = ref.get
+        if (tag == null) {
+          typeTagCache.remove(typeCreator.getClass)
+          tag = TypeTagImpl[AnyRef](thisMirror.asInstanceOf[Mirror], typeCreator)
+        }
+        tag
+      } finally  {
+        typeTagCache.typeCreator.remove()
+      }
+    }
+
+    private[runtime] def toScala[J: HasJavaClass, S](cache: TwoWayCache[J, S], key: J)(body: (MirrorImpl, J) => S): S =
       cache.toScala(key){
         val jclazz = implicitly[HasJavaClass[J]] getClazz key
         body(mirrorDefining(jclazz), key)
@@ -109,6 +161,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
           case jclazz: jClass[_]        => jclazz
           case jmeth: jMethod           => jmeth.getDeclaringClass
           case jconstr: jConstructor[_] => jconstr.getDeclaringClass
+          case x                        => throw new MatchError(x)
         }
       })
 
@@ -177,6 +230,8 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
           TermName(m.getName) -> toAnnotArg(m.getReturnType -> m.invoke(jann))
         )
       )
+
+      override def transformArgs(f: List[Tree] => List[Tree]) = this
     }
 
     def reflect[T: ClassTag](obj: T): InstanceMirror = new JavaInstanceMirror(obj)
@@ -268,8 +323,8 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       val isDerivedValueClass = symbol.isDerivedValueClass
       lazy val boxer = runtimeClass(symbol.toType).getDeclaredConstructors().head
       lazy val unboxer = {
-        val fields @ (field :: _) = symbol.toType.decls.collect{ case ts: TermSymbol if ts.isParamAccessor && ts.isMethod => ts }.toList
-        assert(fields.length == 1, s"$symbol: $fields")
+        val fields @ (field :: _) = symbol.toType.decls.collect{ case ts: TermSymbol if ts.isParamAccessor && ts.isMethod => ts }.toList: @unchecked
+        assert(fields.lengthIs == 1, s"$symbol: $fields")
         runtimeClass(symbol.asClass).getDeclaredMethod(field.name.toString)
       }
     }
@@ -313,12 +368,13 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
     // that's because we want to have decent performance
     // therefore we move special cases into separate subclasses
     // rather than have them on a hot path them in a unified implementation of the `apply` method
-    private def mkMethodMirror[T: ClassTag](receiver: T, symbol: MethodSymbol): MethodMirror = {
-      def existsParam(pred: Type => Boolean) = symbol.paramss.flatten.map(_.info).exists(pred)
-      if (isBytecodelessMethod(symbol)) new BytecodelessMethodMirror(receiver, symbol)
-      else if (existsParam(isByNameParam) || existsParam(isValueClassParam)) new JavaTransformingMethodMirror(receiver, symbol)
-      else {
-        symbol.paramss.flatten.length match {
+    private def mkMethodMirror[T: ClassTag](receiver: T, symbol: MethodSymbol): MethodMirror =
+      if (isBytecodelessMethod(symbol))
+        new BytecodelessMethodMirror(receiver, symbol)
+      else if (mexists(symbol.paramss)(p => isByNameParam(p.info) || isValueClassParam(p.info)))
+        new JavaTransformingMethodMirror(receiver, symbol)
+      else
+        sumSize(symbol.paramss, 0) match {
           case 0 => new JavaVanillaMethodMirror0(receiver, symbol)
           case 1 => new JavaVanillaMethodMirror1(receiver, symbol)
           case 2 => new JavaVanillaMethodMirror2(receiver, symbol)
@@ -326,8 +382,6 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
           case 4 => new JavaVanillaMethodMirror4(receiver, symbol)
           case _ => new JavaVanillaMethodMirror(receiver, symbol)
         }
-      }
-    }
 
     private abstract class JavaMethodMirror(val symbol: MethodSymbol, protected val ret: DerivedValueClassMetadata) extends MethodMirror {
       lazy val jmeth = ensureAccessible(methodToJava(symbol))
@@ -410,8 +464,8 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
     // caches MethodSymbol metadata, so that we minimize the work that needs to be done during Mirror.apply
     // TODO: vararg is only supported in the last parameter list (scala/bug#6182), so we don't need to worry about the rest for now
     private class MethodMetadata(symbol: MethodSymbol) {
-      private val params = symbol.paramss.flatten.toArray
-      private val vcMetadata = params.map(p => new DerivedValueClassMetadata(p.info))
+      private[this] val params = symbol.paramss.flatten.toArray
+      private[this] val vcMetadata = params.map(p => new DerivedValueClassMetadata(p.info))
       val isByName = params.map(p => isByNameParam(p.info))
       def isDerivedValueClass(i: Int) = vcMetadata(i).isDerivedValueClass
       def paramUnboxers(i: Int) = vcMetadata(i).unboxer
@@ -458,7 +512,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
         val varargMatch = args.length >= params.length - 1 && isVarArgsList(params)
         if (!perfectMatch && !varargMatch) {
           val n_arguments = if (isVarArgsList(params)) s"${params.length - 1} or more" else s"${params.length}"
-          val s_arguments = if (params.length == 1 && !isVarArgsList(params)) "argument" else "arguments"
+          val s_arguments = if (params.lengthIs == 1 && !isVarArgsList(params)) "argument" else "arguments"
           abort(s"${showDecl(symbol)} takes $n_arguments $s_arguments")
         }
 
@@ -563,7 +617,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
     )
 
     /** The mirror that corresponds to the classloader that original defined the given Java class */
-    def mirrorDefining(jclazz: jClass[_]): JavaMirror = {
+    def mirrorDefining(jclazz: jClass[_]): MirrorImpl = {
       val cl = jclazz.getClassLoader
       if (cl == this.classLoader) this else runtimeMirror(cl)
     }
@@ -584,7 +638,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       def markAbsent(tpe: Type) = setAllInfos(clazz, module, tpe)
       def handleError(ex: Exception) = {
         markAbsent(ErrorType)
-        if (settings.debug) ex.printStackTrace()
+        if (settings.isDebug) ex.printStackTrace()
         val msg = ex.getMessage()
         MissingRequirementError.signal(
           (if (msg eq null) "reflection error while loading " + clazz.name
@@ -653,7 +707,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       val tparam = sOwner(jtvar).newTypeParameter(newTypeName(jtvar.getName))
         .setInfo(new TypeParamCompleter(jtvar))
       markFlagsCompleted(tparam)(mask = AllFlags)
-      tparamCache enter (jtvar, tparam)
+      tparamCache.enter(jtvar, tparam)
       tparam
     }
 
@@ -664,7 +718,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
     private class TypeParamCompleter(jtvar: jTypeVariable[_ <: GenericDeclaration]) extends LazyType with FlagAgnosticCompleter {
       override def load(sym: Symbol) = complete(sym)
       override def complete(sym: Symbol) = {
-        sym setInfo TypeBounds.upper(glb(jtvar.getBounds.toList map typeToScala map objToAny))
+        sym setInfo TypeBounds.upper(glb(jtvar.getBounds.toList map typeToScala))
         markAllCompleted(sym)
       }
     }
@@ -727,9 +781,9 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       markFlagsCompleted(clazz, module)(mask = AllFlags)
 
       /** used to avoid cycles while initializing classes */
-      private var parentsLevel = 0
-      private var pendingLoadActions: List[() => Unit] = Nil
-      private val relatedSymbols = clazz +: (if (module != NoSymbol) List(module, module.moduleClass) else Nil)
+      private[this] var parentsLevel = 0
+      private[this] var pendingLoadActions: List[() => Unit] = Nil
+      private[this] val relatedSymbols = clazz +: (if (module != NoSymbol) List(module, module.moduleClass) else Nil)
 
       override def load(sym: Symbol): Unit = {
         debugInfo("completing from Java " + sym + "/" + clazz.fullName)//debug
@@ -760,9 +814,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
           parentsLevel += 1
           val jsuperclazz = jclazz.getGenericSuperclass
           val ifaces = jclazz.getGenericInterfaces.toList map typeToScala
-          val isAnnotation = JavaAccFlags(jclazz).isAnnotation
-          if (isAnnotation) AnnotationClass.tpe :: StaticAnnotationClass.tpe :: ifaces
-          else if (jclazz.isInterface) ObjectTpe :: ifaces // interfaces have Object as superclass in the classfile (see jvm spec), but getGenericSuperclass seems to return null
+          if (jclazz.isInterface) ObjectTpe :: ifaces // interfaces have Object as superclass in the classfile (see jvm spec), but getGenericSuperclass seems to return null
           else (if (jsuperclazz == null) AnyTpe else typeToScala(jsuperclazz)) :: ifaces
         } finally {
           parentsLevel -= 1
@@ -845,7 +897,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
      * The Scala owner of the Scala class corresponding to the Java class `jclazz`
      */
     // @eb: a weird classloader might return a null package for something with a non-empty package name
-    // for example, http://groups.google.com/group/scala-internals/browse_thread/thread/7be09ff8f67a1e5c
+    // for example, https://groups.google.com/group/scala-internals/browse_thread/thread/7be09ff8f67a1e5c
     // in that case we could invoke packageNameToScala(jPackageName) and, probably, be okay
     // however, I think, it's better to blow up, since weirdness of the class loader might bite us elsewhere
     // [martin] I think it's better to be forgiving here. Restoring packageNameToScala.
@@ -971,7 +1023,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       var prefix = if (enclosingClass != null) enclosingClass.getName else ""
       val isObject = owner.isModuleClass && !owner.isPackageClass
       if (isObject && !prefix.endsWith(nme.MODULE_SUFFIX_STRING)) prefix += nme.MODULE_SUFFIX_STRING
-      assert(jclazz.getName.startsWith(prefix))
+      assert(jclazz.getName.startsWith(prefix), s"Class name ${jclazz.getName} missing prefix $prefix")
       var name = jclazz.getName.substring(prefix.length)
       name = name.substring(name.lastIndexOf(".") + 1)
       newTypeName(name)
@@ -1016,7 +1068,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
             // otherwise we may mistake mangled symbolic names for mangled nested names
             //
             // in case when a Java binary name can be treated both as a top-level class and as a nested class
-            // (as described in http://groups.google.com/group/scala-internals/browse_thread/thread/10855403bbf04298)
+            // (as described in https://groups.google.com/group/scala-internals/browse_thread/thread/10855403bbf04298)
             // we check for a top-level class first
             // this is totally correct, because a top-level class and a nested class with the same name cannot coexist
             // so it's either one or another, but not both - therefore we always load $-bearing classes correctly
@@ -1046,6 +1098,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       val owner = genericDeclarationToScala(jparam.getGenericDeclaration)
       owner.info match {
         case PolyType(tparams, _) => tparams.find(_.name string_== jparam.getName).get.asType
+        case x                    => throw new MatchError(x)
       }
     }
 
@@ -1056,10 +1109,12 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       case jclazz: jClass[_]        => classToScala(jclazz)
       case jmeth: jMethod           => methodToScala(jmeth)
       case jconstr: jConstructor[_] => constructorToScala(jconstr)
+      case x                        => throw new MatchError(x)
     }
     def reflectMemberToScala(m: jMember): Symbol = m match {
       case x: GenericDeclaration => genericDeclarationToScala(x)
       case x: jField             => jfieldAsScala(x)
+      case x                     => throw new MatchError(x)
     }
 
     /**
@@ -1073,7 +1128,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
           val tparam = owner.newExistential(newTypeName("T$" + tparams.length))
             .setInfo(TypeBounds(
               lub(jwild.getLowerBounds.toList map typeToScala),
-              glb(jwild.getUpperBounds.toList map typeToScala map objToAny)))
+              glb(jwild.getUpperBounds.toList map typeToScala)))
           tparams += tparam
           typeRef(NoPrefix, tparam, List())
         case _ =>
@@ -1091,20 +1146,30 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
           arrayType(typeToScala(jclazz.getComponentType))
         else {
           val clazz = classToScala(jclazz)
-          rawToExistential(typeRef(clazz.owner.thisType, clazz, List()))
+          rawToExistential(typeRef(clazz.owner.thisType, clazz, List())) match {
+            case ObjectTpe => ObjectTpeJava
+            case tp => tp
+          }
         }
       case japplied: ParameterizedType =>
-        // http://stackoverflow.com/questions/5767122/parameterizedtype-getrawtype-returns-j-l-r-type-not-class
-        val sym = classToScala(japplied.getRawType.asInstanceOf[jClass[_]])
-        val pre = sym.owner.thisType
+        // https://stackoverflow.com/questions/5767122/parameterizedtype-getrawtype-returns-j-l-r-type-not-class
+        val jcls = japplied.getRawType.asInstanceOf[jClass[_]]
+        val sym = classToScala(jcls)
+        val isStatic = java.lang.reflect.Modifier.isStatic(jcls.getModifiers)
+        val pre = if (!isStatic && (japplied.getOwnerType ne null)) typeToScala(japplied.getOwnerType) else sym.owner.thisType
         val args0 = japplied.getActualTypeArguments
         val (args, bounds) = targsToScala(pre.typeSymbol, args0.toList)
         newExistentialType(bounds, typeRef(pre, sym, args))
       case jarr: GenericArrayType =>
-        arrayType(typeToScala(jarr.getGenericComponentType))
+        var elemtp = typeToScala(jarr.getGenericComponentType)
+        if (elemtp.typeSymbol.isAbstractType && elemtp.upperBound =:= ObjectTpe) {
+          elemtp = intersectionType(List(elemtp, ObjectTpe))
+        }
+        arrayType(elemtp)
       case jtvar: jTypeVariable[_] =>
         val tparam = typeParamToScala(jtvar)
         typeRef(NoPrefix, tparam, List())
+      case x => throw new MatchError(x)
     }
 
     /**
@@ -1161,7 +1226,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
     private def jmethodAsScala1(jmeth: jMethod): MethodSymbol = {
       val clazz = sOwner(jmeth)
       val meth = clazz.newMethod(newTermName(jmeth.getName), NoPosition, jmeth.scalaFlags)
-      methodCache enter (jmeth, meth)
+      methodCache.enter(jmeth, meth)
       val tparams = jmeth.getTypeParameters.toList map createTypeParameter
       val params = jparamsAsScala(meth, jmeth.getParameters.toList)
       val resulttpe = typeToScala(jmeth.getGenericReturnType)
@@ -1187,7 +1252,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       // [Martin] Note: I know there's a lot of duplication wrt jmethodAsScala, but don't think it's worth it to factor this out.
       val clazz = sOwner(jconstr)
       val constr = clazz.newConstructor(NoPosition, jconstr.scalaFlags)
-      constructorCache enter (jconstr, constr)
+      constructorCache.enter(jconstr, constr)
       val tparams = jconstr.getTypeParameters.toList map createTypeParameter
       val params = jparamsAsScala(constr, jconstr.getParameters.toList)
       setMethType(constr, tparams, params, clazz.tpe)
@@ -1208,7 +1273,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
             if (param.isNamePresent) TermName(param.getName)
             else nme.syntheticParamName(ix + 1)
           meth.owner.newValueParameter(name, meth.pos)
-            .setInfo(objToAny(typeToScala(param.getParameterizedType)))
+            .setInfo(typeToScala(param.getParameterizedType))
             .setFlag(if (param.isNamePresent) 0 else SYNTHETIC)
       }
     }
@@ -1267,7 +1332,7 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
         noClass
     }
 
-    private val PackageAndClassPattern = """(.*\.)(.*)$""".r
+    private[this] val PackageAndClassPattern = """(.*\.)(.*)$""".r
 
     private def expandedName(sym: Symbol): String =
       if (sym.isPrivate) nme.expandedName(sym.name.toTermName, sym.owner).toString
@@ -1292,10 +1357,10 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
       val jclazz = classToJava(meth.owner.asClass)
       val paramClasses = transformedType(meth).paramTypes map typeToJavaClass
       val jname = meth.name.dropLocal.toString
-      try jclazz getDeclaredMethod (jname, paramClasses: _*)
+      try jclazz.getDeclaredMethod(jname, paramClasses: _*)
       catch {
         case ex: NoSuchMethodException =>
-          jclazz getDeclaredMethod (expandedName(meth), paramClasses: _*)
+          jclazz.getDeclaredMethod(expandedName(meth), paramClasses: _*)
       }
     }
 
@@ -1325,9 +1390,8 @@ private[scala] trait JavaMirrors extends internal.SymbolTable with api.JavaUnive
   }
 
   /** Assert that packages have package scopes */
-  override def validateClassInfo(tp: ClassInfoType): Unit = {
-    assert(!tp.typeSymbol.isPackageClass || tp.decls.isInstanceOf[PackageScope])
-  }
+  override def validateClassInfo(tp: ClassInfoType): Unit =
+    assert(!tp.typeSymbol.isPackageClass || tp.decls.isInstanceOf[PackageScope], s"$tp is package class or scope")
 
   override def newPackageScope(pkgClass: Symbol) = new PackageScope(pkgClass)
 

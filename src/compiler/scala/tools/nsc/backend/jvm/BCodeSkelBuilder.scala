@@ -1,8 +1,14 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2012 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
-
 
 package scala.tools.nsc
 package backend
@@ -13,13 +19,9 @@ import scala.tools.nsc.symtab._
 import scala.tools.asm
 import GenBCode._
 import BackendReporting._
-import scala.tools.nsc.backend.jvm.BCodeHelpers.InvokeStyle
 
 /*
- *
- *  @author  Miguel Garcia, http://lamp.epfl.ch/~magarcia/ScalaCompilerCornerReloaded/
- *  @version 1.0
- *
+ *  @author  Miguel Garcia, https://lampwww.epfl.ch/~magarcia/ScalaCompilerCornerReloaded/
  */
 abstract class BCodeSkelBuilder extends BCodeHelpers {
   import global._
@@ -59,13 +61,13 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
     final val MaximumJvmParameters = 254
 
     // current class
-    var cnode: asm.tree.ClassNode  = null
-    var thisBType: ClassBType      = null
+    var cnode: asm.tree.ClassNode   = null
+    var thisBType: ClassBType       = null
+    var thisBTypeDescriptor: String = null
 
     var claszSymbol: Symbol        = null
     var isCZParcelable             = false
     var isCZStaticModule           = false
-    var initModuleInClinit         = false
 
     /* ---------------- idiomatic way to ask questions to typer ---------------- */
 
@@ -79,7 +81,7 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
 
     def tpeTK(tree: Tree): BType = typeToBType(tree.tpe)
 
-
+    @annotation.unused
     private def canAssignModuleInClinit(cd: ClassDef, sym: Symbol): Boolean = {
       import global.definitions._
       val parentsArePure = claszSymbol.parentSymbols.forall(sym => sym == ObjectClass || isFunctionSymbol(sym) || isAbstractFunctionSymbol(sym) || sym == definitions.SerializableClass)
@@ -92,31 +94,56 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
       def constructorsArePure = cd.impl.body.iterator.collect {
         case dd: DefDef if dd.symbol.isConstructor => dd
       }.forall(isPureConstructor)
-      parentsArePure && constructorsArePure 
+      parentsArePure && constructorsArePure
     }
 
     /* ---------------- helper utils for generating classes and fields ---------------- */
 
-    def genPlainClass(cd: ClassDef): Unit = {
+    def genPlainClass(cd0: ClassDef): Unit = {
       assert(cnode == null, "GenBCode detected nested methods.")
 
-      claszSymbol       = cd.symbol
-      isCZParcelable    = isAndroidParcelableClass(claszSymbol)
-      isCZStaticModule  = isStaticModuleClass(claszSymbol)
-      thisBType         = classBTypeFromSymbol(claszSymbol)
-      initModuleInClinit = isCZStaticModule && canAssignModuleInClinit(cd, claszSymbol)
-
-      cnode = new asm.tree.ClassNode()
+      claszSymbol         = cd0.symbol
+      isCZParcelable      = isAndroidParcelableClass(claszSymbol)
+      isCZStaticModule    = isStaticModuleClass(claszSymbol)
+      thisBType           = classBTypeFromSymbol(claszSymbol)
+      thisBTypeDescriptor = thisBType.descriptor
+      cnode = new ClassNode1()
 
       initJClass(cnode)
+      val cd = if (isCZStaticModule) {
+        // Move statements from the primary constructor following the superclass constructor call to
+        // a newly synthesised tree representing the "<clinit>", which also assigns the MODULE$ field.
+        // Because the assignments to both the module instance fields, and the fields of the module itself
+        // are in the <clinit>, these fields can be static + final.
+
+        // TODO should we do this transformation earlier, say in Constructors? Or would that just cause
+        // pain for scala-{js, native}?
+
+        for (f <- fieldSymbols(claszSymbol)) {
+          f.setFlag(Flags.STATIC)
+        }
+        val constructorDefDef = treeInfo.firstConstructor(cd0.impl.body).asInstanceOf[DefDef]
+        val (uptoSuperStats, remainingConstrStats) = treeInfo.splitAtSuper(constructorDefDef.rhs.asInstanceOf[Block].stats, classOnly = true)
+        val clInitSymbol = claszSymbol.newMethod(nme.CLASS_CONSTRUCTOR, claszSymbol.pos, Flags.STATIC).setInfo(NullaryMethodType(definitions.UnitTpe))
+
+        // We don't need to enter this field into the decls of claszSymbol.info as this is added manually to the generated class
+        // in addModuleInstanceField. TODO: try adding it to the decls and making the usual field generation do the right thing.
+        val moduleField = claszSymbol.newValue(nme.MODULE_INSTANCE_FIELD, claszSymbol.pos, Flags.STATIC | Flags.PRIVATE).setInfo(claszSymbol.tpeHK)
+
+        val callConstructor = NewFromConstructor(claszSymbol.primaryConstructor).setType(claszSymbol.tpeHK)
+        val assignModuleField = Assign(global.gen.mkAttributedRef(moduleField).setType(claszSymbol.tpeHK), callConstructor).setType(definitions.UnitTpe)
+        val remainingConstrStatsSubst = remainingConstrStats.map(_.substituteThis(claszSymbol, global.gen.mkAttributedRef(claszSymbol.sourceModule)).changeOwner(claszSymbol.primaryConstructor -> clInitSymbol))
+        val clinit = DefDef(clInitSymbol, Block(assignModuleField :: remainingConstrStatsSubst, Literal(Constant(())).setType(definitions.UnitTpe)).setType(definitions.UnitTpe))
+        deriveClassDef(cd0)(tmpl => deriveTemplate(tmpl)(body =>
+          clinit :: body.map {
+            case `constructorDefDef` => copyDefDef(constructorDefDef)(rhs = Block(uptoSuperStats, constructorDefDef.rhs.asInstanceOf[Block].expr))
+            case tree => tree
+          }
+        ))
+      } else cd0
 
       val hasStaticCtor = methodSymbols(cd) exists (_.isStaticConstructor)
-      if (!hasStaticCtor) {
-        // but needs one ...
-        if (isCZStaticModule || isCZParcelable) {
-          fabricateStaticInit()
-        }
-      }
+      if (!hasStaticCtor && isCZParcelable) fabricateStaticInitAndroid()
 
       val optSerial: Option[Long] = serialVUID(claszSymbol)
       /* serialVersionUID can't be put on interfaces (it's a private field).
@@ -199,21 +226,11 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
      */
     private def addModuleInstanceField(): Unit = {
       // TODO confirm whether we really don't want ACC_SYNTHETIC nor ACC_DEPRECATED
-      // scala/scala-dev#194:
-      //   This can't be FINAL on JVM 1.9+ because we assign it from within the
-      //   instance constructor, not from <clinit> directly. Assignment from <clinit>,
-      //   after the constructor has completely finished, seems like the principled
-      //   thing to do, but it would change behaviour when "benign" cyclic references
-      //   between modules exist.
-      //
-      // We special case modules with parents that we know don't (and won't ever) refer to
-      // the module during their construction. These can use a final field, and defer the assigment
-      // to <clinit>.
-      val mods = if (initModuleInClinit) GenBCode.PublicStaticFinal else GenBCode.PublicStatic
+      val mods = GenBCode.PublicStaticFinal
       val fv =
         cnode.visitField(mods,
                          strMODULE_INSTANCE_FIELD,
-                         thisBType.descriptor,
+                         thisBTypeDescriptor,
                          null, // no java-generic-signature
                          null  // no initial value
         )
@@ -227,7 +244,7 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
     /*
      * must-single-thread
      */
-    private def fabricateStaticInit(): Unit = {
+    private def fabricateStaticInitAndroid(): Unit = {
 
       val clinit: asm.MethodVisitor = cnode.visitMethod(
         GenBCode.PublicStatic, // TODO confirm whether we really don't want ACC_SYNTHETIC nor ACC_DEPRECATED
@@ -238,20 +255,9 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
       )
       clinit.visitCode()
 
-      /* "legacy static initialization" */
-      if (isCZStaticModule) {
-        clinit.visitTypeInsn(asm.Opcodes.NEW, thisBType.internalName)
-        if (initModuleInClinit) clinit.visitInsn(asm.Opcodes.DUP)
-
-        clinit.visitMethodInsn(asm.Opcodes.INVOKESPECIAL,
-        thisBType.internalName, INSTANCE_CONSTRUCTOR_NAME, "()V", false)
-        if (initModuleInClinit) {
-          assignModuleInstanceField(clinit)
-        }
-      }
       if (isCZParcelable) { legacyAddCreatorCode(clinit, cnode, thisBType.internalName) }
-      clinit.visitInsn(asm.Opcodes.RETURN)
 
+      clinit.visitInsn(asm.Opcodes.RETURN)
       clinit.visitMaxs(0, 0) // just to follow protocol, dummy arguments
       clinit.visitEnd()
     }
@@ -525,9 +531,9 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
               genDefDef(statified)
             } else {
               val forwarderDefDef = {
-                val dd1 = global.gen.mkStatic(deriveDefDef(dd)(_ => EmptyTree), traitSuperAccessorName(sym), _.cloneSymbol.withoutAnnotations)
+                val dd1 = global.gen.mkStatic(deriveDefDef(dd)(_ => EmptyTree), newTermName(traitSuperAccessorName(sym)), _.cloneSymbol.withoutAnnotations)
                 dd1.symbol.setFlag(Flags.ARTIFACT).resetFlag(Flags.OVERRIDE)
-                val selfParam :: realParams = dd1.vparamss.head.map(_.symbol)
+                val selfParam :: realParams = dd1.vparamss.head.map(_.symbol): @unchecked
                 deriveDefDef(dd1)(_ =>
                   atPos(dd1.pos)(
                     Apply(Select(global.gen.mkAttributedIdent(selfParam).setType(sym.owner.typeConstructor), dd.symbol),
@@ -552,7 +558,7 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
 
       val jgensig = getGenericSignature(methSymbol, claszSymbol)
 
-      val (excs, others) = methSymbol.annotations partition (_.symbol == definitions.ThrowsClass)
+      val (excs, others) = partitionConserve(methSymbol.annotations)(_.symbol == definitions.ThrowsClass)
       val thrownExceptions: List[String] = getExceptions(excs)
 
       val bytecodeName =
@@ -570,7 +576,8 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
 
       emitParamNames(mnode, params)
       emitAnnotations(mnode, others)
-      emitParamAnnotations(mnode, params.map(_.annotations))
+      if (params.exists(_.annotations.nonEmpty))
+        emitParamAnnotations(mnode, params.map(_.annotations))
 
     } // end of method initJMethod
 
@@ -637,7 +644,7 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
             case Return(_) | Block(_, Return(_)) | Throw(_) | Block(_, Throw(_)) => ()
             case EmptyTree =>
               globalError("Concrete method has no definition: " + dd + (
-                if (settings.debug) "(found: " + methSymbol.owner.info.decls.toList.mkString(", ") + ")"
+                if (settings.isDebug) "(found: " + methSymbol.owner.info.decls.toList.mkString(", ") + ")"
                 else ""))
             case _ =>
               bc emitRETURN returnType
@@ -649,7 +656,7 @@ abstract class BCodeSkelBuilder extends BCodeHelpers {
             if (!hasStaticBitSet) {
               mnode.visitLocalVariable(
                 "this",
-                thisBType.descriptor,
+                thisBTypeDescriptor,
                 null,
                 veryFirstProgramPoint,
                 onePastLastProgramPoint,

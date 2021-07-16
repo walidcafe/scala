@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 #
 ##############################################################################
-# Copyright 2002-2013 LAMP/EPFL
+# Scala (https://www.scala-lang.org)
 #
-# This is free software; see the distribution for copying conditions.
-# There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
-# PARTICULAR PURPOSE.
+# Copyright EPFL and Lightbend, Inc.
+#
+# Licensed under Apache License 2.0
+# (http://www.apache.org/licenses/LICENSE-2.0).
+#
+# See the NOTICE file distributed with this work for
+# additional information regarding copyright ownership.
 ##############################################################################
 
 findScalaHome () {
@@ -102,19 +106,6 @@ if [[ -z "$TOOL_CLASSPATH" ]]; then
     done
 fi
 
-if [[ -n "$cygwin" ]]; then
-    if [[ "$OS" = "Windows_NT" ]] && cygpath -m .>/dev/null 2>/dev/null ; then
-        format=mixed
-    else
-        format=windows
-    fi
-    SCALA_HOME="$(cygpath --$format "$SCALA_HOME")"
-    if [[ -n "$JAVA_HOME" ]]; then
-        JAVA_HOME="$(cygpath --$format "$JAVA_HOME")"
-    fi
-    TOOL_CLASSPATH="$(cygpath --path --$format "$TOOL_CLASSPATH")"
-fi
-
 if [[ -n "$cygwin$mingw$msys" ]]; then
     case "$TERM" in
         rxvt* | xterm* | cygwin*)
@@ -180,6 +171,19 @@ done
 # reset "$@@" to the remaining args
 set -- "${scala_args[@@]}"
 
+if [[ -n "$cygwin" ]]; then
+    if [[ "$OS" = "Windows_NT" ]] && cygpath -m .>/dev/null 2>/dev/null ; then
+        format=mixed
+    else
+        format=windows
+    fi
+    SCALA_HOME="$(cygpath --$format "$SCALA_HOME")"
+    if [[ -n "$JAVA_HOME" ]]; then
+        JAVA_HOME="$(cygpath --$format "$JAVA_HOME")"
+    fi
+    TOOL_CLASSPATH="$(cygpath --path --$format "$TOOL_CLASSPATH")"
+fi
+
 if [[ -z "$JAVACMD" && -n "$JAVA_HOME" && -x "$JAVA_HOME/bin/java" ]]; then
     JAVACMD="$JAVA_HOME/bin/java"
 fi
@@ -205,6 +209,14 @@ else
   classpath_args=(-classpath "$TOOL_CLASSPATH")
 fi
 
+# Remove newline as delimiter for word splitting the java command.
+# This permits the use case:
+# export JAVA_OPTS=-Dline.separator=$'\r'$'\n'
+# where otherwise the newline char is stripped after expansion.
+# The following works with the default IFS:
+# scala -J-Dline.separator=$'\r'$'\n'
+IFS=" "$'\t'
+
 # note that variables which may intentionally be empty must not
 # be quoted: otherwise an empty string will appear as a command line
 # argument, and java will think that is the program to run.
@@ -219,6 +231,9 @@ execCommand \
   @properties@ @class@ @toolflags@ "$@@"
 
 # record the exit status lest it be overwritten:
-# then reenable echo and propagate the code.
+# then restore IFS, reenable echo and propagate the code.
 scala_exit_status=$?
+
+unset IFS
+
 onExit

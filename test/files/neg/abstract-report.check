@@ -1,18 +1,15 @@
-abstract-report.scala:1: error: class Unimplemented needs to be abstract, since:
-it has 6 unimplemented members.
-/** As seen from class Unimplemented, the missing signatures are as follows.
- *  For convenience, these are usable as stub implementations.
- */
+abstract-report.scala:1: error: class Unimplemented needs to be abstract.
+Missing implementations for 6 members. Stub implementations follow:
   // Members declared in scala.collection.IterableOnce
   def iterator: Iterator[String] = ???
 
   // Members declared in scala.collection.IterableOps
   protected def coll: List[String] = ???
-  protected def fromSpecificIterable(coll: Iterable[String]): List[String] = ???
-  def iterableFactory: scala.collection.IterableFactory[[X]List[X]] = ???
+  protected def fromSpecific(coll: scala.collection.IterableOnce[String]): List[String] = ???
+  def iterableFactory: scala.collection.IterableFactory[List] = ???
   protected def newSpecificBuilder: scala.collection.mutable.Builder[String,List[String]] = ???
   def toIterable: Iterable[String] = ???
 
 class Unimplemented extends scala.collection.IterableOps[String, List, List[String]] { }
       ^
-one error found
+1 error

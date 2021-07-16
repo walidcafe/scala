@@ -6,7 +6,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
-import scala.tools.testing.AssertUtil.assertThrows
+import scala.tools.testkit.AssertUtil.assertThrows
 import scala.reflect.internal.util.OffsetPosition
 
 @RunWith(classOf[JUnit4])
@@ -17,18 +17,18 @@ class CannotHaveAttrsTest {
       def productArity: Int = ???
       def productElement(n: Int): Any = ???
     }
-    val attrlessTrees = List(CHA, EmptyTree, emptyValDef, pendingSuperCall)
+    val attrlessTrees = List(CHA, EmptyTree, noSelfType, pendingSuperCall)
   }
   import symbolTable._
 
   @Test
-  def canHaveAttrsIsFalse =
+  def canHaveAttrsIsFalse(): Unit =
     attrlessTrees.foreach { t =>
       assertFalse(t.canHaveAttrs)
     }
 
   @Test
-  def defaultPosAssignment =
+  def defaultPosAssignment(): Unit =
     attrlessTrees.foreach { t =>
       assertEquals(t.pos, NoPosition)
       t.pos = NoPosition
@@ -38,7 +38,7 @@ class CannotHaveAttrsTest {
     }
 
   @Test
-  def defaultTpeAssignment =
+  def defaultTpeAssignment(): Unit =
     attrlessTrees.foreach { t =>
       assertEquals(t.tpe, NoType)
       t.tpe = NoType
@@ -47,8 +47,8 @@ class CannotHaveAttrsTest {
       assertEquals(t.tpe, NoType)
     }
 
-  @Test @org.junit.Ignore // scala/bug#8816
-  def nonDefaultPosAssignmentFails = {
+  @Test @org.junit.Ignore("scala/bug#8816")
+  def nonDefaultPosAssignmentFails(): Unit = {
     val pos = new OffsetPosition(null, 0)
     attrlessTrees.foreach { t =>
       assertThrows[IllegalArgumentException] { t.pos = pos }
@@ -56,8 +56,8 @@ class CannotHaveAttrsTest {
     }
   }
 
-  @Test @org.junit.Ignore // scala/bug#8816
-  def nonDefaultTpeAssignmentFails = {
+  @Test @org.junit.Ignore("scala/bug#8816")
+  def nonDefaultTpeAssignmentFails(): Unit = {
     val tpe = typeOf[Int]
     attrlessTrees.foreach { t =>
       assertThrows[IllegalArgumentException] { t.tpe = tpe }
@@ -67,12 +67,12 @@ class CannotHaveAttrsTest {
 
   class Attach
   @Test
-  def attachmentsAreIgnored = {
+  def attachmentsAreIgnored(): Unit = {
     attrlessTrees.foreach { t =>
       t.setAttachments(NoPosition.update(new Attach))
-      assert(t.attachments == NoPosition)
+      assertEquals(NoPosition, t.attachments)
       t.updateAttachment(new Attach)
-      assert(t.attachments == NoPosition)
+      assertEquals(NoPosition, t.attachments)
       t.removeAttachment[Attach] // no exception
     }
   }

@@ -1,3 +1,4 @@
+import scala.language.experimental.macros
 import scala.reflect.macros.blackbox.Context
 
 object B { override def toString = "object" }
@@ -26,7 +27,7 @@ object packageless {
     }
   }
 
-  def test = macro impl
+  def test: Any = macro impl
 }
 
 package packageful {
@@ -43,6 +44,6 @@ package packageful {
       }
     }
 
-    def test = macro impl
+    def test: Any = macro impl
   }
 }

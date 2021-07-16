@@ -8,7 +8,7 @@ import org.junit.runners.JUnit4
 
 import scala.collection.mutable
 import scala.tools.asm.Opcodes
-import scala.tools.testing.BytecodeTesting
+import scala.tools.testkit.BytecodeTesting
 
 @RunWith(classOf[JUnit4])
 class BTypesTest extends BytecodeTesting {
@@ -26,7 +26,7 @@ class BTypesTest extends BytecodeTesting {
   def o = classBTFS(jlo)
   def s = classBTFS(jls)
   def oArr = ArrayBType(o)
-  def method = MethodBType(List(oArr, INT, DOUBLE, s), UNIT)
+  def method = MethodBType(Array(oArr, INT, DOUBLE, s), UNIT)
 
   @Test
   def classBTypesEquality(): Unit = {
@@ -220,5 +220,18 @@ class BTypesTest extends BytecodeTesting {
   @Test
   def maxTypeTest(): Unit = {
 
+  }
+
+  @Test
+  def arraySubtypeTest(): Unit = global.exitingDelambdafy {
+    val primitives = List(BOOL, CHAR, BYTE, SHORT, INT, FLOAT, LONG, DOUBLE)
+    for (p1 <- primitives; p2 <- primitives) {
+      val a1 = ArrayBType(p1)
+      val a2 = ArrayBType(p2)
+      val expect = p1 == p2
+      assertEquals(s"$a1 $a2", expect, a1.conformsTo(a2).get)
+      assertEquals(s"$a1 $a2", expect, a2.conformsTo(a1).get)
+    }
+    assertTrue(ArrayBType(s).conformsTo(ArrayBType(o)).get)
   }
 }

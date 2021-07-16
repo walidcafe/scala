@@ -18,14 +18,14 @@ case class Var extends callccInterpreter.Term with Product with Serializable
 case object Wrong
 def +(other: String): String
 def ->[B](y: B): (callccInterpreter.type, B)
-def add(a: callccInterpreter.Value, b: callccInterpreter.Value): callccInterpreter.M[_ >: callccInterpreter.Num with callccInterpreter.Wrong.type <: Product with Serializable with callccInterpreter.Value]
+def add(a: callccInterpreter.Value, b: callccInterpreter.Value): callccInterpreter.M[_ >: callccInterpreter.Num with callccInterpreter.Wrong.type <: Product with callccInterpreter.Value with java.io.Serializable]
 def apply(a: callccInterpreter.Value, b: callccInterpreter.Value): callccInterpreter.M[callccInterpreter.Value]
 def callCC[A](h: (A => callccInterpreter.M[A]) => callccInterpreter.M[A]): callccInterpreter.M[A]
 def ensuring(cond: Boolean): callccInterpreter.type
 def ensuring(cond: Boolean, msg: => Any): callccInterpreter.type
 def ensuring(cond: callccInterpreter.type => Boolean): callccInterpreter.type
 def ensuring(cond: callccInterpreter.type => Boolean, msg: => Any): callccInterpreter.type
-def equals(x$1: Any): Boolean
+def equals(x$1: Object): Boolean
 def formatted(fmtstr: String): String
 def hashCode(): Int
 def id[A]: A => A
@@ -38,7 +38,7 @@ def toString(): String
 def unitM[A](a: A): callccInterpreter.M[A]
 def →[B](y: B): (callccInterpreter.type, B)
 final def !=(x$1: Any): Boolean
-final def ##(): Int
+final def ## : Int
 final def ==(x$1: Any): Boolean
 final def asInstanceOf[T0]: T0
 final def eq(x$1: AnyRef): Boolean
@@ -90,8 +90,8 @@ def showM(m: callccInterpreter.M[callccInterpreter.Value]): String = m.in.apply(
 askType at CallccInterpreter.scala(50,30)
 ================================================================================
 [response] askTypeAt (50,30)
-def add(a: callccInterpreter.Value, b: callccInterpreter.Value): callccInterpreter.M[_ >: callccInterpreter.Num with callccInterpreter.Wrong.type <: Product with Serializable with callccInterpreter.Value] = scala.Tuple2.apply[callccInterpreter.Value, callccInterpreter.Value](a, b) match {
-  case (_1: callccInterpreter.Value, _2: callccInterpreter.Value)(callccInterpreter.Value, callccInterpreter.Value)((n: Int)callccInterpreter.Num((m @ _)), (n: Int)callccInterpreter.Num((n @ _))) => this.unitM[callccInterpreter.Num](callccInterpreter.this.Num.apply(m.+(n)))
+def add(a: callccInterpreter.Value, b: callccInterpreter.Value): callccInterpreter.M[_ >: callccInterpreter.Num with callccInterpreter.Wrong.type <: Product with callccInterpreter.Value with java.io.Serializable] = scala.Tuple2.apply[callccInterpreter.Value, callccInterpreter.Value](a, b) match {
+  case (_1: callccInterpreter.Value, _2: callccInterpreter.Value): (callccInterpreter.Value, callccInterpreter.Value)((n: Int): callccInterpreter.Num((m @ _)), (n: Int): callccInterpreter.Num((n @ _))) => this.unitM[callccInterpreter.Num](callccInterpreter.this.Num.apply(m.+(n)))
   case _ => callccInterpreter.this.unitM[callccInterpreter.Wrong.type](callccInterpreter.this.Wrong)
 }
 ================================================================================

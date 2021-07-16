@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package reflect
@@ -15,9 +19,6 @@ import java.lang.System.{lineSeparator => EOL}
 
 /** This object provides utility methods to extract elements
  *  from Strings.
- *
- *  @author Martin Odersky
- *  @version 1.0
  */
 trait StringOps {
   def oempty(xs: String*)        = xs filterNot (x => x == null || x == "")
@@ -27,7 +28,7 @@ trait StringOps {
     case w :: Nil => w
     case _        =>
       def lcp(ss: List[String]): String = {
-        val w :: ws = ss
+        val w :: ws = ss: @unchecked
         if (w == "") ""
         else if (ws exists (s => s == "" || (s charAt 0) != (w charAt 0))) ""
         else w.substring(0, 1) + lcp(ss map (_ substring 1))
@@ -45,7 +46,7 @@ trait StringOps {
     else s.substring(0, end)
   }
   /** Breaks the string into lines and strips each line before reassembling. */
-  def trimAllTrailingSpace(s: String): String = s.lines.map(trimTrailingSpace).mkString(EOL)
+  def trimAllTrailingSpace(s: String): String = s.linesIterator.map(trimTrailingSpace).mkString(EOL)
 
   def decompose(str: String, sep: Char): List[String] = {
     def ws(start: Int): List[String] =
@@ -74,22 +75,13 @@ trait StringOps {
   def countElementsAsString(n: Int, element: String): String =
     n match {
       case 0 => s"no ${element}s"
-      case 1 => s"one ${element}"
+      case 1 => s"1 ${element}"
       case _ => s"${countAsString(n)} ${element}s"
     }
 
-  /** Turns a count into a friendly English description if n<=4.
-   *  Otherwise, a scary math representation.
+  /** String conversion.
    */
-  def countAsString(n: Int): String =
-    n match {
-      case 0 => "none"
-      case 1 => "one"
-      case 2 => "two"
-      case 3 => "three"
-      case 4 => "four"
-      case _ => n.toString
-    }
+  def countAsString(n: Int): String = Integer.toString(n)
 }
 
 object StringOps extends StringOps

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package interactive
 package tests.core
@@ -101,10 +113,8 @@ private[tests] trait CoreTestDefs
           reporter.println("\naskHyperlinkPos for `" + tree.symbol.name + "` at " + format(pos) + " " + pos.source.file.name)
           val r = new Response[Position]
           val sourceFile = tree.symbol.sourceFile
-          // `tree.symbol.sourceFile` was discovered to be null when testing using virtpatmat on the akka presentation test, where a position had shifted to point to `Int`
-          // askHyperlinkPos for `Int` at (73,19) pi.scala --> class Int in package scala has null sourceFile!
-          val treePath = if (sourceFile ne null) sourceFile.path else null
-          val treeName = if (sourceFile ne null) sourceFile.name else null
+          val treePath = sourceFile.path
+          val treeName = sourceFile.name
 
           sourceFiles.find(_.path == treePath) match {
             case Some(source) =>

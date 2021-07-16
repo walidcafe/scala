@@ -1,14 +1,47 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 // GENERATED CODE: DO NOT EDIT. See scala.Function0 for timestamp.
 
 package scala
 
+
+object Function1 {
+
+  implicit final class UnliftOps[A, B] private[Function1](private val f: A => Option[B]) extends AnyVal {
+    /** Converts an optional function to a partial function.
+      *
+      * @example Unlike [[Function.unlift]], this [[UnliftOps.unlift]] method can be used in extractors.
+      *          {{{
+      *          val of: Int => Option[String] = { i =>
+      *            if (i == 2) {
+      *              Some("matched by an optional function")
+      *            } else {
+      *              None
+      *            }
+      *          }
+      *
+      *          util.Random.nextInt(4) match {
+      *            case of.unlift(m) => // Convert an optional function to a pattern
+      *              println(m)
+      *            case _ =>
+      *              println("Not matched")
+      *          }
+      *          }}}
+      */
+    def unlift: PartialFunction[A, B] = Function.unlift(f)
+  }
+
+}
 
 /** A function of 1 parameter.
  *  
@@ -29,7 +62,7 @@ package scala
  *  is that the latter can specify inputs which it will not handle.
  */
 @annotation.implicitNotFound(msg = "No implicit view available from ${T1} => ${R}.")
-trait Function1[@specialized(scala.Int, scala.Long, scala.Float, scala.Double) -T1, @specialized(scala.Unit, scala.Boolean, scala.Int, scala.Float, scala.Long, scala.Double) +R] extends AnyRef { self =>
+trait Function1[@specialized(Specializable.Arg) -T1, @specialized(Specializable.Return) +R] extends AnyRef { self =>
   /** Apply the body of this function to the argument.
    *  @return   the result of function application.
    */
@@ -51,5 +84,5 @@ trait Function1[@specialized(scala.Int, scala.Long, scala.Float, scala.Double) -
    */
   @annotation.unspecialized def andThen[A](g: R => A): T1 => A = { x => g(apply(x)) }
 
-  override def toString() = "<function1>"
+  override def toString(): String = "<function1>"
 }

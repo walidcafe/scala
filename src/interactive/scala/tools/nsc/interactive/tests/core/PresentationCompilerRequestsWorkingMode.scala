@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package interactive
 package tests.core
@@ -31,7 +43,7 @@ trait PresentationCompilerRequestsWorkingMode extends TestResources {
   }
 
   /** All positions of the given string in all source files. */
-  private def allPositionsOf(srcs: Seq[SourceFile] = sourceFiles, str: String): Seq[Position] =
+  private def allPositionsOf(srcs: Seq[SourceFile] = sourceFiles.toIndexedSeq, str: String): Seq[Position] =
     for (s <- srcs; p <- positionsOf(s, str)) yield p
 
   /** Return all positions of the given str in the given source file. */

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package typechecker
 
@@ -20,7 +32,7 @@ trait StdAttachments {
 
   /** Loads underlying MacroExpanderAttachment from a macro expandee or returns a default value for that attachment.
    */
- def macroExpanderAttachment(tree: Tree): MacroExpanderAttachment =
+  def macroExpanderAttachment(tree: Tree): MacroExpanderAttachment =
     tree.attachments.get[MacroExpanderAttachment] getOrElse {
       tree match {
         case Apply(fn, _) if tree.isInstanceOf[ApplyToImplicitArgs] => macroExpanderAttachment(fn)
@@ -185,26 +197,9 @@ trait StdAttachments {
    */
   case class OriginalTreeAttachment(original: Tree)
 
-  case class StabilizingDefinitions(vdefs: List[ValDef])
-  private[this] val StabilizingDefinitionsTag: reflect.ClassTag[StabilizingDefinitions] = reflect.classTag[StabilizingDefinitions]
-
-  def addStabilizingDefinition(tree: Tree, vdef: ValDef): Tree = {
-    tree.updateAttachment(StabilizingDefinitions(
-      tree.attachments.get[StabilizingDefinitions](StabilizingDefinitionsTag) match {
-        case Some(StabilizingDefinitions(vdefs)) => vdef :: vdefs
-        case _ => List(vdef)
-      }
-    ))(StabilizingDefinitionsTag)
-  }
-
-  def stabilizingDefinitions(tree: Tree): List[ValDef] =
-    tree.attachments.get[StabilizingDefinitions](StabilizingDefinitionsTag) match {
-      case Some(StabilizingDefinitions(vdefs)) => vdefs
-      case _ => Nil
-    }
-
-  def removeStabilizingDefinitions(tree: Tree): Tree =
-    tree.removeAttachment[StabilizingDefinitions](StabilizingDefinitionsTag)
+  /** Marks a Typed tree with Unit tpt. */
+  case object TypedExpectingUnitAttachment
+  def explicitlyUnit(tree: Tree): Boolean = tree.hasAttachment[TypedExpectingUnitAttachment.type]
 }
 
 
@@ -213,7 +208,7 @@ trait MacroAnnotationAttachments {
   self: Analyzer =>
 
   import global._
-  import scala.collection.{immutable, mutable}
+  import scala.collection.mutable
 
   case object WeakSymbolAttachment
   def markWeak(sym: Symbol) = if (sym != null && sym != NoSymbol) sym.updateAttachment(WeakSymbolAttachment) else sym

@@ -1,4 +1,7 @@
-import scala.tools.partest.{BytecodeTest, ASMConverters}
+// scalac: -opt:l:inline -opt-inline-from:**
+//
+import scala.tools.partest.BytecodeTest
+import scala.tools.testkit.ASMConverters
 import ASMConverters._
 
 class D {
@@ -9,7 +12,7 @@ class D {
 }
 
 object Test extends BytecodeTest {
-  def show: Unit = {
+  def show(): Unit = {
     val gIns = instructionsFromMethod(getMethod(loadClassNode("B"), "g"))
     val hIns = instructionsFromMethod(getMethod(loadClassNode("C"), "h"))
     for (i <- List(gIns, hIns)) {

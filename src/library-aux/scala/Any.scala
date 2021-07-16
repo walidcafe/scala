@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -27,13 +31,13 @@ package scala
  *     w.print()
  * }}}
  *
- * See the [[http://docs.scala-lang.org/overviews/core/value-classes.html Value Classes and Universal Traits]] for more
+ * See the [[https://docs.scala-lang.org/overviews/core/value-classes.html Value Classes and Universal Traits]] for more
  * details on the interplay of universal traits and value classes.
  */
 abstract class Any {
   /** Compares the receiver object (`this`) with the argument object (`that`) for equivalence.
    *
-   *  Any implementation of this method should be an [[http://en.wikipedia.org/wiki/Equivalence_relation equivalence relation]]:
+   *  Any implementation of this method should be an [[https://en.wikipedia.org/wiki/Equivalence_relation equivalence relation]]:
    *
    *  - It is reflexive: for any instance `x` of type `Any`, `x.equals(x)` should return `true`.
    *  - It is symmetric: for any instances `x` and `y` of type `Any`, `x.equals(y)` should return `true` if and
@@ -104,15 +108,31 @@ abstract class Any {
    *
    *  @return   a hash value consistent with ==
    */
-  final def ##(): Int = sys.error("##")
+  final def ## : Int = sys.error("##")
 
-  /** Test whether the dynamic type of the receiver object is `T0`.
+  /** Test whether the dynamic type of the receiver object has the same erasure as `T0`.
    *
-   *  Note that the result of the test is modulo Scala's erasure semantics.
-   *  Therefore the expression `1.isInstanceOf[String]` will return `false`, while the
-   *  expression `List(1).isInstanceOf[List[String]]` will return `true`.
-   *  In the latter example, because the type argument is erased as part of compilation it is
-   *  not possible to check whether the contents of the list are of the specified type.
+   *  Depending on what `T0` is, the test is done in one of the below ways:
+   *
+   *  - `T0` is a non-parameterized class type, e.g. `BigDecimal`: this method returns `true` if
+   *    the value of the receiver object is a `BigDecimal` or a subtype of `BigDecimal`.
+   *  - `T0` is a parameterized class type, e.g. `List[Int]`: this method returns `true` if
+   *    the value of the receiver object is some `List[X]` for any `X`.
+   *    For example, `List(1, 2, 3).isInstanceOf[List[String]]` will return true.
+   *  - `T0` is some singleton type `x.type` or literal `x`: this method returns `this.eq(x)`.
+   *    For example, `x.isInstanceOf[1]` is equivalent to `x.eq(1)`
+   *  - `T0` is an intersection `X with Y` or `X & Y: this method is equivalent to `x.isInstanceOf[X] && x.isInstanceOf[Y]`
+   *  - `T0` is a union `X | Y`: this method is equivalent to `x.isInstanceOf[X] || x.isInstanceOf[Y]`
+   *  - `T0` is a type parameter or an abstract type member: this method is equivalent
+   *    to `isInstanceOf[U]` where `U` is `T0`'s upper bound, `Any` if `T0` is unbounded.
+   *    For example, `x.isInstanceOf[A]` where `A` is an unbounded type parameter
+   *    will return true for any value of `x`.
+   *
+   *  This is exactly equivalent to the type pattern `_: T0`
+   * 
+   *  @note due to the unexpectedness of `List(1, 2, 3).isInstanceOf[List[String]]` returning true and
+   *  `x.isInstanceOf[A]` where `A` is a type parameter or abstract member returning true,
+   *  these forms issue a warning.
    *
    *  @return `true` if the receiver object is an instance of erasure of type `T0`; `false` otherwise.
    */

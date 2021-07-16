@@ -1,12 +1,21 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect
 package internal
 package pickling
+
+import scala.annotation.tailrec
 
 /** Variable length byte arrays, with methods for basic pickling and unpickling.
  *
@@ -20,21 +29,26 @@ class PickleBuffer(data: Array[Byte], from: Int, to: Int) {
   var readIndex = from
   var writeIndex = to
 
-  /** Double bytes array */
-  private def dble(): Unit = {
-    val bytes1 = new Array[Byte](bytes.length * 2)
+  @inline
+  private def growTo(targetCapacity: Int): Unit = {
+    val bytes1 = new Array[Byte](targetCapacity)
     Array.copy(bytes, 0, bytes1, 0, writeIndex)
     bytes = bytes1
   }
 
   def ensureCapacity(capacity: Int) =
-    while (bytes.length < writeIndex + capacity) dble()
+    if (bytes.length < writeIndex + capacity) {
+      var newCapacity = bytes.length
+      while (newCapacity < writeIndex + capacity) newCapacity <<= 1
+      growTo(newCapacity)
+    }
 
   // -- Basic output routines --------------------------------------------
 
   /** Write a byte of data */
   def writeByte(b: Int): Unit = {
-    if (writeIndex == bytes.length) dble()
+    if (writeIndex == bytes.length)
+      growTo(bytes.length << 1)
     bytes(writeIndex) = b.toByte
     writeIndex += 1
   }
@@ -67,6 +81,7 @@ class PickleBuffer(data: Array[Byte], from: Int, to: Int) {
    *  If number is more than one byte, shift rest of array to make space.
    */
   def patchNat(pos: Int, x: Int): Unit = {
+    @tailrec
     def patchNatPrefix(x: Int): Unit = {
       writeByte(0)
       Array.copy(bytes, pos, bytes, pos+1, writeIndex - (pos+1))
@@ -156,7 +171,7 @@ class PickleBuffer(data: Array[Byte], from: Int, to: Int) {
   /** Perform operation `op` the number of
    *  times specified.  Concatenate the results into a list.
    */
-  def times[T](n: Int, op: ()=>T): List[T] =
+  def times[T](n: Int, op: () => T): List[T] =
     if (n == 0) List() else op() :: times(n-1, op)
 
   /** Pickle = majorVersion_Nat minorVersion_Nat nbEntries_Nat {Entry}

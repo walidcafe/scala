@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -30,11 +37,14 @@ object ReplStrings {
     res.toString
   }
 
+  @inline final def quotedString(str: String) =
+    "\"" + str + "\""
+
   def string2codeQuoted(str: String) =
-    "\"" + string2code(str) + "\""
+    quotedString(string2code(str))
 
   def any2stringOf(x: Any, maxlen: Int) =
-    "_root_.scala.runtime.ScalaRunTime.replStringOf(%s, %s)".format(x, maxlen)
+    s"_root_.scala.runtime.ScalaRunTime.replStringOf($x, $maxlen)"
 
   // no escaped or nested quotes
   private[this] val inquotes = """(['"])(.*?)\1""".r
@@ -46,4 +56,12 @@ object ReplStrings {
   //    import StringContext.treatEscapes, scala.runtime.ScalaRunTime.stringOf
   //    def ss(args: Any*): String = sc.standardInterpolator(treatEscapes, args map stringOf)
   //  }
+}
+
+trait ReplStrings {
+  /** Prepare a val/def name string for outputting in code. */
+  def nameToCode(s: String): String
+
+  /** Prepare a val/def type string for outputting in code. */
+  def typeToCode(s: String): String
 }

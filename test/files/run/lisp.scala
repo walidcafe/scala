@@ -12,7 +12,7 @@ class LispTokenizer(s: String) extends Iterator[String] {
     while (i < s.length() && s.charAt(i) <= ' ') i += 1
     i < s.length()
   }
-  def next: String =
+  def next(): String =
     if (hasNext) {
       val start = i
       if (isDelimiter(s charAt i)) i += 1
@@ -66,7 +66,7 @@ object LispCaseClasses extends Lisp {
   case class STR(x: String) extends Data {
     override def toString() = "\"" + x + "\"";
   }
-  case class FUN(f: List[Data] => Data) extends Data {
+  case class FUN(f: PartialFunction[List[Data], Data]) extends Data {
     override def toString() = "<fn>";
   }
 
@@ -245,10 +245,10 @@ object LispCaseClasses extends Lisp {
       else SYM(token)
     }
     def parseList: Data = {
-      val token = it.next;
+      val token = it.next();
       if (token == ")") NIL() else CONS(parse(token), parseList)
     }
-    parse(it.next)
+    parse(it.next())
   }
 
   def lisp2string(d: Data): String = d.toString();
@@ -263,7 +263,7 @@ object LispAny extends Lisp {
 
   type Data = Any;
 
-  case class Lambda(f: List[Data] => Data);
+  case class Lambda(f: PartialFunction[List[Data], Data]);
 
   var curexp: Data = null;
   var trace: Boolean = false;
@@ -303,17 +303,17 @@ object LispAny extends Lisp {
   def asBoolean(x: Data): Boolean = x != 0
 
   def normalize(x: Data): Data = x match {
-    case 'and :: x :: y :: Nil =>
-      normalize('if :: x :: y :: 0 :: Nil)
-    case 'or :: x :: y :: Nil =>
-      normalize('if :: x :: 1 :: y :: Nil)
-    case 'def :: (name :: args) :: body :: expr :: Nil =>
-      normalize('def :: name :: ('lambda :: args :: body :: Nil) :: expr :: Nil)
-    case 'cond :: ('else :: expr :: Nil) :: rest =>
+    case Symbol("and") :: x :: y :: Nil =>
+      normalize(Symbol("if") :: x :: y :: 0 :: Nil)
+    case Symbol("or") :: x :: y :: Nil =>
+      normalize(Symbol("if") :: x :: 1 :: y :: Nil)
+    case Symbol("def") :: (name :: args) :: body :: expr :: Nil =>
+      normalize(Symbol("def") :: name :: (Symbol("lambda") :: args :: body :: Nil) :: expr :: Nil)
+    case Symbol("cond") :: (Symbol("else") :: expr :: Nil) :: rest =>
         normalize(expr);
-    case 'cond :: (test :: expr :: Nil) :: rest =>
-	normalize('if :: test :: expr :: ('cond :: rest) :: Nil)
-    case 'cond :: 'else :: expr :: Nil =>
+    case Symbol("cond") :: (test :: expr :: Nil) :: rest =>
+	normalize(Symbol("if") :: test :: expr :: (Symbol("cond") :: rest) :: Nil)
+    case Symbol("cond") :: Symbol("else") :: expr :: Nil =>
       normalize(expr)
     case h :: t =>
       normalize(h) :: asList(normalize(t))
@@ -342,15 +342,15 @@ object LispAny extends Lisp {
   def eval1(x: Data, env: Environment): Data = x match {
     case Symbol(name) =>
       env lookup name
-    case 'def :: Symbol(name) :: y :: z :: Nil =>
+    case Symbol("def") :: Symbol(name) :: y :: z :: Nil =>
       eval(z, env.extendRec(name, (env1 => eval(y, env1))))
-    case 'val :: Symbol(name) :: y :: z :: Nil =>
+    case Symbol("val") :: Symbol(name) :: y :: z :: Nil =>
       eval(z, env.extend(name, eval(y, env)))
-    case 'lambda :: params :: y :: Nil =>
+    case Symbol("lambda") :: params :: y :: Nil =>
       mkLambda(params, y, env)
-    case 'if :: c :: y :: z :: Nil =>
+    case Symbol("if") :: c :: y :: z :: Nil =>
       if (asBoolean(eval(c, env))) eval(y, env) else eval(z, env)
-    case 'quote :: y :: Nil =>
+    case Symbol("quote") :: y :: Nil =>
       y
     case y :: z =>
       apply(eval(y, env), z map (x => eval(x, env)))
@@ -437,10 +437,10 @@ object LispAny extends Lisp {
       else Symbol(token)
     }
     def parseList: List[Data] = {
-      val token = it.next;
+      val token = it.next();
       if (token == ")") Nil else parse(token) :: parseList
     }
-    parse(it.next)
+    parse(it.next())
   }
 }
 
@@ -453,18 +453,18 @@ class LispUser(lisp: Lisp) {
 
   def evaluate(s: String) = lisp2string(lisp.evaluate(s));
 
-  def run = {
+  def run() = {
 
     Console.println(string2lisp("(lambda (x) (+ (* x x) 1))").asInstanceOf[AnyRef]);
     Console.println(lisp2string(string2lisp("(lambda (x) (+ (* x x) 1))")));
-    Console.println;
+    Console.println()
 
     Console.println("(    '(1 2 3)) = " + evaluate("     (quote(1 2 3))"));
     Console.println("(car '(1 2 3)) = " + evaluate("(car (quote(1 2 3)))"));
     Console.println("(cdr '(1 2 3)) = " + evaluate("(cdr (quote(1 2 3)))"));
     Console.println("(null? '(2 3)) = " + evaluate("(null? (quote(2 3)))"));
     Console.println("(null?    '()) = " + evaluate("(null?    (quote()))"));
-    Console.println;
+    Console.println()
 
     Console.println("faculty(10) = " + evaluate(
       "(def (faculty n) " +
@@ -500,7 +500,7 @@ class LispUser(lisp: Lisp) {
               "(val v3 (+ (+ (foo 3) (foo 4)) (foo 5)) " +
                 "(val v4 (foo 6) " +
                   "(cons v1 (cons v2 (cons v3 (cons v4 nil))))))))))"));
-    Console.println;
+    Console.println()
   }
 }
 
@@ -509,8 +509,8 @@ class LispUser(lisp: Lisp) {
 
 object Test {
   def main(args: Array[String]): Unit = {
-    new LispUser(LispCaseClasses).run;
-    new LispUser(LispAny).run;
+    new LispUser(LispCaseClasses).run()
+    new LispUser(LispAny).run()
     ()
   }
 }

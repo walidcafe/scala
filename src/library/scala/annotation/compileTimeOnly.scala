@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.annotation
 
 import scala.annotation.meta._
@@ -16,7 +28,6 @@ import scala.annotation.meta._
  *
  * @param  message the error message to print during compilation if a reference remains
  *                 after type checking
- * @since  2.11.0
  */
 @getter @setter @beanGetter @beanSetter @companionClass @companionMethod
 final class compileTimeOnly(message: String) extends scala.annotation.StaticAnnotation

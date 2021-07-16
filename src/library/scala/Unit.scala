@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 // DO NOT EDIT, CHANGES WILL BE LOST
 // This auto-generated code can be modified in "project/GenerateAnyVals.scala".
@@ -23,9 +27,13 @@ final abstract class Unit private extends AnyVal {
   override def getClass(): Class[Unit] = ???
 }
 
+@scala.annotation.compileTimeOnly("`Unit` companion object is not allowed in source; instead, use `()` for the unit value")
 object Unit extends AnyValCompanion {
 
   /** Transform a value type into a boxed reference type.
+   *
+   *  This method is not intended for use in source code.
+   *  The runtime representation of this value is platform specific.
    *
    *  @param  x   the Unit to be boxed
    *  @return     a scala.runtime.BoxedUnit offering `x` as its underlying value.
@@ -35,6 +43,9 @@ object Unit extends AnyValCompanion {
   /** Transform a boxed type into a value type.  Note that this
    *  method is not typesafe: it accepts any Object, but will throw
    *  an exception if the argument is not a scala.runtime.BoxedUnit.
+   *
+   *  This method is not intended for use in source code.
+   *  The result of successfully unboxing a value is `()`.
    *
    *  @param  x   the scala.runtime.BoxedUnit to be unboxed.
    *  @throws     ClassCastException  if the argument is not a scala.runtime.BoxedUnit

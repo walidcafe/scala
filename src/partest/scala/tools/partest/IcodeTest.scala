@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.partest
@@ -21,14 +28,14 @@ abstract class IcodeTest extends DirectTest {
   // override to use source code other than the file being tested.
   def code = testPath.slurp()
 
-  override def extraSettings: String = "-usejavacp -Xprint-icode:" + printIcodeAfterPhase
+  override def extraSettings: String = "-usejavacp -Vprint-icode:" + printIcodeAfterPhase
 
   // Compile, read in all the *.icode files, delete them, and return their contents
   def collectIcode(args: String*): List[String] = {
     compile("-d" :: testOutput.path :: args.toList : _*)
     val icodeFiles = testOutput.files.toList filter (_ hasExtension "icode")
 
-    try     icodeFiles sortBy (_.name) flatMap (f => f.lines.toList)
+    try     icodeFiles sortBy (_.name) flatMap (f => f.lines().toList)
     finally icodeFiles foreach (f => f.delete())
   }
 

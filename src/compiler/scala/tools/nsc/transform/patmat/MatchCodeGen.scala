@@ -1,31 +1,29 @@
-/* NSC -- new Scala compiler
+/*
+ * Scala (https://www.scala-lang.org)
  *
- * Copyright 2011-2013 LAMP/EPFL
- * @author Adriaan Moors
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc.transform.patmat
 
-import scala.language.postfixOps
-
 import scala.tools.nsc.symtab.Flags.SYNTHETIC
-import scala.reflect.internal.util.Position
 
-/** Factory methods used by TreeMakers to make the actual trees.
- *
- * We have two modes in which to emit trees: optimized (the default)
- * and pure (aka "virtualized": match is parametric in its monad).
- */
+/** Factory methods used by TreeMakers to make the actual trees. */
 trait MatchCodeGen extends Interface {
   import global._
-  import definitions._
 
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   // generate actual trees
   ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   trait CodegenCore extends MatchMonadInterface {
     private var ctr = 0
-    def freshName(prefix: String) = {ctr += 1; vpmName.counted(prefix, ctr)}
+    def freshName(prefix: String) = { ctr += 1; newTermName(s"$prefix$ctr") }
 
     // assert(owner ne null); assert(owner ne NoSymbol)
     def freshSym(pos: Position, tp: Type = NoType, prefix: String = "x") =
@@ -55,6 +53,7 @@ trait MatchCodeGen extends Interface {
       def flatMap(prev: Tree, b: Symbol, next: Tree): Tree
       def flatMapCond(cond: Tree, res: Tree, nextBinder: Symbol, next: Tree): Tree
       def flatMapGuard(cond: Tree, next: Tree): Tree
+      def flatMapCondStored(cond: Tree, condSym: Symbol, res: Tree, nextBinder: Symbol, next: Tree): Tree
       def ifThenElseZero(c: Tree, thenp: Tree): Tree = {
         val z = zero
         thenp match {
@@ -73,18 +72,7 @@ trait MatchCodeGen extends Interface {
       def fun(arg: Symbol, body: Tree): Tree     = Function(List(ValDef(arg)), body)
       def tupleSel(binder: Symbol)(i: Int): Tree = (REF(binder) DOT nme.productAccessorName(i)) // make tree that accesses the i'th component of the tuple referenced by binder
       def index(tgt: Tree)(i: Int): Tree         = tgt APPLY (LIT(i))
-
-      // Right now this blindly calls drop on the result of the unapplySeq
-      // unless it verifiably has no drop method (this is the case in particular
-      // with Array.) You should not actually have to write a method called drop
-      // for name-based matching, but this was an expedient route for the basics.
-      def drop(tgt: Tree)(n: Int): Tree = {
-        def callDirect   = fn(tgt, nme.drop, LIT(n))
-        def callRuntime  = Apply(REF(currentRun.runDefinitions.traversableDropMethod), tgt :: LIT(n) :: Nil)
-        def needsRuntime = (tgt.tpe ne null) && (elementTypeFromDrop(tgt.tpe) == NoType)
-
-        if (needsRuntime) callRuntime else callDirect
-      }
+      def drop(tgt: Tree)(n: Int): Tree          = fn(tgt, nme.drop, LIT(n))
 
       // NOTE: checker must be the target of the ==, that's the patmat semantics for ya
       def _equals(checker: Tree, binder: Symbol): Tree = checker MEMBER_== REF(binder)
@@ -112,7 +100,7 @@ trait MatchCodeGen extends Interface {
 
       /** Inline runOrElse and get rid of Option allocations
        *
-       * runOrElse(scrut: scrutTp)(matcher): resTp = matcher(scrut) getOrElse ${catchAll(`scrut`)}
+       * runOrElse(scrut: scrutTp)(matcher): resTp = matcher(scrut) getOrElse \${catchAll(`scrut`)}
        * the matcher's optional result is encoded as a flag, keepGoing, where keepGoing == true encodes result.isEmpty,
        * if keepGoing is false, the result Some(x) of the naive translation is encoded as matchRes == x
        */
@@ -133,11 +121,11 @@ trait MatchCodeGen extends Interface {
         // must compute catchAll after caseLabels (side-effects nextCase)
         // catchAll.isEmpty iff no synthetic default case needed (the (last) user-defined case is a default)
         // if the last user-defined case is a default, it will never jump to the next case; it will go immediately to matchEnd
-        val catchAllDef = matchFailGen map { matchFailGen =>
+        val catchAllDef = matchFailGen.map { matchFailGen =>
           val scrutRef = scrutSym.fold(EmptyTree: Tree)(REF) // for alternatives
 
-          LabelDef(_currCase, Nil, matchEnd APPLY (matchFailGen(scrutRef)))
-        } toList // at most 1 element
+          LabelDef(_currCase, Nil, matchEnd APPLY matchFailGen(scrutRef))
+        }.toList // at most 1 element
 
         // scrutSym == NoSymbol when generating an alternatives matcher
         val scrutDef = scrutSym.fold(List[Tree]())(ValDef(_, scrut) :: Nil) // for alternatives
@@ -159,8 +147,8 @@ trait MatchCodeGen extends Interface {
         // only used to wrap the RHS of a body
         // res: T
         // returns MatchMonad[T]
-        def one(res: Tree): Tree = matchEnd APPLY (res) // a jump to a case label is special-cased in typedApply
-        protected def zero: Tree = nextCase APPLY ()
+        def one(res: Tree): Tree = matchEnd.APPLY(res) // a jump to a case label is special-cased in typedApply
+        protected def zero: Tree = nextCase.APPLY()
 
         // prev: MatchMonad[T]
         // b: T
@@ -172,8 +160,8 @@ trait MatchCodeGen extends Interface {
             ValDef(prevSym, prev),
             // must be isEmpty and get as we don't control the target of the call (prev is an extractor call)
             ifThenElseZero(
-              NOT(prevSym DOT vpmName.isEmpty),
-              Substitution(b, prevSym DOT vpmName.get)(next)
+              NOT(prevSym DOT nme.isEmpty),
+              Substitution(b, prevSym DOT nme.get)(next)
             )
           )
         }
@@ -201,7 +189,7 @@ trait MatchCodeGen extends Interface {
 
         def flatMapCondStored(cond: Tree, condSym: Symbol, res: Tree, nextBinder: Symbol, next: Tree): Tree =
           ifThenElseZero(cond, BLOCK(
-            condSym    === mkTRUE,
+            condSym    === TRUE,
             nextBinder === res,
             next
           ))

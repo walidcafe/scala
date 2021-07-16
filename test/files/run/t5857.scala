@@ -1,9 +1,11 @@
+// scalac: -deprecation
+//
 import scala.math.Ordering.Double.IeeeOrdering
 
 
 object Test {
 
-  def time[U](b: =>U): Long = {
+  def time[U](b: => U): Long = {
     val start = System.currentTimeMillis
     b
     val end = System.currentTimeMillis
@@ -23,7 +25,7 @@ object Test {
     check { assert(descending.max == sz) }
   }
 
-  def check[U](b: =>U): Unit = {
+  def check[U](b: => U): Unit = {
     val exectime = time {
       b
     }

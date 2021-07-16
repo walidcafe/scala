@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package internal
@@ -130,7 +142,7 @@ trait HasFlags {
       while (i <= MaxBitPosition) {
         val flag = Flags.rawFlagPickledOrder(i)
         if ((bits & flag) != 0L) {
-          val s = resolveOverloadedFlag(flag)
+          val s = Flags.flagToString(flag)
           if (s.length > 0) {
             if (sb eq null) sb = new StringBuilder append s
             else if (sb.length == 0) sb append s

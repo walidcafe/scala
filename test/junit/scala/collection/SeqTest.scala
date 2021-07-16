@@ -1,12 +1,11 @@
 package scala.collection
 
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 import org.junit.Assert._
 import org.junit.Test
 
-@RunWith(classOf[JUnit4])
-class SeqTest {
+import scala.tools.testkit.{AllocationTest, CompileTime}
+
+class SeqTest extends AllocationTest {
 
   @Test def `t9936 indexWhere`(): Unit = {
     assertEquals(2, "abcde".indexOf('c', -1))
@@ -25,12 +24,12 @@ class SeqTest {
   }
 
   @Test
-  def hasCorrectDistinct: Unit = {
+  def hasCorrectDistinct(): Unit = {
     assertEquals(Seq(1, 2, 3, 4, 5), Seq(1, 1, 2, 3, 3, 3, 4, 5, 5).distinct)
   }
 
   @Test
-  def hasCorrectDistinctBy: Unit = {
+  def hasCorrectDistinctBy(): Unit = {
     val result = Seq("a", "aa", "aaa", "b", "bb", "bbb", "bbbb", "c").distinctBy(_.length)
 
     assertEquals(Seq("a", "aa", "aaa", "bbbb"), result)
@@ -70,10 +69,49 @@ class SeqTest {
     assertEquals(Seq(1, 3, 5), s1.intersect(s2))
   }
 
+  @deprecated("Tests deprecated API", since="2.13")
   @Test
   def unionAlias(): Unit = {
     val s1 = Seq(1, 2, 3)
     val s2 = Seq(4, 5, 6)
     assertEquals(s1.concat(s2), s1.union(s2))
+  }
+
+  @Test
+  def testLengthIs(): Unit = {
+    val s = Seq(1, 2, 3)
+    assert(s.lengthIs <= 3)
+    assert(s.lengthIs == 3)
+    assert(s.lengthIs >= 3)
+    assert(s.lengthIs <= 4)
+    assert(s.lengthIs < 4)
+    assert(s.lengthIs != 4)
+    assert(s.lengthIs >= 2)
+    assert(s.lengthIs > 2)
+    assert(s.lengthIs != 2)
+  }
+
+  @Test def emptyNonAllocating(): Unit = {
+    nonAllocating(Seq.empty)
+    nonAllocating(Seq())
+  }
+
+  @Test def smallSeqAllocation(): Unit = {
+    if (CompileTime.versionNumberString == "2.13.2") return
+    exactAllocates(Sizes.list * 1, "collection seq  size 1")(Seq("0"))
+    exactAllocates(Sizes.list * 2, "collection seq  size 2")(Seq("0", "1"))
+    exactAllocates(Sizes.list * 3, "collection seq  size 3")(Seq("0", "1", ""))
+    exactAllocates(Sizes.list * 4, "collection seq  size 4")(Seq("0", "1", "2", "3"))
+    exactAllocates(Sizes.list * 5, "collection seq  size 5")(Seq("0", "1", "2", "3", "4"))
+    exactAllocates(Sizes.list * 6, "collection seq  size 6")(Seq("0", "1", "2", "3", "4", "5"))
+    exactAllocates(Sizes.list * 7, "collection seq  size 7")(Seq("0", "1", "2", "3", "4", "5", "6"))
+  }
+
+  @Test def largeSeqAllocation(): Unit = {
+    def expected(n: Int) = Sizes.list * n + Sizes.wrappedRefArray(n) + Sizes.wrappedRefArrayIterator
+    exactAllocates(expected(10) , "collection seq size 10")(
+      Seq("0", "1", "2", "3", "4", "5", "6", "7", "8", "9"))
+    exactAllocates(expected(20), "collection seq size 20")(
+      Seq("0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15", "16", "17", "18", "19"))
   }
 }

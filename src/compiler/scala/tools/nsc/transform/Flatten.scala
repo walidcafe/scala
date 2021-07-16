@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -109,9 +116,9 @@ abstract class Flatten extends InfoTransform {
 
   def transformInfo(sym: Symbol, tp: Type): Type = flattened(tp)
 
-  protected def newTransformer(unit: CompilationUnit): Transformer = new Flattener
+  protected def newTransformer(unit: CompilationUnit): AstTransformer = new Flattener
 
-  class Flattener extends Transformer {
+  class Flattener extends AstTransformer {
     /** Buffers for lifted out classes */
     private val liftedDefs = perRunCaches.newMap[Symbol, ListBuffer[Tree]]()
 

@@ -1,11 +1,20 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.macros
 package runtime
 
-import java.net.URLClassLoader
-
 import scala.reflect.internal.Flags._
 import scala.reflect.runtime.ReflectionUtils
-import scala.reflect.internal.util.AbstractFileClassLoader
 
 trait MacroRuntimes extends JavaReflectionRuntimes {
   self: scala.tools.nsc.typechecker.Analyzer =>
@@ -27,7 +36,7 @@ trait MacroRuntimes extends JavaReflectionRuntimes {
   /** Default implementation of `macroRuntime`.
    *  Can be overridden by analyzer plugins (see AnalyzerPlugins.pluginsMacroRuntime for more details)
    */
-  private val macroRuntimesCache = perRunCaches.newWeakMap[Symbol, MacroRuntime]
+  private val macroRuntimesCache = perRunCaches.newWeakMap[Symbol, MacroRuntime]()
   def standardMacroRuntime(expandee: Tree): MacroRuntime = {
     val macroDef = expandee.symbol
     macroLogVerbose(s"looking for macro implementation: $macroDef")
@@ -42,19 +51,8 @@ trait MacroRuntimes extends JavaReflectionRuntimes {
   /** Macro classloader that is used to resolve and run macro implementations.
    *  Loads classes from from -cp (aka the library classpath).
    *  Is also capable of detecting REPL and reusing its classloader.
-   *
-   *  When -Xmacro-jit is enabled, we sometimes fallback to on-the-fly compilation of macro implementations,
-   *  which compiles implementations into a virtual directory (very much like REPL does) and then conjures
-   *  a classloader mapped to that virtual directory.
    */
-  private lazy val defaultMacroClassloaderCache = {
-    def attemptClose(loader: ClassLoader): Unit = loader match {
-      case u: URLClassLoader => debuglog("Closing macro runtime classloader"); u.close()
-      case afcl: AbstractFileClassLoader => attemptClose(afcl.getParent)
-      case _ => ???
-    }
-    perRunCaches.newGeneric(findMacroClassLoader, attemptClose _)
-  }
+  private lazy val defaultMacroClassloaderCache: () => ClassLoader = perRunCaches.newGeneric(findMacroClassLoader())
   def defaultMacroClassloader: ClassLoader = defaultMacroClassloaderCache()
 
   /** Abstracts away resolution of macro runtimes.

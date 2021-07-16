@@ -1,18 +1,13 @@
 package scala.tools.nsc
 
-import java.nio.file.attribute.BasicFileAttributes
-import java.nio.file.{FileVisitResult, Files, Path, SimpleFileVisitor}
-import java.util
-
 import org.junit.Test
 
-import scala.collection.JavaConverters.asScalaIteratorConverter
-import scala.language.implicitConversions
 import scala.reflect.internal.util.{BatchSourceFile, SourceFile}
-import scala.reflect.io.PlainNioFile
-import scala.tools.nsc.reporters.StoreReporter
 
 class DeterminismTest {
+  private val tester = new DeterminismTester
+  import tester.test
+
   @Test def testLambdaLift(): Unit = {
     def code = List[SourceFile](
       source("a.scala",
@@ -34,7 +29,7 @@ class DeterminismTest {
         |package demo
         |
         |class b {
-        |  def test: Unit = {
+        |  def test(): Unit = {
         |    new a().y
         |  }
         |}
@@ -64,7 +59,7 @@ class DeterminismTest {
         |package demo
         |
         |class b {
-        |  def test: Unit = {
+        |  def test(): Unit = {
         |    new a().y
         |  }
         |}
@@ -100,7 +95,7 @@ class DeterminismTest {
         |package demo
         |
         |class b {
-        |  def test: Unit = {
+        |  def test(): Unit = {
         |    new a().y(null)
         |  }
         |}
@@ -119,12 +114,12 @@ class DeterminismTest {
           |import scala.reflect.macros.blackbox.Context
           |
           |object Macro {
-          |  def impl(c: Context): c.Tree = {
+          |  def impl(c: Context)(): c.Tree = {
           |    import c.universe._
           |    val name = c.freshName("foo")
           |    Block(ValDef(NoMods, TermName(name), tq"_root_.scala.Int", Literal(Constant(0))) :: Nil, Ident(name))
           |  }
-          |  def m: Unit = macro impl
+          |  def m(): Unit = macro impl
           |}
           |
       """.stripMargin)
@@ -134,7 +129,7 @@ class DeterminismTest {
         |package demo
         |
         |class a {
-        |  def test: Unit = {
+        |  def test(): Unit = {
         |    Macro.m
         |  }
         |}
@@ -144,7 +139,7 @@ class DeterminismTest {
         |package demo
         |
         |class b {
-        |  def test: Unit = {
+        |  def test(): Unit = {
         |    Macro.m
         |  }
         |}
@@ -187,75 +182,237 @@ class DeterminismTest {
     test(List(code))
   }
 
+  @Test def testAnnotations1(): Unit = {
+    def code = List[SourceFile](
+      source("a.scala",
+        """
+          |class Annot1(s: String) extends scala.annotation.StaticAnnotation
+          |class Annot2(s: Class[_]) extends scala.annotation.StaticAnnotation
+          |
+      """.stripMargin),
+      source("b.scala",
+        """
+          |@Annot1("foo")
+          |@Annot2(classOf[AnyRef])
+          |class Test
+        """.stripMargin)
+    )
+    test(List(code))
+  }
+
+  @Test def testAnnotationsJava(): Unit = {
+    def code = List[SourceFile](
+      source("Annot1.java",
+        """
+          |import java.lang.annotation.*;
+          |@Retention(RetentionPolicy.RUNTIME)
+          |@Target(ElementType.TYPE)
+          |@Inherited
+          |@interface Annot1 { String value() default ""; }
+          |
+          |@Retention(RetentionPolicy.RUNTIME)
+          |@Target(ElementType.TYPE)
+          |@Inherited
+          |@interface Annot2 { Class value(); }
+          |
+      """.stripMargin),
+      source("b.scala",
+        """
+          |@Annot1("foo") @Annot2(classOf[AnyRef]) class Test
+        """.stripMargin)
+    )
+    test(List(code))
+  }
+
+  @Test def testAnnotationsJavaRepeatable(): Unit = {
+    val javaAnnots = source("Annot1.java",
+      """
+        |import java.lang.annotation.*;
+        |@Repeatable(Annot1.Container.class)
+        |@Retention(RetentionPolicy.RUNTIME)
+        |@Target(ElementType.TYPE)
+        |@interface Annot1 { String value() default "";
+        |
+        |    @Retention(RetentionPolicy.RUNTIME)
+        |    @Target(ElementType.TYPE)
+        |    public static @interface Container {
+        |        Annot1[] value();
+        |    }
+        |}
+        |
+        |@Retention(RetentionPolicy.RUNTIME)
+        |@Target(ElementType.TYPE)
+        |@Inherited
+        |@interface Annot2 { Class value(); }
+      """.stripMargin)
+    def code =
+      List(source("dummy.scala", ""), source("b.scala",
+        """
+          |@Annot1("foo") @Annot2(classOf[String]) @Annot1("bar") class Test
+        """.stripMargin)
+    )
+    test(List(javaAnnots) :: code :: Nil)
+  }
+
+  @Test def testPackedType(): Unit = {
+    def code = List[SourceFile](
+      source("a.scala",
+        """
+          | class C {
+          |   def foo = { object A; object B; object C; object D; object E; object F; def foo[A](a: A) = (a, a); foo((A, B, C, D, E))}
+          | }
+          |
+      """.stripMargin)
+    )
+    test(List(code))
+  }
+
+  @Test def testSyntheticModuleLocationInDecls(): Unit = {
+    def code = List[SourceFile](
+      source("a.scala",
+        """
+          | object A {
+          |   class C(val a: Any) extends AnyVal
+          |   implicit class I1(a: String)
+          |   implicit class IV(val a: String) extends AnyVal
+          |   case class CC()
+          | }
+          |
+      """.stripMargin),
+      source("b.scala",
+        """
+          | object B {
+          |   // Order here reversed from definition order in A
+          |   A.CC()
+          |   A.IV("")
+          |   A.I1("")
+          |   new A.C("")
+          | }
+          |
+      """.stripMargin)
+    )
+    test(List(code))
+  }
+
+  @Test def testAsync(): Unit = {
+    def code = List[SourceFile](
+      source("a.scala",
+        """
+          | object A {
+          |   import scala.tools.nsc.OptionAwait.{optionally, value}
+          |   def test = optionally {
+          |      if (value(Some(true))) {
+          |        var x = ""
+          |        if (value(Some(false))) {
+          |          value(Some(x)) + value(Some(2))
+          |        }
+          |      }
+          |   }
+          | }
+          |
+      """.stripMargin)
+    )
+    test(List(code))
+  }
+
+  @Test def testReferenceToInnerClassMadeNonPrivate(): Unit = {
+    def code = List[SourceFile](
+      source("t.scala",
+             """
+               | trait T {
+               |   private class Inner
+               |   class OtherInner { new Inner } // triggers makeNotPrivate of Inner
+               |   private val v: Option[Inner] = None
+               | }
+        """.stripMargin),
+      source("c.scala","""class C extends T""")
+      )
+    test(List(code))
+  }
+
+  @Test def testPackageObjectUserLand(): Unit = {
+    def code = List[SourceFile](
+      source("package.scala", "package userland; object `package` { type Throwy = java.lang.Throwable }"),
+      source("th.scala", "package userland; class th[T <: Throwy](cause: T = null)")
+      )
+    test(code :: Nil)
+  }
+
   def source(name: String, code: String): SourceFile = new BatchSourceFile(name, code)
-  private def test(groups: List[List[SourceFile]]): Unit = {
-    val referenceOutput = Files.createTempDirectory("reference")
+}
 
-    def compile(output: Path, files: List[SourceFile]): Unit = {
-      val g = new Global(new Settings)
-      g.settings.usejavacp.value = true
-      g.settings.classpath.value = output.toAbsolutePath.toString
-      g.settings.outputDirs.setSingleOutput(output.toString)
-      val storeReporter = new StoreReporter
-      g.reporter = storeReporter
-      import g._
-      val r = new Run
-      // println("scalac " + files.mkString(" "))
-      r.compileSources(files)
-      assert(!storeReporter.hasErrors, storeReporter.infos.mkString("\n"))
-    }
 
-    for (group <- groups.init) {
-      compile(referenceOutput, group)
-    }
-    compile(referenceOutput, groups.last)
 
-    class CopyVisitor(src: Path, dest: Path) extends SimpleFileVisitor[Path] {
-      override def preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult = {
-        Files.createDirectories(dest.resolve(src.relativize(dir)))
-        super.preVisitDirectory(dir, attrs)
+import scala.annotation.compileTimeOnly
+import scala.language.experimental.macros
+import scala.reflect.macros.blackbox
+
+object OptionAwait {
+  def optionally[T](body: T): Option[T] = macro impl
+  @compileTimeOnly("[async] `value` must be enclosed in `optionally`")
+  def value[T](option: Option[T]): T = ???
+  def impl(c: blackbox.Context)(body: c.Tree): c.Tree = {
+    import c.universe._
+    val awaitSym = typeOf[OptionAwait.type].decl(TermName("value"))
+    def mark(t: DefDef): Tree = c.internal.markForAsyncTransform(c.internal.enclosingOwner, t, awaitSym, Map.empty)
+    val name = TypeName("stateMachine$async")
+    q"""
+      final class $name extends _root_.scala.tools.nsc.OptionStateMachine {
+        ${mark(q"""override def apply(tr$$async: _root_.scala.Option[_root_.scala.AnyRef]) = ${body}""")}
       }
-      override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult = {
-        Files.copy(file, dest.resolve(src.relativize(file)))
-        super.visitFile(file, attrs)
-      }
-    }
-    for (permutation <- permutationsWithSubsets(groups.last)) {
-      val recompileOutput = Files.createTempDirectory("recompileOutput")
-      copyRecursive(referenceOutput, recompileOutput)
-      compile(recompileOutput, permutation)
-      assert(diff(referenceOutput, recompileOutput), s"Difference detected between recompiling $permutation Run:\njardiff -r $referenceOutput $recompileOutput\n")
-      deleteRecursive(recompileOutput)
-    }
-    deleteRecursive(referenceOutput)
-
-  }
-  def permutationsWithSubsets[A](as: List[A]): List[List[A]] =
-    as.permutations.toList.flatMap(_.inits.filter(_.nonEmpty)).distinct
-
-  private def diff(dir1: Path, dir2: Path): Boolean = {
-    def allFiles(dir: Path) = Files.walk(dir).iterator().asScala.map(x => (dir.relativize(x), x)).toList.filter(_._2.getFileName.toString.endsWith(".class")).sortBy(_._1.toString)
-
-    val dir1Files = allFiles(dir1)
-    val dir2Files = allFiles(dir2)
-    val identical = dir1Files.corresponds(dir2Files) {
-      case ((rel1, file1), (rel2, file2)) =>
-        rel1 == rel2 && java.util.Arrays.equals(Files.readAllBytes(file1), Files.readAllBytes(file2))
-    }
-    identical
-  }
-  private def deleteRecursive(f: Path) = new PlainNioFile(f).delete()
-  private def copyRecursive(src: Path, dest: Path): Unit = {
-    class CopyVisitor(src: Path, dest: Path) extends SimpleFileVisitor[Path] {
-      override def preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult = {
-        Files.createDirectories(dest.resolve(src.relativize(dir)))
-        super.preVisitDirectory(dir, attrs)
-      }
-      override def visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult = {
-        Files.copy(file, dest.resolve(src.relativize(file)))
-        super.visitFile(file, attrs)
-      }
-    }
-    Files.walkFileTree(src, new CopyVisitor(src, dest))
+      new $name().start().asInstanceOf[${c.macroApplication.tpe}]
+    """
   }
 }
+
+trait AsyncStateMachine[F, R] {
+  /** Assign `i` to the state variable */
+  protected def state_=(i: Int): Unit
+  /** Retrieve the current value of the state variable */
+  protected def state: Int
+  /** Complete the state machine with the given failure. */
+  protected def completeFailure(t: Throwable): Unit
+  /** Complete the state machine with the given value. */
+  protected def completeSuccess(value: AnyRef): Unit
+  /** Register the state machine as a completion callback of the given future. */
+  protected def onComplete(f: F): Unit
+  /** Extract the result of the given future if it is complete, or `null` if it is incomplete. */
+  protected def getCompleted(f: F): R
+  /**
+   * Extract the success value of the given future. If the state machine detects a failure it may
+   * complete the async block and return `this` as a sentinel value to indicate that the caller
+   * (the state machine dispatch loop) should immediately exit.
+   */
+  protected def tryGet(tr: R): AnyRef
+}
+
+
+abstract class OptionStateMachine extends AsyncStateMachine[Option[AnyRef], Option[AnyRef]] {
+  var result$async: Option[AnyRef] = _
+
+  // FSM translated method
+  def apply(tr$async: Option[AnyRef]): Unit
+
+  // Required methods
+  private[this] var state$async: Int = 0
+  protected def state: Int = state$async
+  protected def state_=(s: Int): Unit = state$async = s
+  protected def completeFailure(t: Throwable): Unit = throw t
+  protected def completeSuccess(value: AnyRef): Unit = result$async = Some(value)
+  protected def onComplete(f: Option[AnyRef]): Unit = ???
+  protected def getCompleted(f: Option[AnyRef]): Option[AnyRef] = {
+    f
+  }
+  protected def tryGet(tr: Option[AnyRef]): AnyRef = tr match {
+    case Some(value) =>
+      value.asInstanceOf[AnyRef]
+    case None =>
+      result$async = None
+      this // sentinel value to indicate the dispatch loop should exit.
+  }
+  def start(): Option[AnyRef] = {
+    apply(None)
+    result$async
+  }
+}
+

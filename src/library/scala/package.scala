@@ -1,19 +1,25 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 import scala.annotation.migration
-
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
-
 
 /**
  * Core Scala types. They are always available without an explicit import.
  * @contentDiagram hideNodes "scala.Serializable"
  */
 package object scala {
+  type Cloneable    = java.lang.Cloneable
+  type Serializable = java.io.Serializable
+
   type Throwable = java.lang.Throwable
   type Exception = java.lang.Exception
   type Error     = java.lang.Error
@@ -68,7 +74,7 @@ package object scala {
 
   val Nil = scala.collection.immutable.Nil
 
-  type ::[A] = scala.collection.immutable.::[A]
+  type ::[+A] = scala.collection.immutable.::[A]
   val :: = scala.collection.immutable.::
 
   val +: = scala.collection.+:
@@ -86,6 +92,7 @@ package object scala {
   object #:: {
     def unapply[A](s: LazyList[A]): Option[(A, LazyList[A])] =
       if (s.nonEmpty) Some((s.head, s.tail)) else None
+    @deprecated("Prefer LazyList instead", since = "2.13.0")
     def unapply[A](s: Stream[A]): Option[(A, Stream[A])] =
       if (s.nonEmpty) Some((s.head, s.tail)) else None
   }

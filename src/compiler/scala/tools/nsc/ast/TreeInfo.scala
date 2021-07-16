@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -11,7 +18,6 @@ import scala.reflect.internal.MacroAnnotionTreeInfo
 /** This class ...
  *
  *  @author Martin Odersky
- *  @version 1.0
  */
 abstract class TreeInfo extends scala.reflect.internal.TreeInfo with MacroAnnotionTreeInfo {
   val global: Global
@@ -88,7 +94,7 @@ abstract class TreeInfo extends scala.reflect.internal.TreeInfo with MacroAnnoti
     case _ => super.isInterfaceMember(tree)
   }
 
-  override def isConstructorWithDefault(t: Tree) = t match {
+  override def isConstructorWithDefault(t: Tree): Boolean = t match {
     case DocDef(_, definition) => isConstructorWithDefault(definition)
     case _ => super.isConstructorWithDefault(t)
   }
@@ -112,7 +118,7 @@ abstract class TreeInfo extends scala.reflect.internal.TreeInfo with MacroAnnoti
     def unapply(tree: Apply) = tree match {
       case Apply(Select(New(tpt), name), arg :: Nil) if tpt.tpe != null && tpt.tpe.typeSymbol == definitions.ArrayClass =>
         tpt.tpe match {
-          case erasure.GenericArray(level, componentType) => Some(level, componentType, arg)
+          case erasure.GenericArray(level, componentType) => Some((level, componentType, arg))
           case _ => None
         }
       case _ => None

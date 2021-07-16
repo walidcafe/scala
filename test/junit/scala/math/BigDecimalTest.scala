@@ -1,12 +1,9 @@
 package scala.math
 
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 import org.junit.Test
 import java.math.{BigDecimal => BD, MathContext => MC}
 
 /* Tests various maps by making sure they all agree on the same answers. */
-@RunWith(classOf[JUnit4])
 class BigDecimalTest {
   
   // Motivated by scala/bug#6173: BigDecimal#isWhole implementation is very heap intensive
@@ -121,7 +118,7 @@ class BigDecimalTest {
   def consistentRoundingTest(): Unit = {
     val mc6 = new MC(6)
     val sameRounding = List(
-      List(
+      List[Any](
         123457000,
         123457000L,
         123457e3,
@@ -136,7 +133,7 @@ class BigDecimalTest {
         BigDecimal.decimal(123456789d, mc6),
         BigDecimal.decimal(new BD("123456789"), mc6)
       ),
-      List(
+      List[Any](
         123456789,
         123456789L,
         123456789d,
@@ -180,7 +177,7 @@ class BigDecimalTest {
   def churnRepresentationTest(): Unit = {
     val rn = new scala.util.Random(42)
     for (i <- 1 to 1000) {
-      val d = rn.nextDouble
+      val d = rn.nextDouble()
       assert({
         BigDecimal.decimal(d).isDecimalDouble &&
         BigDecimal.binary(d).isBinaryDouble &&
@@ -188,7 +185,7 @@ class BigDecimalTest {
       }, s"At least one wrong BigDecimal representation for $d")
     }
     for (i <- 1 to 1000) {
-      val f = rn.nextFloat
+      val f = rn.nextFloat()
       assert({
         BigDecimal.decimal(f).isDecimalFloat &&
         BigDecimal.binary(f).isBinaryFloat &&
@@ -259,8 +256,64 @@ class BigDecimalTest {
     testRounded()
   }
 
+  // Motivated by scala/bug#10882: Operators for BigDecimal don't use value of mc (MathContext)
+  @Test
+  def testUsesMathContextInOperators(): Unit = {
+    def isAE[A](a: => A): Boolean = try { a; false } catch { case e: ArithmeticException => true }
+
+    val bd128 = BigDecimal("4.2e1000", MC.DECIMAL128)
+    assert(bd128 + 10 == bd128)
+    assert(bd128 - 10 == bd128)
+    assert(bd128 + BigDecimal("1e100", MC.UNLIMITED) == bd128)
+    assert(bd128 - BigDecimal("1e100", MC.UNLIMITED) == bd128)
+    assert(bd128.quot(BigDecimal("1e100", MC.UNLIMITED)) == BigDecimal("4.2e900", MC.DECIMAL128))
+    assert(isAE(bd128.quot(BigDecimal("1e100", MC.UNLIMITED) + 1)))
+    assert(isAE(bd128 % (BigDecimal("1e100", MC.UNLIMITED) + 1)))
+    assert(isAE(bd128 /% (BigDecimal("1e100", MC.UNLIMITED) + 1)))
+
+    val bdUnlimited = BigDecimal("4.2e1000", MC.UNLIMITED)
+    assert(bdUnlimited + 10 > bdUnlimited)
+    assert(bdUnlimited - 10 < bdUnlimited)
+    assert(bdUnlimited + BigDecimal("1e100", MC.DECIMAL128) > bdUnlimited)
+    assert(bdUnlimited - BigDecimal("1e100", MC.DECIMAL128) < bdUnlimited)
+    assert(bdUnlimited.quot(BigDecimal("1e100", MC.DECIMAL128)) == BigDecimal("4.2e900", MC.UNLIMITED))
+  }
+
   @Test
   def testIsComparable(): Unit = {
     assert(BigDecimal(0.1).isInstanceOf[java.lang.Comparable[_]])
+  }
+
+  
+
+  @Test
+  def testBigDecimalSumInList(): Unit = {
+
+    val bds = List(
+      BigDecimal("1000000000000000000000000.1", MC.UNLIMITED),
+      BigDecimal("9.0000000000000000000000009", MC.UNLIMITED))
+    assert(bds.sum == BigDecimal("1000000000000000000000009.1000000000000000000000009", MC.UNLIMITED))
+
+  }
+
+  @Test
+  def testBigDecimalProductList(): Unit = {
+    val bds = List(
+      BigDecimal("1000000000000000000000000.1", MC.UNLIMITED),
+      BigDecimal("9.00000000000000000000000091", MC.UNLIMITED))
+
+    val prod = bds.foldLeft(BigDecimal(1, MC.UNLIMITED))(_ * _)
+    assert(prod == BigDecimal("9000000000000000000000001.810000000000000000000000091", MC.UNLIMITED))
+
+    assert(bds.product == prod)
+  }
+
+  @Test
+  def testImplicitBigDecimalConversionJavaToScalaHandlesNull(): Unit = {
+    val bdNull: BigDecimal = (null: java.math.BigDecimal): BigDecimal
+    assert(bdNull == null)
+
+    val bdValue: BigDecimal = (BD.ONE: java.math.BigDecimal): BigDecimal
+    assert(bdValue.bigDecimal == BD.ONE)
   }
 }

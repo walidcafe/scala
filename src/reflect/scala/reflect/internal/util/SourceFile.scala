@@ -1,13 +1,19 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2018 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect.internal.util
 
-import scala.reflect.io.{ AbstractFile, VirtualFile }
-import scala.collection.mutable.ArrayBuffer
+import scala.reflect.io.{AbstractFile, VirtualFile}
 import scala.annotation.tailrec
 import java.util.regex.Pattern
 import java.io.IOException
@@ -23,7 +29,7 @@ abstract class SourceFile {
   def length : Int
   def lineCount: Int
   def position(offset: Int): Position = {
-    assert(offset < length, file + ": " + offset + " >= " + length)
+    assert(offset < length, file.toString + ": " + offset + " >= " + length)
     Position.offset(this, offset)
   }
 
@@ -55,6 +61,8 @@ abstract class SourceFile {
     * Bounds are checked and clipped as necessary.
     */
   def lines(start: Int = 0, end: Int = lineCount): Iterator[String]
+
+  final def isJava: Boolean = file.name endsWith ".java"
 }
 
 /** An object representing a missing source file.
@@ -164,12 +172,29 @@ class BatchSourceFile(val file : AbstractFile, content0: Array[Char]) extends So
   }
 
   private lazy val lineIndices: Array[Int] = {
+    def countEOL(cs: Array[Char]): Int = {
+      var i, c = 0
+      while (i < cs.length) {
+        if (isAtEndOfLine(i))
+          c += 1
+        i += 1
+      }
+      c
+    }
     def calculateLineIndices(cs: Array[Char]) = {
-      val buf = new ArrayBuffer[Int]
-      buf += 0
-      for (i <- 0 until cs.length) if (isAtEndOfLine(i)) buf += i + 1
-      buf += cs.length // sentinel, so that findLine below works smoother
-      buf.toArray
+      // count EOL characters in cs
+      val res = new Array[Int](countEOL(cs) + 2)
+      res(0) = 0
+      res(res.length - 1) = cs.length  // sentinel, so that findLine below works smoother
+      var i, j = 0
+      while(i < cs.length && j < res.length - 1) {
+        if (isAtEndOfLine(i)) {
+          j += 1
+          res(j) = i + 1
+        }
+        i += 1
+      }
+      res
     }
     calculateLineIndices(content)
   }
@@ -186,6 +211,7 @@ class BatchSourceFile(val file : AbstractFile, content0: Array[Char]) extends So
    */
   def offsetToLine(offset: Int): Int = {
     val lines = lineIndices
+    @tailrec
     def findLine(lo: Int, hi: Int, mid: Int): Int = (
       if (mid < lo || hi < mid) mid // minimal sanity check - as written this easily went into infinite loopyland
       else if (offset < lines(mid)) findLine(lo, mid - 1, (lo + mid - 1) / 2)

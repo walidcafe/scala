@@ -1,11 +1,20 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.collection
 
 
 /** Buffered iterators are iterators which provide a method `head`
  *  that inspects the next element without discarding it.
- *
- *  @author  Martin Odersky
- *  @since   2.8
  */
 trait BufferedIterator[+A] extends Iterator[A] {
 

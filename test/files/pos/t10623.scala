@@ -1,5 +1,6 @@
 
-import language.higherKinds
+// scalac: -Xfatal-warnings -Xlint:unused
+//
 
 object `package` {
   def refl[A]: A Is A = ???

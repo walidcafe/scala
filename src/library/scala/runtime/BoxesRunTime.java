@@ -1,12 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2006-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
-
-
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.runtime;
 
@@ -21,11 +23,7 @@ import scala.math.ScalaNumber;
   *   - The generalised comparison method to be used when an object may
   *     be a boxed value.
   *   - Standard value operators for boxed number and quasi-number values.
-  *
-  * @author  Gilles Dubochet
-  * @author  Martin Odersky
-  * @contributor Stepan Koltsov
-  * @version 2.0 */
+  */
 public final class BoxesRunTime
 {
     private static final int CHAR = 0, /* BYTE = 1, SHORT = 2, */ INT = 3, LONG = 4, FLOAT = 5, DOUBLE = 6, OTHER = 7;

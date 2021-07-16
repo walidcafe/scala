@@ -1,8 +1,9 @@
 package scala.collection
 
 import org.junit.Test
-import scala.collection.mutable.{ArrayBuffer, Builder, Growable}
 
+import scala.annotation.unused
+import scala.collection.mutable.Builder
 import scala.math.Ordering
 
 class BuildFromTest {
@@ -14,7 +15,7 @@ class BuildFromTest {
       case _ => None
     }.map(_.result())
   def optionSequence1[CC[X] <: SortedSet[X] with SortedSetOps[X, CC, CC[X]], A : Ordering](xs: CC[Option[A]]): Option[CC[A]] =
-    xs.foldLeft[Option[Builder[A, CC[A]]]](Some(xs.sortedIterableFactory.newBuilder[A])) {
+    xs.foldLeft[Option[Builder[A, CC[A]]]](Some((xs: SortedSetOps[Option[A], CC, CC[Option[A]]] /*TODO why is this ascription needed? introduced with #7929*/).sortedIterableFactory.newBuilder[A])) {
       case (Some(builder), Some(a)) => Some(builder += a)
       case _ => None
     }.map(_.result())
@@ -38,61 +39,61 @@ class BuildFromTest {
       case (Right(builder), Right(b)) => Right(builder += b)
       case (Left(a)       ,        _) => Left(a)
       case (_             ,  Left(a)) => Left(a)
-    }.right.map(_.result())
+    }.map(_.result())
 
   @Test
-  def optionSequence1Test: Unit = {
+  def optionSequence1Test(): Unit = {
     val xs1 = immutable.List(Some(1), None, Some(2))
     val o1 = optionSequence1(xs1)
-    val o1t: Option[immutable.List[Int]] = o1
+    @unused val o1t: Option[immutable.List[Int]] = o1
 
     val xs2: immutable.TreeSet[Option[String]] = immutable.TreeSet(Some("foo"), Some("bar"), None)
     val o2 = optionSequence1(xs2)
-    val o2t: Option[immutable.Set[String]] = o2
+    @unused val o2t: Option[immutable.Set[String]] = o2
 
     val xs4 = immutable.List[Option[(Int, String)]](Some((1 -> "a")), Some((2 -> "b")))
     val o4 = optionSequence1(xs4)
-    val o4t: Option[immutable.List[(Int, String)]] = o4
-    val o5: Option[immutable.TreeMap[Int, String]] = o4.map(_.to(immutable.TreeMap))
+    @unused val o4t: Option[immutable.List[(Int, String)]] = o4
+    @unused val o5: Option[immutable.TreeMap[Int, String]] = o4.map(_.to(immutable.TreeMap))
   }
 
   @Test
-  def optionSequence2Test: Unit = {
+  def optionSequence2Test(): Unit = {
     val xs1 = immutable.List(Some(1), None, Some(2))
     val o1 = optionSequence2(xs1)
-    val o1t: Option[immutable.List[Int]] = o1
+    @unused val o1t: Option[immutable.List[Int]] = o1
 
     val xs2 = immutable.TreeSet(Some("foo"), Some("bar"), None)
     val o2 = optionSequence2(xs2)
-    val o2t: Option[immutable.TreeSet[String]] = o2
+    @unused val o2t: Option[immutable.TreeSet[String]] = o2
 
     // Breakout-like use case from https://github.com/scala/scala/pull/5233:
     val xs4 = immutable.List[Option[(Int, String)]](Some((1 -> "a")), Some((2 -> "b")))
     val o4 = optionSequence2(xs4)(immutable.TreeMap) // same syntax as in `.to`
-    val o4t: Option[immutable.TreeMap[Int, String]] = o4
+    @unused val o4t: Option[immutable.TreeMap[Int, String]] = o4
   }
 
   @Test
-  def optionSequence3Test: Unit = {
+  def optionSequence3Test(): Unit = {
     val xs1 = immutable.List(Some(1), None, Some(2))
     val o1 = optionSequence3(xs1)
-    val o1t: Option[immutable.List[Int]] = o1
+    @unused val o1t: Option[immutable.List[Int]] = o1
 
     val xs2 = immutable.TreeSet(Some("foo"), Some("bar"), None)
     val o2 = optionSequence3(xs2)
-    val o2t: Option[immutable.TreeSet[String]] = o2
+    @unused val o2t: Option[immutable.TreeSet[String]] = o2
 
     // Breakout-like use case from https://github.com/scala/scala/pull/5233:
     val xs4 = immutable.List[Option[(Int, String)]](Some((1 -> "a")), Some((2 -> "b")))
     val o4 = optionSequence3(xs4)(immutable.TreeMap) // same syntax as in `.to`
-    val o4t: Option[immutable.TreeMap[Int, String]] = o4
+    @unused val o4t: Option[immutable.TreeMap[Int, String]] = o4
   }
 
   @Test
-  def eitherSequenceTest: Unit = {
+  def eitherSequenceTest(): Unit = {
     val xs3 = mutable.ListBuffer(Right("foo"), Left(0), Right("bar"))
     val e1 = eitherSequence(xs3)
-    val e1t: Either[Int, mutable.ListBuffer[String]] = e1
+    @unused val e1t: Either[Int, mutable.ListBuffer[String]] = e1
   }
 
   // From https://github.com/scala/collection-strawman/issues/44
@@ -105,7 +106,7 @@ class BuildFromTest {
     builder.result()
   }
 
-  def mapSplit[A, B, C, ToL, ToR](coll: Iterable[A])(f: A => Either[B, C])
+  def partitionMap[A, B, C, ToL, ToR](coll: Iterable[A])(f: A => Either[B, C])
               (implicit bfLeft:  BuildFrom[coll.type, B, ToL], bfRight: BuildFrom[coll.type, C, ToR]): (ToL, ToR) = {
     val left = bfLeft.newBuilder(coll)
     val right = bfRight.newBuilder(coll)
@@ -116,35 +117,43 @@ class BuildFromTest {
 
 
   @Test
-  def flatCollectTest: Unit = {
+  def flatCollectTest(): Unit = {
     val xs1 = immutable.List(1, 2, 3)
     val xs2 = flatCollect(xs1) { case 2 => mutable.ArrayBuffer("foo", "bar") }
-    val xs3: immutable.List[String] = xs2
+    @unused val xs3: immutable.List[String] = xs2
 
     val xs4 = immutable.TreeMap((1, "1"), (2, "2"))
     val xs5 = flatCollect(xs4) { case (2, v) => immutable.List((v, v)) }
-    val xs6: immutable.TreeMap[String, String] = xs5
+    @unused val xs6: immutable.TreeMap[String, String] = xs5
 
     val xs7 = immutable.HashMap((1, "1"), (2, "2"))
     val xs8 = flatCollect(xs7) { case (2, v) => immutable.List((v, v)) }
-    val xs9: immutable.HashMap[String, String] = xs8
+    @unused val xs9: immutable.HashMap[String, String] = xs8
 
     val xs10 = immutable.TreeSet(1, 2, 3)
     val xs11 = flatCollect(xs10) { case 2 => immutable.List("foo", "bar") }
-    val xs12: immutable.TreeSet[String] = xs11
+    @unused val xs12: immutable.TreeSet[String] = xs11
   }
 
   @Test
-  def mapSplitTest: Unit = {
+  def partitionMapTest(): Unit = {
     val xs1 = immutable.List(1, 2, 3)
-    val (xs2, xs3) = mapSplit(xs1)(x => if (x % 2 == 0) Left(x) else Right(x.toString))
-    val xs4: immutable.List[Int] = xs2
-    val xs5: immutable.List[String] = xs3
+    val (xs2, xs3) = partitionMap(xs1)(x => if (x % 2 == 0) Left(x) else Right(x.toString))
+    @unused val xs4: immutable.List[Int] = xs2
+    @unused val xs5: immutable.List[String] = xs3
 
     val xs6 = immutable.TreeMap((1, "1"), (2, "2"))
-    val (xs7, xs8) = mapSplit(xs6) { case (k, v) => Left[(String, Int), (Int, Boolean)]((v, k)) }
-    val xs9: immutable.TreeMap[String, Int] = xs7
-    val xs10: immutable.TreeMap[Int, Boolean] = xs8
+    val (xs7, xs8) = partitionMap(xs6) { case (k, v) => Left[(String, Int), (Int, Boolean)]((v, k)) }
+    @unused val xs9: immutable.TreeMap[String, Int] = xs7
+    @unused val xs10: immutable.TreeMap[Int, Boolean] = xs8
+  }
+
+  @Test
+  def buildFromToFactory(): Unit = {
+    val bf = implicitly[BuildFrom[Iterable[Int], Int, Iterable[Int]]]
+    val f = bf.toFactory(Set.empty[Int])
+    val bs = f.fromSpecific(Iterator(1, 2, 3))
+    bs.asInstanceOf[Set[Int]]: Unit
   }
 
   implicitly[BuildFrom[String, Char, String]]
@@ -152,10 +161,19 @@ class BuildFromTest {
   implicitly[BuildFrom[BitSet, Int, BitSet]]
   implicitly[BuildFrom[immutable.BitSet, Int, immutable.BitSet]]
   implicitly[BuildFrom[mutable.BitSet, Int, mutable.BitSet]]
+  implicitly[BuildFrom[immutable.IntMap[_], (Int, String), immutable.IntMap[String]]]
+  implicitly[BuildFrom[mutable.LongMap[_], (Long, String), mutable.LongMap[String]]]
+  implicitly[BuildFrom[immutable.LongMap[_], (Long, String), immutable.LongMap[String]]]
+  implicitly[BuildFrom[mutable.AnyRefMap[_ <: AnyRef, _], (String, String), mutable.AnyRefMap[String, String]]]
+  implicitly[BuildFrom[mutable.AnyRefMap[String, String], (String, String), _]]
 
   // Check that collection companions can implicitly be converted to a `BuildFrom` instance
   Iterable: BuildFrom[_, Int, Iterable[Int]]
   Map: BuildFrom[_, (Int, String), Map[Int, String]]
   SortedSet: BuildFrom[_, Int, SortedSet[Int]]
   SortedMap: BuildFrom[_, (Int, String), SortedMap[Int, String]]
+  immutable.IntMap: BuildFrom[_, (Int, String), immutable.IntMap[String]]
+  immutable.LongMap: BuildFrom[_, (Long, String), immutable.LongMap[String]]
+  mutable.LongMap: BuildFrom[_, (Long, String), mutable.LongMap[String]]
+  mutable.AnyRefMap: BuildFrom[_, (String, String), mutable.AnyRefMap[String, String]]
 }

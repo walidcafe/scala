@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://www.scala-lang.org/           **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -18,10 +22,8 @@ package scala
  *  }}}
  *  '''Note:''' forwarding methods in this way will most likely create
  *  an asymmetric equals method, which is not generally recommended.
- *
- *  @author  Matthias Zenger
- *  @since   1.0
  */
+@deprecated("Explicitly override hashCode, equals and toString instead.", "2.13.0")
 trait Proxy extends Any {
   def self: Any
 
@@ -35,9 +37,11 @@ trait Proxy extends Any {
   override def toString = "" + self
 }
 
+@deprecated("All members of this object are deprecated.", "2.13.0")
 object Proxy {
   /** A proxy which exposes the type it is proxying for via a type parameter.
    */
+  @deprecated("Explicitly override hashCode, equals and toString instead.", "2.13.0")
   trait Typed[T] extends Any with Proxy {
     def self: T
   }

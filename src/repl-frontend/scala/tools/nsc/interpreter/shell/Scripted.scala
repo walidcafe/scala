@@ -1,21 +1,30 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2017 LAMP/EPFL and Lightbend, Inc.
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.nsc.interpreter.shell
 
-import scala.language.dynamics
-import scala.beans.BeanProperty
-import javax.script._
 import java.io.{Closeable, OutputStream, PrintWriter, Reader}
 import java.util.Arrays.asList
 
-import scala.collection.JavaConverters._
+import javax.script._
+
+import scala.beans.BeanProperty
+import scala.jdk.CollectionConverters._
 import scala.reflect.internal.util.Position
-import scala.util.Properties.versionString
 import scala.tools.nsc.Settings
-import scala.tools.nsc.util.stringFromReader
-import scala.tools.nsc.interpreter.{ImportContextPreamble, ScriptedInterpreter, ScriptedRepl}
 import scala.tools.nsc.interpreter.Results.Incomplete
+import scala.tools.nsc.interpreter.{ImportContextPreamble, ScriptedInterpreter, ScriptedRepl}
+import scala.tools.nsc.util.stringFromReader
+import scala.util.Properties.versionString
 
 /* A REPL adaptor for the javax.script API. */
 class Scripted(@BeanProperty val factory: ScriptEngineFactory, settings: Settings, out: PrintWriter)
@@ -24,7 +33,7 @@ class Scripted(@BeanProperty val factory: ScriptEngineFactory, settings: Setting
   def createBindings: Bindings = new SimpleBindings
 
   // dynamic context bound under this name
-  final val ctx = "$ctx"
+  final val ctx = s"$$ctx"
 
   // the underlying interpreter, tweaked to handle dynamic bindings
   val intp: ScriptedRepl = new ScriptedInterpreter(settings, new SaveFirstErrorReporter(settings, out), importContextPreamble)
@@ -205,7 +214,7 @@ class Scripted(@BeanProperty val factory: ScriptEngineFactory, settings: Setting
     override def eval(context: ScriptContext) =
       withScriptContext(context) {
         if (!first)
-          intp.addBackReferences(req) fold (
+          intp.addBackReferences(req).fold(
             { line => Scripted.this.eval(line); null }, // we're evaluating after recording the request instead of other way around, but that should be ok, right?
             evalAndRecord(context, _))
         else try evalAndRecord(context, req) finally first = false
@@ -273,9 +282,9 @@ object Scripted {
 }
 
 import java.io.Writer
-import java.nio.{ ByteBuffer, CharBuffer }
-import java.nio.charset.{ Charset, CodingErrorAction }
-import CodingErrorAction.{ REPLACE => Replace }
+import java.nio.charset.Charset
+import java.nio.charset.CodingErrorAction.{REPLACE => Replace}
+import java.nio.{ByteBuffer, CharBuffer}
 
 /* An OutputStream that decodes bytes and flushes to the writer. */
 class WriterOutputStream(writer: Writer) extends OutputStream {
@@ -289,7 +298,7 @@ class WriterOutputStream(writer: Writer) extends OutputStream {
   override def write(b: Int): Unit = {
     byteBuffer.put(b.toByte)
     byteBuffer.flip()
-    val result = decoder.decode(byteBuffer, charBuffer, /*eoi=*/ false)
+    decoder.decode(byteBuffer, charBuffer, /*eoi=*/ false)
     if (byteBuffer.remaining == 0) byteBuffer.clear()
     if (charBuffer.position() > 0) {
       charBuffer.flip()
@@ -304,19 +313,14 @@ class WriterOutputStream(writer: Writer) extends OutputStream {
   override def toString = charBuffer.toString
 }
 
-
 private class SaveFirstErrorReporter(settings: Settings, out: PrintWriter) extends ReplReporterImpl(settings, out) {
-  override def display(pos: Position, msg: String, severity: Severity): Unit = {}
-
   private var _firstError: Option[(Position, String)] = None
   def firstError = _firstError
 
-  override def error(pos: Position, msg: String): Unit = {
-    if (_firstError.isEmpty) _firstError = Some((pos, msg))
-    super.error(pos, msg)
-  }
+  override def doReport(pos: Position, msg: String, severity: Severity): Unit =
+    if (severity == ERROR && _firstError.isEmpty) _firstError = Some((pos, msg))
 
   override def reset() = { super.reset(); _firstError = None }
 
-  override def printResult(result: Either[String, String]): Unit = {}
+  override def printResult(result: Either[String, String]): Unit = ()
 }

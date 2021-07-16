@@ -1,7 +1,15 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Martin odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.nsc
 package transform
 
@@ -16,7 +24,7 @@ trait PostErasure extends InfoTransform with TypingTransformers with scala.refle
 
   val phaseName: String = "posterasure"
 
-  def newTransformer(unit: CompilationUnit): Transformer = new PostErasureTransformer(unit)
+  def newTransformer(unit: CompilationUnit): AstTransformer = new PostErasureTransformer(unit)
   override def changesBaseClasses = false
 
   class PostErasureTransformer(unit: CompilationUnit) extends TypingTransformer(unit) {

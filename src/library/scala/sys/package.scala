@@ -1,22 +1,23 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
-import scala.collection.immutable
-import scala.collection.JavaConverters._
+import scala.collection.immutable.ArraySeq
+import scala.jdk.CollectionConverters._
 
 /** The package object `scala.sys` contains methods for reading
  *  and altering core aspects of the virtual machine as well as the
  *  world outside of it.
- *
- *  @author Paul Phillips
- *  @since   2.9
  */
 package object sys {
   /** Throw a new RuntimeException with the supplied message.
@@ -58,9 +59,16 @@ package object sys {
 
   /** An immutable Map representing the current system environment.
    *
+   *  If lookup fails, use `System.getenv(_)` for case-insensitive lookup
+   *  on a certain platform. If that also fails, throw `NoSuchElementException`.
+   *
    *  @return   a Map containing the system environment variables.
    */
-  def env: immutable.Map[String, String] = immutable.Map.from(System.getenv().asScala)
+  def env: Map[String, String] = Map.from(System.getenv().asScala).withDefault { v =>
+    val s = System.getenv(v)
+    if (s == null) throw new NoSuchElementException(v)
+    s
+  }
 
   /** Register a shutdown hook to be run when the VM exits.
    *  The hook is automatically registered: the returned value can be ignored,
@@ -84,6 +92,6 @@ package object sys {
     val tarray = new Array[Thread](num)
     val got    = Thread.enumerate(tarray)
 
-    immutable.ArraySeq.unsafeWrapArray(tarray).take(got)
+    ArraySeq.unsafeWrapArray(tarray).take(got)
   }
 }

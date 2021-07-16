@@ -1,18 +1,22 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2017, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package math
 
 import java.util.Comparator
 
-import scala.annotation.implicitAmbiguous
-import scala.language.{higherKinds, implicitConversions}
+import scala.language.implicitConversions
+import scala.annotation.migration
 
 /** Ordering is a trait whose instances each represent a strategy for sorting
   * instances of a type.
@@ -62,8 +66,6 @@ import scala.language.{higherKinds, implicitConversions}
   * You can import scala.math.Ordering.Implicits to gain access to other
   * implicit orderings.
   *
-  * @author Geoffrey Washburn
-  * @since 2.7
   * @see [[scala.math.Ordered]], [[scala.util.Sorting]]
   */
 @annotation.implicitNotFound(msg = "No implicit Ordering defined for ${T}.")
@@ -106,17 +108,25 @@ trait Ordering[T] extends Comparator[T] with PartialOrdering[T] with Serializabl
   /** Return `x` if `x` <= `y`, otherwise `y`. */
   def min[U <: T](x: U, y: U): U = if (lteq(x, y)) x else y
 
-  /** Return the opposite ordering of this one. */
-  override def reverse: Ordering[T] = new Ordering[T] {
-    override def reverse = outer
-    def compare(x: T, y: T) = outer.compare(y, x)
-    override def lteq(x: T, y: T) = outer.lteq(y, x)
-    override def gteq(x: T, y: T) = outer.gteq(y, x)
-    override def lt(x: T, y: T) = outer.lt(y, x)
-    override def gt(x: T, y: T) = outer.gt(y, x)
-    override def equiv(x: T, y: T) = outer.equiv(y, x)
-    override def max[U <: T](x: U, y: U) = outer.min(x, y)
-    override def min[U <: T](x: U, y: U) = outer.max(x, y)
+  /** Return the opposite ordering of this one.
+    *
+    * Implementations overriding this method MUST override [[isReverseOf]]
+    * as well if they change the behavior at all (for example, caching does
+    * not require overriding it).
+    */
+  override def reverse: Ordering[T] = new Ordering.Reverse[T](this)
+
+  /** Returns whether or not the other ordering is the opposite
+    * ordering of this one.
+    *
+    * Equivalent to `other == this.reverse`.
+    *
+    * Implementations should only override this method if they are overriding
+    * [[reverse]] as well.
+    */
+  def isReverseOf(other: Ordering[_]): Boolean = other match {
+    case that: Ordering.Reverse[_] => that.outer == this
+    case _ => false
   }
 
   /** Given f, a function from U into T, creates an Ordering[U] whose compare
@@ -173,13 +183,17 @@ trait Ordering[T] extends Comparator[T] with PartialOrdering[T] with Serializabl
     if (res1 != 0) res1 else ord.compare(f(x), f(y))
   }
 
-  /** This inner class defines comparison operators available for `T`. */
-  class Ops(lhs: T) {
-    def <(rhs: T) = lt(lhs, rhs)
-    def <=(rhs: T) = lteq(lhs, rhs)
-    def >(rhs: T) = gt(lhs, rhs)
-    def >=(rhs: T) = gteq(lhs, rhs)
-    def equiv(rhs: T) = Ordering.this.equiv(lhs, rhs)
+  /** This inner class defines comparison operators available for `T`.
+   *
+   * It can't extend `AnyVal` because it is not a top-level class
+   * or a member of a statically accessible object.
+   */
+  class OrderingOps(lhs: T) {
+    def <(rhs: T): Boolean = lt(lhs, rhs)
+    def <=(rhs: T): Boolean = lteq(lhs, rhs)
+    def >(rhs: T): Boolean = gt(lhs, rhs)
+    def >=(rhs: T): Boolean = gteq(lhs, rhs)
+    def equiv(rhs: T): Boolean = Ordering.this.equiv(lhs, rhs)
     def max(rhs: T): T = Ordering.this.max(lhs, rhs)
     def min(rhs: T): T = Ordering.this.min(lhs, rhs)
   }
@@ -187,12 +201,12 @@ trait Ordering[T] extends Comparator[T] with PartialOrdering[T] with Serializabl
   /** This implicit method augments `T` with the comparison operators defined
     * in `scala.math.Ordering.Ops`.
     */
-  implicit def mkOrderingOps(lhs: T): Ops = new Ops(lhs)
+  implicit def mkOrderingOps(lhs: T): OrderingOps = new OrderingOps(lhs)
 }
 
 trait LowPriorityOrderingImplicits {
 
-  type AsComparable[A] = A => Comparable[A]
+  type AsComparable[A] = A => Comparable[_ >: A]
 
   /** This would conflict with all the nice implicit Orderings
    *  available, but thanks to the magic of prioritized implicits
@@ -200,8 +214,8 @@ trait LowPriorityOrderingImplicits {
    *  turn up if nothing else works.  Since `Ordered[A]` extends
    *  `Comparable[A]` anyway, we can throw in some Java interop too.
    */
-  implicit def ordered[A: AsComparable]: Ordering[A] = new Ordering[A] {
-    def compare(x: A, y: A): Int = x compareTo y
+  implicit def ordered[A](implicit asComparable: AsComparable[A]): Ordering[A] = new Ordering[A] {
+    def compare(x: A, y: A): Int = asComparable(x).compareTo(y)
   }
 
   implicit def comparatorToOrdering[A](implicit cmp: Comparator[A]): Ordering[A] = new Ordering[A] {
@@ -215,26 +229,71 @@ trait LowPriorityOrderingImplicits {
   * new orderings.
   */
 object Ordering extends LowPriorityOrderingImplicits {
+  private final val reverseSeed  = 41
+  private final val optionSeed   = 43
+  private final val iterableSeed = 47
+
   @inline def apply[T](implicit ord: Ordering[T]) = ord
+
+  /** An ordering which caches the value of its reverse. */
+  sealed trait CachedReverse[T] extends Ordering[T] {
+    private[this] val _reverse = super.reverse
+    override final def reverse: Ordering[T] = _reverse
+    override final def isReverseOf(other: Ordering[_]): Boolean = other eq _reverse
+  }
+
+  /** A reverse ordering */
+  private final class Reverse[T](private[Ordering] val outer: Ordering[T]) extends Ordering[T] {
+    override def reverse: Ordering[T]                   = outer
+    override def isReverseOf(other: Ordering[_]): Boolean = other == outer
+
+    def compare(x: T, y: T): Int            = outer.compare(y, x)
+    override def lteq(x: T, y: T): Boolean  = outer.lteq(y, x)
+    override def gteq(x: T, y: T): Boolean  = outer.gteq(y, x)
+    override def lt(x: T, y: T): Boolean    = outer.lt(y, x)
+    override def gt(x: T, y: T): Boolean    = outer.gt(y, x)
+    override def equiv(x: T, y: T): Boolean = outer.equiv(y, x)
+    override def max[U <: T](x: U, y: U): U = outer.min(x, y)
+    override def min[U <: T](x: U, y: U): U = outer.max(x, y)
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Reverse[T]             => this.outer == that.outer
+      case _                            => false
+    }
+    override def hashCode(): Int = outer.hashCode() * reverseSeed
+  }
+
+  private final class IterableOrdering[CC[X] <: Iterable[X], T](private val ord: Ordering[T]) extends Ordering[CC[T]] {
+    def compare(x: CC[T], y: CC[T]): Int = {
+      val xe = x.iterator
+      val ye = y.iterator
+
+      while (xe.hasNext && ye.hasNext) {
+        val res = ord.compare(xe.next(), ye.next())
+        if (res != 0) return res
+      }
+
+      Boolean.compare(xe.hasNext, ye.hasNext)
+    }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that  => true
+      case that: IterableOrdering[CC, T] => this.ord == that.ord
+      case _                             => false
+    }
+    override def hashCode(): Int = ord.hashCode() * iterableSeed
+  }
 
   trait ExtraImplicits {
     /** Not in the standard scope due to the potential for divergence:
       * For instance `implicitly[Ordering[Any]]` diverges in its presence.
       */
-    implicit def seqDerivedOrdering[CC[X] <: scala.collection.Seq[X], T](implicit ord: Ordering[T]): Ordering[CC[T]] =
-      new Ordering[CC[T]] {
-        def compare(x: CC[T], y: CC[T]): Int = {
-          val xe = x.iterator
-          val ye = y.iterator
+    implicit def seqOrdering[CC[X] <: scala.collection.Seq[X], T](implicit ord: Ordering[T]): Ordering[CC[T]] =
+      new IterableOrdering[CC, T](ord)
 
-          while (xe.hasNext && ye.hasNext) {
-            val res = ord.compare(xe.next(), ye.next())
-            if (res != 0) return res
-          }
-
-          Ordering.Boolean.compare(xe.hasNext, ye.hasNext)
-        }
-      }
+    implicit def sortedSetOrdering[CC[X] <: scala.collection.SortedSet[X], T](implicit ord: Ordering[T]): Ordering[CC[T]] =
+      new IterableOrdering[CC, T](ord)
 
     /** This implicit creates a conversion from any value for which an
       * implicit `Ordering` exists to the class which creates infix operations.
@@ -244,7 +303,7 @@ object Ordering extends LowPriorityOrderingImplicits {
       * def lessThan[T: Ordering](x: T, y: T) = x < y
       * }}}
       */
-    implicit def infixOrderingOps[T](x: T)(implicit ord: Ordering[T]): Ordering[T]#Ops = new ord.Ops(x)
+    implicit def infixOrderingOps[T](x: T)(implicit ord: Ordering[T]): Ordering[T]#OrderingOps = new ord.OrderingOps(x)
   }
 
   /** An object containing implicits which are not in the default scope. */
@@ -284,38 +343,68 @@ object Ordering extends LowPriorityOrderingImplicits {
   implicit object Unit extends UnitOrdering
 
   trait BooleanOrdering extends Ordering[Boolean] {
-    def compare(x: Boolean, y: Boolean) = java.lang.Boolean.compare(x, y)
+    def compare(x: Boolean, y: Boolean): Int = java.lang.Boolean.compare(x, y)
   }
   implicit object Boolean extends BooleanOrdering
 
   trait ByteOrdering extends Ordering[Byte] {
-    def compare(x: Byte, y: Byte) = java.lang.Byte.compare(x, y)
+    def compare(x: Byte, y: Byte): Int = java.lang.Byte.compare(x, y)
   }
   implicit object Byte extends ByteOrdering
 
   trait CharOrdering extends Ordering[Char] {
-    def compare(x: Char, y: Char) = java.lang.Character.compare(x, y)
+    def compare(x: Char, y: Char): Int = java.lang.Character.compare(x, y)
   }
   implicit object Char extends CharOrdering
 
   trait ShortOrdering extends Ordering[Short] {
-    def compare(x: Short, y: Short) = java.lang.Short.compare(x, y)
+    def compare(x: Short, y: Short): Int = java.lang.Short.compare(x, y)
   }
   implicit object Short extends ShortOrdering
 
   trait IntOrdering extends Ordering[Int] {
-    def compare(x: Int, y: Int) = java.lang.Integer.compare(x, y)
+    def compare(x: Int, y: Int): Int = java.lang.Integer.compare(x, y)
   }
-  implicit object Int extends IntOrdering
+  implicit object Int extends IntOrdering with CachedReverse[Int]
 
   trait LongOrdering extends Ordering[Long] {
-    def compare(x: Long, y: Long) = java.lang.Long.compare(x, y)
+    def compare(x: Long, y: Long): Int = java.lang.Long.compare(x, y)
   }
   implicit object Long extends LongOrdering
 
   /** `Ordering`s for `Float`s.
     *
-    * @define floatOrdering Because the behaviour of `Float`s specified by IEEE is
+    * The behavior of the comparison operations provided by the default (implicit)
+    * ordering on `Float` changed in 2.10.0 and 2.13.0.
+    * Prior to Scala 2.10.0, the `Ordering` instance used semantics
+    * consistent with `java.lang.Float.compare`.
+    *
+    * Scala 2.10.0 changed the implementation of `lt`, `equiv`, `min`, etc., to be
+    * IEEE 754 compliant, while keeping the `compare` method NOT compliant,
+    * creating an internally inconsistent instance. IEEE 754 specifies that
+    * `0.0F == -0.0F`. In addition, it requires all comparisons with `Float.NaN` return
+    * `false` thus `0.0F < Float.NaN`, `0.0F > Float.NaN`, and
+    * `Float.NaN == Float.NaN` all yield `false`, analogous `None` in `flatMap`.
+    *
+    * Recognizing the limitation of the IEEE 754 semantics in terms of ordering,
+    * Scala 2.13.0 created two instances: `Ordering.Float.IeeeOrdering`, which retains
+    * the IEEE 754 semantics from Scala 2.12.x, and `Ordering.Float.TotalOrdering`,
+    * which brings back the `java.lang.Float.compare` semantics for all operations.
+    * The default extends `TotalOrdering`.
+    *
+    *  {{{
+    *  List(0.0F, 1.0F, 0.0F / 0.0F, -1.0F / 0.0F).sorted      // List(-Infinity, 0.0, 1.0, NaN)
+    *  List(0.0F, 1.0F, 0.0F / 0.0F, -1.0F / 0.0F).min         // -Infinity
+    *  implicitly[Ordering[Float]].lt(0.0F, 0.0F / 0.0F)       // true
+    *  {
+    *    import Ordering.Float.IeeeOrdering
+    *    List(0.0F, 1.0F, 0.0F / 0.0F, -1.0F / 0.0F).sorted    // List(-Infinity, 0.0, 1.0, NaN)
+    *    List(0.0F, 1.0F, 0.0F / 0.0F, -1.0F / 0.0F).min       // NaN
+    *    implicitly[Ordering[Float]].lt(0.0F, 0.0F / 0.0F)     // false
+    *  }
+    *  }}}
+    *
+    * @define floatOrdering Because the behavior of `Float`s specified by IEEE is
     *                       not consistent with a total ordering when dealing with
     *                       `NaN`, there are two orderings defined for `Float`:
     *                       `TotalOrdering`, which is consistent with a total
@@ -326,7 +415,7 @@ object Ordering extends LowPriorityOrderingImplicits {
   object Float {
     /** An ordering for `Float`s which is a fully consistent total ordering,
       * and treats `NaN` as larger than all other `Float` values; it behaves
-      * the same as [[java.lang.Float.compare()]].
+      * the same as [[java.lang.Float.compare]].
       *
       * $floatOrdering
       *
@@ -347,7 +436,7 @@ object Ordering extends LowPriorityOrderingImplicits {
       * `NaN`.
       *   - `min` and `max` are consistent with `math.min` and `math.max`, and
       * return `NaN` when called with `NaN` as either argument.
-      *   - `compare` behaves the same as [[java.lang.Float.compare()]].
+      *   - `compare` behaves the same as [[java.lang.Float.compare]].
       *
       * $floatOrdering
       *
@@ -368,14 +457,48 @@ object Ordering extends LowPriorityOrderingImplicits {
     }
     implicit object IeeeOrdering extends IeeeOrdering
   }
-  @deprecated("There are multiple ways to order Floats (Ordering.Float.TotalOrdering, " +
-    "Ordering.Float.IeeeOrdering). Specify one by using a local import, assigning an implicit val, or passing it " +
-    "explicitly. See the documentation for details.", since = "2.13.0")
+  @migration(
+    "  The default implicit ordering for floats now maintains consistency\n" +
+    "  between its `compare` method and its `lt`, `min`, `equiv`, etc., methods,\n" +
+    "  which means nonconforming to IEEE 754's behavior for -0.0F and NaN.\n" +
+    "  The sort order of floats remains the same, however, with NaN at the end.\n" +
+    "  Import Ordering.Float.IeeeOrdering to recover the previous behavior.\n" +
+    "  See also https://www.scala-lang.org/api/current/scala/math/Ordering$$Float$.html.", "2.13.0")
   implicit object DeprecatedFloatOrdering extends Float.TotalOrdering
 
   /** `Ordering`s for `Double`s.
     *
-    * @define doubleOrdering Because the behaviour of `Double`s specified by IEEE is
+    * The behavior of the comparison operations provided by the default (implicit)
+    * ordering on `Double` changed in 2.10.0 and 2.13.0.
+    * Prior to Scala 2.10.0, the `Ordering` instance used semantics
+    * consistent with `java.lang.Double.compare`.
+    *
+    * Scala 2.10.0 changed the implementation of `lt`, `equiv`, `min`, etc., to be
+    * IEEE 754 compliant, while keeping the `compare` method NOT compliant,
+    * creating an internally inconsistent instance. IEEE 754 specifies that
+    * `0.0 == -0.0`. In addition, it requires all comparisons with `Double.NaN` return
+    * `false` thus `0.0 < Double.NaN`, `0.0 > Double.NaN`, and
+    * `Double.NaN == Double.NaN` all yield `false`, analogous `None` in `flatMap`.
+    *
+    * Recognizing the limitation of the IEEE 754 semantics in terms of ordering,
+    * Scala 2.13.0 created two instances: `Ordering.Double.IeeeOrdering`, which retains
+    * the IEEE 754 semantics from Scala 2.12.x, and `Ordering.Double.TotalOrdering`,
+    * which brings back the `java.lang.Double.compare` semantics for all operations.
+    * The default extends `TotalOrdering`.
+    *
+    *  {{{
+    *  List(0.0, 1.0, 0.0 / 0.0, -1.0 / 0.0).sorted      // List(-Infinity, 0.0, 1.0, NaN)
+    *  List(0.0, 1.0, 0.0 / 0.0, -1.0 / 0.0).min         // -Infinity
+    *  implicitly[Ordering[Double]].lt(0.0, 0.0 / 0.0)   // true
+    *  {
+    *    import Ordering.Double.IeeeOrdering
+    *    List(0.0, 1.0, 0.0 / 0.0, -1.0 / 0.0).sorted    // List(-Infinity, 0.0, 1.0, NaN)
+    *    List(0.0, 1.0, 0.0 / 0.0, -1.0 / 0.0).min       // NaN
+    *    implicitly[Ordering[Double]].lt(0.0, 0.0 / 0.0) // false
+    *  }
+    *  }}}
+    *
+    * @define doubleOrdering Because the behavior of `Double`s specified by IEEE is
     *                        not consistent with a total ordering when dealing with
     *                        `NaN`, there are two orderings defined for `Double`:
     *                        `TotalOrdering`, which is consistent with a total
@@ -386,7 +509,7 @@ object Ordering extends LowPriorityOrderingImplicits {
   object Double {
     /** An ordering for `Double`s which is a fully consistent total ordering,
       * and treats `NaN` as larger than all other `Double` values; it behaves
-      * the same as [[java.lang.Double.compare()]].
+      * the same as [[java.lang.Double.compare]].
       *
       * $doubleOrdering
       *
@@ -407,7 +530,7 @@ object Ordering extends LowPriorityOrderingImplicits {
       * `NaN`.
       *   - `min` and `max` are consistent with `math.min` and `math.max`, and
       * return `NaN` when called with `NaN` as either argument.
-      *   - `compare` behaves the same as [[java.lang.Double.compare()]].
+      *   - `compare` behaves the same as [[java.lang.Double.compare]].
       *
       * $doubleOrdering
       *
@@ -428,9 +551,13 @@ object Ordering extends LowPriorityOrderingImplicits {
     }
     implicit object IeeeOrdering extends IeeeOrdering
   }
-  @deprecated("There are multiple ways to order Doubles (Ordering.Double.TotalOrdering, " +
-    "Ordering.Double.IeeeOrdering). Specify one by using a local import, assigning an implicit val, or passing it " +
-    "explicitly. See the documentation for details.", since = "2.13.0")
+  @migration(
+    "  The default implicit ordering for doubles now maintains consistency\n" +
+    "  between its `compare` method and its `lt`, `min`, `equiv`, etc., methods,\n" +
+    "  which means nonconforming to IEEE 754's behavior for -0.0 and NaN.\n" +
+    "  The sort order of doubles remains the same, however, with NaN at the end.\n" +
+    "  Import Ordering.Double.IeeeOrdering to recover the previous behavior.\n" +
+    "  See also https://www.scala-lang.org/api/current/scala/math/Ordering$$Double$.html.", "2.13.0")
   implicit object DeprecatedDoubleOrdering extends Double.TotalOrdering
 
   trait BigIntOrdering extends Ordering[BigInt] {
@@ -448,6 +575,11 @@ object Ordering extends LowPriorityOrderingImplicits {
   }
   implicit object String extends StringOrdering
 
+  trait SymbolOrdering extends Ordering[Symbol] {
+    def compare(x: Symbol, y: Symbol): Int = x.name.compareTo(y.name)
+  }
+  implicit object Symbol extends SymbolOrdering
+
   trait OptionOrdering[T] extends Ordering[Option[T]] {
     def optionOrdering: Ordering[T]
     def compare(x: Option[T], y: Option[T]) = (x, y) match {
@@ -456,167 +588,310 @@ object Ordering extends LowPriorityOrderingImplicits {
       case (_, None)          => 1
       case (Some(x), Some(y)) => optionOrdering.compare(x, y)
     }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: OptionOrdering[T]      => this.optionOrdering == that.optionOrdering
+      case _                            => false
+    }
+    override def hashCode(): Int = optionOrdering.hashCode() * optionSeed
   }
   implicit def Option[T](implicit ord: Ordering[T]): Ordering[Option[T]] =
     new OptionOrdering[T] { val optionOrdering = ord }
 
+  /** @deprecated Iterables are not guaranteed to have a consistent order, so the `Ordering`
+    *             returned by this method may not be stable or meaningful. If you are using a type
+    *             with a consistent order (such as `Seq`), use its `Ordering` (found in the
+    *             [[Implicits]] object) instead.
+    */
+  @deprecated("Iterables are not guaranteed to have a consistent order; if using a type with a " +
+    "consistent order (e.g. Seq), use its Ordering (found in the Ordering.Implicits object)", since = "2.13.0")
   implicit def Iterable[T](implicit ord: Ordering[T]): Ordering[Iterable[T]] =
-    new Ordering[Iterable[T]] {
-      def compare(x: Iterable[T], y: Iterable[T]): Int = {
-        val xe = x.iterator
-        val ye = y.iterator
-
-        while (xe.hasNext && ye.hasNext) {
-          val res = ord.compare(xe.next(), ye.next())
-          if (res != 0) return res
-        }
-
-        Boolean.compare(xe.hasNext, ye.hasNext)
-      }
-    }
+    new IterableOrdering[Iterable, T](ord)
 
   implicit def Tuple2[T1, T2](implicit ord1: Ordering[T1], ord2: Ordering[T2]): Ordering[(T1, T2)] =
-    new Ordering[(T1, T2)]{
-      def compare(x: (T1, T2), y: (T1, T2)): Int = {
-        val compare1 = ord1.compare(x._1, y._1)
-        if (compare1 != 0) return compare1
-        val compare2 = ord2.compare(x._2, y._2)
-        if (compare2 != 0) return compare2
-        0
-      }
+    new Tuple2Ordering(ord1, ord2)
+
+  private[this] final class Tuple2Ordering[T1, T2](private val ord1: Ordering[T1],
+                                                   private val ord2: Ordering[T2]) extends Ordering[(T1, T2)] {
+    def compare(x: (T1, T2), y: (T1, T2)): Int = {
+      val compare1 = ord1.compare(x._1, y._1)
+      if (compare1 != 0) return compare1
+      ord2.compare(x._2, y._2)
     }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Tuple2Ordering[T1, T2] =>
+        this.ord1 == that.ord1 &&
+        this.ord2 == that.ord2
+      case _ => false
+    }
+    override def hashCode(): Int = (ord1, ord2).hashCode()
+  }
 
   implicit def Tuple3[T1, T2, T3](implicit ord1: Ordering[T1], ord2: Ordering[T2], ord3: Ordering[T3]) : Ordering[(T1, T2, T3)] =
-    new Ordering[(T1, T2, T3)]{
-      def compare(x: (T1, T2, T3), y: (T1, T2, T3)): Int = {
-        val compare1 = ord1.compare(x._1, y._1)
-        if (compare1 != 0) return compare1
-        val compare2 = ord2.compare(x._2, y._2)
-        if (compare2 != 0) return compare2
-        val compare3 = ord3.compare(x._3, y._3)
-        if (compare3 != 0) return compare3
-        0
-      }
+    new Tuple3Ordering(ord1, ord2, ord3)
+
+  private[this] final class Tuple3Ordering[T1, T2, T3](private val ord1: Ordering[T1],
+                                                       private val ord2: Ordering[T2],
+                                                       private val ord3: Ordering[T3]) extends Ordering[(T1, T2, T3)] {
+    def compare(x: (T1, T2, T3), y: (T1, T2, T3)): Int = {
+      val compare1 = ord1.compare(x._1, y._1)
+      if (compare1 != 0) return compare1
+      val compare2 = ord2.compare(x._2, y._2)
+      if (compare2 != 0) return compare2
+      ord3.compare(x._3, y._3)
     }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Tuple3Ordering[T1, T2, T3] =>
+        this.ord1 == that.ord1 &&
+        this.ord2 == that.ord2 &&
+        this.ord3 == that.ord3
+      case _ => false
+    }
+    override def hashCode(): Int = (ord1, ord2, ord3).hashCode()
+  }
 
   implicit def Tuple4[T1, T2, T3, T4](implicit ord1: Ordering[T1], ord2: Ordering[T2], ord3: Ordering[T3], ord4: Ordering[T4]) : Ordering[(T1, T2, T3, T4)] =
-    new Ordering[(T1, T2, T3, T4)]{
-      def compare(x: (T1, T2, T3, T4), y: (T1, T2, T3, T4)): Int = {
-        val compare1 = ord1.compare(x._1, y._1)
-        if (compare1 != 0) return compare1
-        val compare2 = ord2.compare(x._2, y._2)
-        if (compare2 != 0) return compare2
-        val compare3 = ord3.compare(x._3, y._3)
-        if (compare3 != 0) return compare3
-        val compare4 = ord4.compare(x._4, y._4)
-        if (compare4 != 0) return compare4
-        0
-      }
+    new Tuple4Ordering(ord1, ord2, ord3, ord4)
+
+  private[this] final class Tuple4Ordering[T1, T2, T3, T4](private val ord1: Ordering[T1],
+                                                           private val ord2: Ordering[T2],
+                                                           private val ord3: Ordering[T3],
+                                                           private val ord4: Ordering[T4])
+    extends Ordering[(T1, T2, T3, T4)] {
+    def compare(x: (T1, T2, T3, T4), y: (T1, T2, T3, T4)): Int = {
+      val compare1 = ord1.compare(x._1, y._1)
+      if (compare1 != 0) return compare1
+      val compare2 = ord2.compare(x._2, y._2)
+      if (compare2 != 0) return compare2
+      val compare3 = ord3.compare(x._3, y._3)
+      if (compare3 != 0) return compare3
+      ord4.compare(x._4, y._4)
     }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Tuple4Ordering[T1, T2, T3, T4] =>
+        this.ord1 == that.ord1 &&
+        this.ord2 == that.ord2 &&
+        this.ord3 == that.ord3 &&
+        this.ord4 == that.ord4
+      case _ => false
+    }
+    override def hashCode(): Int = (ord1, ord2, ord3, ord4).hashCode()
+  }
 
   implicit def Tuple5[T1, T2, T3, T4, T5](implicit ord1: Ordering[T1], ord2: Ordering[T2], ord3: Ordering[T3], ord4: Ordering[T4], ord5: Ordering[T5]): Ordering[(T1, T2, T3, T4, T5)] =
-    new Ordering[(T1, T2, T3, T4, T5)]{
-      def compare(x: (T1, T2, T3, T4, T5), y: Tuple5[T1, T2, T3, T4, T5]): Int = {
-        val compare1 = ord1.compare(x._1, y._1)
-        if (compare1 != 0) return compare1
-        val compare2 = ord2.compare(x._2, y._2)
-        if (compare2 != 0) return compare2
-        val compare3 = ord3.compare(x._3, y._3)
-        if (compare3 != 0) return compare3
-        val compare4 = ord4.compare(x._4, y._4)
-        if (compare4 != 0) return compare4
-        val compare5 = ord5.compare(x._5, y._5)
-        if (compare5 != 0) return compare5
-        0
-      }
+    new Tuple5Ordering(ord1, ord2, ord3, ord4, ord5)
+
+  private[this] final class Tuple5Ordering[T1, T2, T3, T4, T5](private val ord1: Ordering[T1],
+                                                               private val ord2: Ordering[T2],
+                                                               private val ord3: Ordering[T3],
+                                                               private val ord4: Ordering[T4],
+                                                               private val ord5: Ordering[T5])
+    extends Ordering[(T1, T2, T3, T4, T5)] {
+    def compare(x: (T1, T2, T3, T4, T5), y: (T1, T2, T3, T4, T5)): Int = {
+      val compare1 = ord1.compare(x._1, y._1)
+      if (compare1 != 0) return compare1
+      val compare2 = ord2.compare(x._2, y._2)
+      if (compare2 != 0) return compare2
+      val compare3 = ord3.compare(x._3, y._3)
+      if (compare3 != 0) return compare3
+      val compare4 = ord4.compare(x._4, y._4)
+      if (compare4 != 0) return compare4
+      ord5.compare(x._5, y._5)
     }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Tuple5Ordering[T1, T2, T3, T4, T5] =>
+        this.ord1 == that.ord1 &&
+        this.ord2 == that.ord2 &&
+        this.ord3 == that.ord3 &&
+        this.ord4 == that.ord4 &&
+        this.ord5 == that.ord5
+      case _ => false
+    }
+    override def hashCode(): Int = (ord1, ord2, ord3, ord4, ord5).hashCode()
+  }
 
   implicit def Tuple6[T1, T2, T3, T4, T5, T6](implicit ord1: Ordering[T1], ord2: Ordering[T2], ord3: Ordering[T3], ord4: Ordering[T4], ord5: Ordering[T5], ord6: Ordering[T6]): Ordering[(T1, T2, T3, T4, T5, T6)] =
-    new Ordering[(T1, T2, T3, T4, T5, T6)]{
-      def compare(x: (T1, T2, T3, T4, T5, T6), y: (T1, T2, T3, T4, T5, T6)): Int = {
-        val compare1 = ord1.compare(x._1, y._1)
-        if (compare1 != 0) return compare1
-        val compare2 = ord2.compare(x._2, y._2)
-        if (compare2 != 0) return compare2
-        val compare3 = ord3.compare(x._3, y._3)
-        if (compare3 != 0) return compare3
-        val compare4 = ord4.compare(x._4, y._4)
-        if (compare4 != 0) return compare4
-        val compare5 = ord5.compare(x._5, y._5)
-        if (compare5 != 0) return compare5
-        val compare6 = ord6.compare(x._6, y._6)
-        if (compare6 != 0) return compare6
-        0
-      }
+    new Tuple6Ordering(ord1, ord2, ord3, ord4, ord5, ord6)
+
+  private[this] final class Tuple6Ordering[T1, T2, T3, T4, T5, T6](private val ord1: Ordering[T1],
+                                                                   private val ord2: Ordering[T2],
+                                                                   private val ord3: Ordering[T3],
+                                                                   private val ord4: Ordering[T4],
+                                                                   private val ord5: Ordering[T5],
+                                                                   private val ord6: Ordering[T6])
+    extends Ordering[(T1, T2, T3, T4, T5, T6)] {
+    def compare(x: (T1, T2, T3, T4, T5, T6), y: (T1, T2, T3, T4, T5, T6)): Int = {
+      val compare1 = ord1.compare(x._1, y._1)
+      if (compare1 != 0) return compare1
+      val compare2 = ord2.compare(x._2, y._2)
+      if (compare2 != 0) return compare2
+      val compare3 = ord3.compare(x._3, y._3)
+      if (compare3 != 0) return compare3
+      val compare4 = ord4.compare(x._4, y._4)
+      if (compare4 != 0) return compare4
+      val compare5 = ord5.compare(x._5, y._5)
+      if (compare5 != 0) return compare5
+      ord6.compare(x._6, y._6)
     }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Tuple6Ordering[T1, T2, T3, T4, T5, T6] =>
+        this.ord1 == that.ord1 &&
+        this.ord2 == that.ord2 &&
+        this.ord3 == that.ord3 &&
+        this.ord4 == that.ord4 &&
+        this.ord5 == that.ord5 &&
+        this.ord6 == that.ord6
+      case _ => false
+    }
+    override def hashCode(): Int = (ord1, ord2, ord3, ord4, ord5, ord6).hashCode()
+  }
 
   implicit def Tuple7[T1, T2, T3, T4, T5, T6, T7](implicit ord1: Ordering[T1], ord2: Ordering[T2], ord3: Ordering[T3], ord4: Ordering[T4], ord5: Ordering[T5], ord6: Ordering[T6], ord7: Ordering[T7]): Ordering[(T1, T2, T3, T4, T5, T6, T7)] =
-    new Ordering[(T1, T2, T3, T4, T5, T6, T7)]{
-      def compare(x: (T1, T2, T3, T4, T5, T6, T7), y: (T1, T2, T3, T4, T5, T6, T7)): Int = {
-        val compare1 = ord1.compare(x._1, y._1)
-        if (compare1 != 0) return compare1
-        val compare2 = ord2.compare(x._2, y._2)
-        if (compare2 != 0) return compare2
-        val compare3 = ord3.compare(x._3, y._3)
-        if (compare3 != 0) return compare3
-        val compare4 = ord4.compare(x._4, y._4)
-        if (compare4 != 0) return compare4
-        val compare5 = ord5.compare(x._5, y._5)
-        if (compare5 != 0) return compare5
-        val compare6 = ord6.compare(x._6, y._6)
-        if (compare6 != 0) return compare6
-        val compare7 = ord7.compare(x._7, y._7)
-        if (compare7 != 0) return compare7
-        0
-      }
+    new Tuple7Ordering(ord1, ord2, ord3, ord4, ord5, ord6, ord7)
+
+  private[this] final class Tuple7Ordering[T1, T2, T3, T4, T5, T6, T7](private val ord1: Ordering[T1],
+                                                                       private val ord2: Ordering[T2],
+                                                                       private val ord3: Ordering[T3],
+                                                                       private val ord4: Ordering[T4],
+                                                                       private val ord5: Ordering[T5],
+                                                                       private val ord6: Ordering[T6],
+                                                                       private val ord7: Ordering[T7])
+    extends Ordering[(T1, T2, T3, T4, T5, T6, T7)] {
+    def compare(x: (T1, T2, T3, T4, T5, T6, T7), y: (T1, T2, T3, T4, T5, T6, T7)): Int = {
+      val compare1 = ord1.compare(x._1, y._1)
+      if (compare1 != 0) return compare1
+      val compare2 = ord2.compare(x._2, y._2)
+      if (compare2 != 0) return compare2
+      val compare3 = ord3.compare(x._3, y._3)
+      if (compare3 != 0) return compare3
+      val compare4 = ord4.compare(x._4, y._4)
+      if (compare4 != 0) return compare4
+      val compare5 = ord5.compare(x._5, y._5)
+      if (compare5 != 0) return compare5
+      val compare6 = ord6.compare(x._6, y._6)
+      if (compare6 != 0) return compare6
+      ord7.compare(x._7, y._7)
     }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Tuple7Ordering[T1, T2, T3, T4, T5, T6, T7] =>
+        this.ord1 == that.ord1 &&
+        this.ord2 == that.ord2 &&
+        this.ord3 == that.ord3 &&
+        this.ord4 == that.ord4 &&
+        this.ord5 == that.ord5 &&
+        this.ord6 == that.ord6 &&
+        this.ord7 == that.ord7
+      case _ => false
+    }
+    override def hashCode(): Int = (ord1, ord2, ord3, ord4, ord5, ord6, ord7).hashCode()
+  }
 
   implicit def Tuple8[T1, T2, T3, T4, T5, T6, T7, T8](implicit ord1: Ordering[T1], ord2: Ordering[T2], ord3: Ordering[T3], ord4: Ordering[T4], ord5: Ordering[T5], ord6: Ordering[T6], ord7: Ordering[T7], ord8: Ordering[T8]): Ordering[(T1, T2, T3, T4, T5, T6, T7, T8)] =
-    new Ordering[(T1, T2, T3, T4, T5, T6, T7, T8)]{
-      def compare(x: (T1, T2, T3, T4, T5, T6, T7, T8), y: (T1, T2, T3, T4, T5, T6, T7, T8)): Int = {
-        val compare1 = ord1.compare(x._1, y._1)
-        if (compare1 != 0) return compare1
-        val compare2 = ord2.compare(x._2, y._2)
-        if (compare2 != 0) return compare2
-        val compare3 = ord3.compare(x._3, y._3)
-        if (compare3 != 0) return compare3
-        val compare4 = ord4.compare(x._4, y._4)
-        if (compare4 != 0) return compare4
-        val compare5 = ord5.compare(x._5, y._5)
-        if (compare5 != 0) return compare5
-        val compare6 = ord6.compare(x._6, y._6)
-        if (compare6 != 0) return compare6
-        val compare7 = ord7.compare(x._7, y._7)
-        if (compare7 != 0) return compare7
-        val compare8 = ord8.compare(x._8, y._8)
-        if (compare8 != 0) return compare8
-        0
-      }
+    new Tuple8Ordering(ord1, ord2, ord3, ord4, ord5, ord6, ord7, ord8)
+
+  private[this] final class Tuple8Ordering[T1, T2, T3, T4, T5, T6, T7, T8](private val ord1: Ordering[T1],
+                                                                           private val ord2: Ordering[T2],
+                                                                           private val ord3: Ordering[T3],
+                                                                           private val ord4: Ordering[T4],
+                                                                           private val ord5: Ordering[T5],
+                                                                           private val ord6: Ordering[T6],
+                                                                           private val ord7: Ordering[T7],
+                                                                           private val ord8: Ordering[T8])
+    extends Ordering[(T1, T2, T3, T4, T5, T6, T7, T8)] {
+    def compare(x: (T1, T2, T3, T4, T5, T6, T7, T8), y: (T1, T2, T3, T4, T5, T6, T7, T8)): Int = {
+      val compare1 = ord1.compare(x._1, y._1)
+      if (compare1 != 0) return compare1
+      val compare2 = ord2.compare(x._2, y._2)
+      if (compare2 != 0) return compare2
+      val compare3 = ord3.compare(x._3, y._3)
+      if (compare3 != 0) return compare3
+      val compare4 = ord4.compare(x._4, y._4)
+      if (compare4 != 0) return compare4
+      val compare5 = ord5.compare(x._5, y._5)
+      if (compare5 != 0) return compare5
+      val compare6 = ord6.compare(x._6, y._6)
+      if (compare6 != 0) return compare6
+      val compare7 = ord7.compare(x._7, y._7)
+      if (compare7 != 0) return compare7
+      ord8.compare(x._8, y._8)
     }
+
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Tuple8Ordering[T1, T2, T3, T4, T5, T6, T7, T8] =>
+        this.ord1 == that.ord1 &&
+        this.ord2 == that.ord2 &&
+        this.ord3 == that.ord3 &&
+        this.ord4 == that.ord4 &&
+        this.ord5 == that.ord5 &&
+        this.ord6 == that.ord6 &&
+        this.ord7 == that.ord7 &&
+        this.ord8 == that.ord8
+      case _ => false
+    }
+    override def hashCode(): Int = (ord1, ord2, ord3, ord4, ord5, ord6, ord7, ord8).hashCode()
+  }
 
   implicit def Tuple9[T1, T2, T3, T4, T5, T6, T7, T8, T9](implicit ord1: Ordering[T1], ord2: Ordering[T2], ord3: Ordering[T3], ord4: Ordering[T4], ord5: Ordering[T5], ord6: Ordering[T6], ord7: Ordering[T7], ord8 : Ordering[T8], ord9: Ordering[T9]): Ordering[(T1, T2, T3, T4, T5, T6, T7, T8, T9)] =
-    new Ordering[(T1, T2, T3, T4, T5, T6, T7, T8, T9)]{
-      def compare(x: (T1, T2, T3, T4, T5, T6, T7, T8, T9), y: (T1, T2, T3, T4, T5, T6, T7, T8, T9)): Int = {
-        val compare1 = ord1.compare(x._1, y._1)
-        if (compare1 != 0) return compare1
-        val compare2 = ord2.compare(x._2, y._2)
-        if (compare2 != 0) return compare2
-        val compare3 = ord3.compare(x._3, y._3)
-        if (compare3 != 0) return compare3
-        val compare4 = ord4.compare(x._4, y._4)
-        if (compare4 != 0) return compare4
-        val compare5 = ord5.compare(x._5, y._5)
-        if (compare5 != 0) return compare5
-        val compare6 = ord6.compare(x._6, y._6)
-        if (compare6 != 0) return compare6
-        val compare7 = ord7.compare(x._7, y._7)
-        if (compare7 != 0) return compare7
-        val compare8 = ord8.compare(x._8, y._8)
-        if (compare8 != 0) return compare8
-        val compare9 = ord9.compare(x._9, y._9)
-        if (compare9 != 0) return compare9
-        0
-      }
+    new Tuple9Ordering(ord1, ord2, ord3, ord4, ord5, ord6, ord7, ord8, ord9)
+
+  private[this] final class Tuple9Ordering[T1, T2, T3, T4, T5, T6, T7, T8, T9](private val ord1: Ordering[T1],
+                                                                               private val ord2: Ordering[T2],
+                                                                               private val ord3: Ordering[T3],
+                                                                               private val ord4: Ordering[T4],
+                                                                               private val ord5: Ordering[T5],
+                                                                               private val ord6: Ordering[T6],
+                                                                               private val ord7: Ordering[T7],
+                                                                               private val ord8: Ordering[T8],
+                                                                               private val ord9: Ordering[T9])
+    extends Ordering[(T1, T2, T3, T4, T5, T6, T7, T8, T9)] {
+    def compare(x: (T1, T2, T3, T4, T5, T6, T7, T8, T9), y: (T1, T2, T3, T4, T5, T6, T7, T8, T9)): Int = {
+      val compare1 = ord1.compare(x._1, y._1)
+      if (compare1 != 0) return compare1
+      val compare2 = ord2.compare(x._2, y._2)
+      if (compare2 != 0) return compare2
+      val compare3 = ord3.compare(x._3, y._3)
+      if (compare3 != 0) return compare3
+      val compare4 = ord4.compare(x._4, y._4)
+      if (compare4 != 0) return compare4
+      val compare5 = ord5.compare(x._5, y._5)
+      if (compare5 != 0) return compare5
+      val compare6 = ord6.compare(x._6, y._6)
+      if (compare6 != 0) return compare6
+      val compare7 = ord7.compare(x._7, y._7)
+      if (compare7 != 0) return compare7
+      val compare8 = ord8.compare(x._8, y._8)
+      if (compare8 != 0) return compare8
+      ord9.compare(x._9, y._9)
     }
 
+    override def equals(obj: scala.Any): Boolean = obj match {
+      case that: AnyRef if this eq that => true
+      case that: Tuple9Ordering[T1, T2, T3, T4, T5, T6, T7, T8, T9] =>
+        this.ord1 == that.ord1 &&
+        this.ord2 == that.ord2 &&
+        this.ord3 == that.ord3 &&
+        this.ord4 == that.ord4 &&
+        this.ord5 == that.ord5 &&
+        this.ord6 == that.ord6 &&
+        this.ord7 == that.ord7 &&
+        this.ord8 == that.ord8 &&
+        this.ord9 == that.ord9
+      case _ => false
+    }
+    override def hashCode(): Int = (ord1, ord2, ord3, ord4, ord5, ord6, ord7, ord8, ord9).hashCode()
+  }
 }

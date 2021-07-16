@@ -1,17 +1,21 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2006-2015, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
-
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package util
 
-import java.io.{ IOException, PrintWriter }
-import java.util.jar.Attributes.{ Name => AttributeName }
+import java.io.{IOException, PrintWriter}
+import java.util.jar.Attributes.{Name => AttributeName}
+import scala.annotation.tailrec
 
 /** Loads `library.properties` from the jar. */
 object Properties extends PropertiesTrait {
@@ -49,7 +53,7 @@ private[scala] trait PropertiesTrait {
 
   def propIsSet(name: String)                   = System.getProperty(name) != null
   def propIsSetTo(name: String, value: String)  = propOrNull(name) == value
-  def propOrElse(name: String, alt: String)     = System.getProperty(name, alt)
+  def propOrElse(name: String, alt: => String)  = Option(System.getProperty(name)).getOrElse(alt)
   def propOrEmpty(name: String)                 = propOrElse(name, "")
   def propOrNull(name: String)                  = propOrElse(name, null)
   def propOrNone(name: String)                  = Option(propOrNull(name))
@@ -57,13 +61,13 @@ private[scala] trait PropertiesTrait {
   def setProp(name: String, value: String)      = System.setProperty(name, value)
   def clearProp(name: String)                   = System.clearProperty(name)
 
-  def envOrElse(name: String, alt: String)      = Option(System getenv name) getOrElse alt
+  def envOrElse(name: String, alt: => String)   = Option(System getenv name) getOrElse alt
   def envOrNone(name: String)                   = Option(System getenv name)
 
-  def envOrSome(name: String, alt: Option[String])       = envOrNone(name) orElse alt
+  def envOrSome(name: String, alt: => Option[String])    = envOrNone(name) orElse alt
 
   // for values based on propFilename, falling back to System properties
-  def scalaPropOrElse(name: String, alt: String): String = scalaPropOrNone(name).getOrElse(alt)
+  def scalaPropOrElse(name: String, alt: => String): String = scalaPropOrNone(name).getOrElse(alt)
   def scalaPropOrEmpty(name: String): String             = scalaPropOrElse(name, "")
   def scalaPropOrNone(name: String): Option[String]      = Option(scalaProps.getProperty(name)).orElse(propOrNone("scala." + name))
 
@@ -105,7 +109,7 @@ private[scala] trait PropertiesTrait {
    *  or "version (unknown)" if it cannot be determined.
    */
   val versionString         = "version " + scalaPropOrElse("version.number", "(unknown)")
-  val copyrightString       = scalaPropOrElse("copyright.string", "Copyright 2002-2018, LAMP/EPFL and Lightbend, Inc.")
+  val copyrightString       = scalaPropOrElse("copyright.string", "Copyright 2002-2021, LAMP/EPFL and Lightbend, Inc.")
 
   /** This is the encoding to use reading in source files, overridden with -encoding.
    *  Note that it uses "prop" i.e. looks in the scala jar, not the system properties.
@@ -144,7 +148,7 @@ private[scala] trait PropertiesTrait {
   /* Some derived values. */
   /** Returns `true` iff the underlying operating system is a version of Microsoft Windows. */
   def isWin                 = osName startsWith "Windows"
-  // See http://mail.openjdk.java.net/pipermail/macosx-port-dev/2012-November/005148.html for
+  // See https://mail.openjdk.java.net/pipermail/macosx-port-dev/2012-November/005148.html for
   // the reason why we don't follow developer.apple.com/library/mac/#technotes/tn2002/tn2110.
   /** Returns `true` iff the underlying operating system is a version of Apple Mac OSX.  */
   def isMac                 = osName startsWith "Mac OS X"
@@ -164,8 +168,7 @@ private[scala] trait PropertiesTrait {
   // and finally the system property based javaHome.
   def jdkHome               = envOrElse("JDK_HOME", envOrElse("JAVA_HOME", javaHome))
 
-  // private[scala] for 2.12
-  private[this] def versionFor(command: String) = f"Scala $command $versionString -- $copyrightString"
+  private[scala] def versionFor(command: String) = s"Scala $command $versionString -- $copyrightString"
 
   def versionMsg            = versionFor(propCategory)
   def scalaCmd              = if (isWin) "scala.bat" else "scala"
@@ -205,6 +208,7 @@ private[scala] trait PropertiesTrait {
           val n = if (depth < 2 && r.isEmpty) -2 else s.substring(0, i).toInt
           (n, r)
       }
+    @tailrec
     def compareVersions(s: String, v: String, depth: Int): Int = {
       if (depth >= 3) 0
       else {

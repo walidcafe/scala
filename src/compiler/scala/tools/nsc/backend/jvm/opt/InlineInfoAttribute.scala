@@ -1,12 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2014 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package backend.jvm
 package opt
 
+import scala.collection.mutable
 import scala.tools.asm._
 import scala.tools.nsc.backend.jvm.BTypes.{InlineInfo, MethodInlineInfo}
 import scala.tools.nsc.backend.jvm.BackendReporting.UnknownScalaInlineInfoVersion
@@ -63,21 +71,18 @@ case class InlineInfoAttribute(inlineInfo: InlineInfo) extends Attribute(InlineI
     result.putShort(inlineInfo.methodInfos.size)
 
     // Sort the methodInfos for stability of classfiles
-    for ((nameAndType, info) <- inlineInfo.methodInfos.toList.sortBy(_._1)) {
-      val (name, desc) = nameAndType.span(_ != '(')
-      // Name and desc are added separately because a NameAndType entry also stores them separately.
-      // This makes sure that we use the existing constant pool entries for the method.
-      result.putShort(cw.newUTF8(name))
-      result.putShort(cw.newUTF8(desc))
+    inlineInfo.methodInfos.foreachEntry {
+      case ((name, desc), info) =>
+        result.putShort(cw.newUTF8(name))
+        result.putShort(cw.newUTF8(desc))
 
-      var inlineInfo = 0
-      if (info.effectivelyFinal)  inlineInfo |= 1
-      //                          inlineInfo |= 2 // no longer written
-      if (info.annotatedInline)   inlineInfo |= 4
-      if (info.annotatedNoInline) inlineInfo |= 8
-      result.putByte(inlineInfo)
+        var inlineInfo = 0
+        if (info.effectivelyFinal)  inlineInfo |= 1
+        //                          inlineInfo |= 2 // no longer written
+        if (info.annotatedInline)   inlineInfo |= 4
+        if (info.annotatedNoInline) inlineInfo |= 8
+        result.putByte(inlineInfo)
     }
-
     result
   }
 
@@ -111,7 +116,8 @@ case class InlineInfoAttribute(inlineInfo: InlineInfo) extends Attribute(InlineI
       }
 
       val numEntries = nextShort()
-      val infos = (0 until numEntries).map(_ => {
+      val infos = new mutable.TreeMap[(String, String), MethodInlineInfo]
+      (0 until numEntries).foreach{ _ =>
         val name = nextUTF8()
         val desc = nextUTF8()
 
@@ -120,8 +126,8 @@ case class InlineInfoAttribute(inlineInfo: InlineInfo) extends Attribute(InlineI
         //             = (inlineInfo & 2) != 0 // no longer used
         val isInline   = (inlineInfo & 4) != 0
         val isNoInline = (inlineInfo & 8) != 0
-        (name + desc, MethodInlineInfo(isFinal, isInline, isNoInline))
-      }).toMap
+        infos((name, desc)) = MethodInlineInfo(isFinal, isInline, isNoInline)
+      }
 
       val info = InlineInfo(isFinal, sam, infos, None)
       InlineInfoAttribute(info)

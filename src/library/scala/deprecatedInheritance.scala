@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -38,10 +42,9 @@ import scala.annotation.meta._
  *
  *  @param  message the message to print during compilation if the class was sub-classed
  *  @param  since   a string identifying the first version in which inheritance was deprecated
- *  @since  2.10
  *  @see    [[scala.deprecated]]
  *  @see    [[scala.deprecatedOverriding]]
  *  @see    [[scala.deprecatedName]]
  */
 @getter @setter @beanGetter @beanSetter
-class deprecatedInheritance(message: String = "", since: String = "") extends scala.annotation.StaticAnnotation
+final class deprecatedInheritance(message: String = "", since: String = "") extends scala.annotation.ConstantAnnotation

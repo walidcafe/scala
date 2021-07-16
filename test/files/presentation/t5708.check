@@ -16,13 +16,13 @@ def ensuring(cond: Boolean): test.Compat.type
 def ensuring(cond: Boolean, msg: => Any): test.Compat.type
 def ensuring(cond: test.Compat.type => Boolean): test.Compat.type
 def ensuring(cond: test.Compat.type => Boolean, msg: => Any): test.Compat.type
-def equals(x$1: Any): Boolean
+def equals(x$1: Object): Boolean
 def formatted(fmtstr: String): String
 def hashCode(): Int
 def toString(): String
 def →[B](y: B): (test.Compat.type, B)
 final def !=(x$1: Any): Boolean
-final def ##(): Int
+final def ## : Int
 final def ==(x$1: Any): Boolean
 final def asInstanceOf[T0]: T0
 final def eq(x$1: AnyRef): Boolean

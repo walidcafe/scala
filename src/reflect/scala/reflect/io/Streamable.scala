@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -8,16 +15,14 @@ package reflect
 package io
 
 import java.net.URL
-import java.io.{ BufferedInputStream, InputStream }
-import java.io.{ BufferedReader, InputStreamReader, Closeable => JCloseable }
+import java.io.{BufferedInputStream, InputStream}
+import java.io.{BufferedReader, InputStreamReader, Closeable => JCloseable}
 import scala.io.{ Codec, BufferedSource, Source }
 import scala.collection.mutable.ArrayBuffer
 import Path.fail
+import scala.annotation.tailrec
 
 /** Traits for objects which can be represented as Streams.
- *
- *  @author Paul Phillips
- *  @since  2.8
  *
  *  ''Note:  This library is considered experimental and should not be used unless you know what you are doing.''
  */
@@ -56,6 +61,7 @@ object Streamable {
       lazy val in = bufferedInput()
       var offset = 0
 
+      @tailrec
       def loop(): Unit = {
         if (offset < len) {
           val read = in.read(arr, offset, len - offset)

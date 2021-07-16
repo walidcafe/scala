@@ -1,16 +1,23 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Vlad Ureche
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.partest
 
-import scala.tools.nsc._
 import scala.tools.cmd.CommandLineParser
-import scala.tools.nsc.doc.{ DocFactory, Universe }
+import scala.tools.nsc._
+import scala.tools.nsc.doc.base.comment._
 import scala.tools.nsc.doc.model._
 import scala.tools.nsc.doc.model.diagram._
-import scala.tools.nsc.doc.base.comment._
+import scala.tools.nsc.doc.{DocFactory, Universe}
 import scala.tools.nsc.reporters.ConsoleReporter
 
 /** A class for testing scaladoc model generation
@@ -49,7 +56,7 @@ abstract class ScaladocModelTest extends DirectTest {
   /** Override to feed code into scaladoc */
   override def code =
     if (resourceFile ne null)
-      io.File(resourcePath + "/" + resourceFile).slurp()
+      io.File(s"$resourcePath/$resourceFile").slurp()
     else
       sys.error("Scaladoc Model Test: You need to give a file or some code to feed to scaladoc!")
 
@@ -78,23 +85,20 @@ abstract class ScaladocModelTest extends DirectTest {
     System.setErr(prevErr)
   }
 
-  private[this] var settings: doc.Settings = null
+  private[this] var docSettings: doc.Settings = null
 
   // create a new scaladoc compiler
   def newDocFactory: DocFactory = {
-    settings = new doc.Settings(_ => ())
-    settings.scaladocQuietRun = true // yaay, no more "model contains X documentable templates"!
+    docSettings = new doc.Settings(_ => ())
+    docSettings.scaladocQuietRun = true // yaay, no more "model contains X documentable templates"!
     val args = extraSettings + " " + scaladocSettings
-    new ScalaDoc.Command((CommandLineParser tokenize (args)), settings) // side-effecting, I think
-    val docFact = new DocFactory(new ConsoleReporter(settings), settings)
+    new ScalaDoc.Command((CommandLineParser tokenize (args)), docSettings) // side-effecting, I think
+    val docFact = new DocFactory(new ConsoleReporter(docSettings), docSettings)
     docFact
   }
 
   // compile with scaladoc and output the result
   def model: Option[Universe] = newDocFactory.makeUniverse(Right(code))
-
-  // so we don't get the newSettings warning
-  override def isDebug = false
 
   // finally, enable easy navigation inside the entities
   object access {
@@ -177,10 +181,9 @@ abstract class ScaladocModelTest extends DirectTest {
         case _          => ""
       }
       c match {
-        case c: Comment =>
-          extractText(c.body)
-        case b: Body =>
-          extractText(b)
+        case c: Comment => extractText(c.body)
+        case b: Body    => extractText(b)
+        case x          => throw new MatchError(x)
       }
     }
 

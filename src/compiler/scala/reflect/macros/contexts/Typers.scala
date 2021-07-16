@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.macros
 package contexts
 
@@ -27,7 +39,7 @@ trait Typers {
             case universe.analyzer.SilentResultValue(result) =>
               macroLogVerbose(result)
               result
-            case error@universe.analyzer.SilentTypeError(_) =>
+            case error: universe.analyzer.SilentTypeError =>
               macroLogVerbose(error.err.errMsg)
               if (!silent) throw new TypecheckException(error.err.errPos, error.err.errMsg)
               universe.EmptyTree

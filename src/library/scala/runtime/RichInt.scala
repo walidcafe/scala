@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package runtime
@@ -17,25 +21,27 @@ final class RichInt(val self: Int) extends AnyVal with ScalaNumberProxy[Int] wit
   protected def num = scala.math.Numeric.IntIsIntegral
   protected def ord = scala.math.Ordering.Int
 
-  override def doubleValue() = self.toDouble
-  override def floatValue()  = self.toFloat
-  override def longValue()   = self.toLong
-  override def intValue()    = self
-  override def byteValue()   = self.toByte
-  override def shortValue()  = self.toShort
+  override def doubleValue = self.toDouble
+  override def floatValue  = self.toFloat
+  override def longValue   = self.toLong
+  override def intValue    = self
+  override def byteValue   = self.toByte
+  override def shortValue  = self.toShort
 
   /** Returns `'''true'''` if this number has no decimal component.
     * Always `'''true'''` for `RichInt`.
     */
-  def isWhole() = true
+  def isWhole = true
 
   override def isValidInt   = true
   def isValidLong  = true
 
+  // These method are all overridden and redefined to call out to scala.math to avoid 3 allocations:
+  // the primitive boxing, the value class boxing and instantiation of the Numeric num.
+  // We'd like to redefine signum and sign too but forwards binary compatibility doesn't allow us to.
   override def abs: Int            = math.abs(self)
   override def max(that: Int): Int = math.max(self, that)
   override def min(that: Int): Int = math.min(self, that)
-  override def signum: Int         = math.signum(self)
 
   /** There is no reason to round an `Int`, but this method is provided to avoid accidental loss of precision from a detour through `Float`. */
   @deprecated("this is an integer type; there is no reason to round it.  Perhaps you meant to call this on a floating-point value?", "2.11.0")

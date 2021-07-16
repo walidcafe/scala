@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package api
@@ -101,7 +113,7 @@ package api
  * via `ModuleMirror.instance`). Entry point: `val mm = im.reflectMethod(<method symbol>)`.
  * Example:
  * {{{
- *   scala> val methodX = typeOf[C].declaration(TermName("x")).asMethod
+ *   scala> val methodX = typeOf[C].decl(TermName("x")).asMethod
  *   methodX: reflect.runtime.universe.MethodSymbol = method x
  *
  *   scala> val mm = im.reflectMethod(methodX)
@@ -126,7 +138,7 @@ package api
  *   scala> val im = m.reflect(new C)
  *   im: reflect.runtime.universe.InstanceMirror = instance mirror for C@5f0c8ac1
  *
- *   scala> val fieldX = typeOf[C].declaration(TermName("x")).asTerm.accessed.asTerm
+ *   scala> val fieldX = typeOf[C].decl(TermName("x")).asTerm.accessed.asTerm
  *   fieldX: reflect.runtime.universe.TermSymbol = value x
  *   scala> val fmX = im.reflectField(fieldX)
  *   fmX: reflect.runtime.universe.FieldMirror = field mirror for C.x (bound to C@5f0c8ac1)
@@ -136,7 +148,7 @@ package api
  *
  *   scala> fmX.set(3) // NOTE: can set an underlying value of an immutable field!
  *
- *   scala> val fieldY = typeOf[C].declaration(TermName("y")).asTerm.accessed.asTerm
+ *   scala> val fieldY = typeOf[C].decl(TermName("y")).asTerm.accessed.asTerm
  *   fieldY: reflect.runtime.universe.TermSymbol = variable y
  *
  *   scala> val fmY = im.reflectField(fieldY)
@@ -169,7 +181,7 @@ package api
  *   scala> val cm = m.reflectClass(classC)
  *   cm: reflect.runtime.universe.ClassMirror = class mirror for C (bound to null)
  *
- *   scala> val ctorC = typeOf[C].declaration(ru.nme.CONSTRUCTOR).asMethod
+ *   scala> val ctorC = typeOf[C].decl(ru.nme.CONSTRUCTOR).asMethod
  *   ctorC: reflect.runtime.universe.MethodSymbol = constructor C
  *
  *   scala> val ctorm = cm.reflectConstructor(ctorC)
@@ -201,7 +213,7 @@ package api
  * }}}
  *
  * For more information about `Mirrors`s, see the
- * [[http://docs.scala-lang.org/overviews/reflection/environment-universes-mirrors.html Reflection Guide: Mirrors]]
+ * [[https://docs.scala-lang.org/overviews/reflection/environment-universes-mirrors.html Reflection Guide: Mirrors]]
  *
  *  @contentDiagram hideNodes "*Api"
  *  @group ReflectionAPI
@@ -494,7 +506,7 @@ trait Mirrors { self: Universe =>
     def runtimeClass(tpe: Type): RuntimeClass
 
     /** Maps a Scala class symbol to the corresponding Java class object
-     *  @throws ClassNotFoundException if there is no Java class
+     *  @throws java.lang.ClassNotFoundException if there is no Java class
      *          corresponding to the given Scala class symbol.
      *  Note: If the Scala symbol is ArrayClass, a ClassNotFound exception is thrown
      *        because there is no unique Java class corresponding to a Scala generic array
@@ -504,7 +516,7 @@ trait Mirrors { self: Universe =>
     /** A class symbol for the specified runtime class.
      *  @return The class symbol for the runtime class in the current class loader.
      *  @throws java.lang.ClassNotFoundException if no class with that name exists
-     *  @throws scala.reflect.ScalaReflectionException if no corresponding symbol exists
+     *  @throws scala.ScalaReflectionException if no corresponding symbol exists
      *  to do: throws anything else?
      */
     def classSymbol(rtcls: RuntimeClass): ClassSymbol
@@ -512,7 +524,7 @@ trait Mirrors { self: Universe =>
     /** A module symbol for the specified runtime class.
      *  @return The module symbol for the runtime class in the current class loader.
      *  @throws java.lang.ClassNotFoundException if no class with that name exists
-     *  @throws scala.reflect.ScalaReflectionException if no corresponding symbol exists
+     *  @throws scala.ScalaReflectionException if no corresponding symbol exists
      *  to do: throws anything else?
      */
     def moduleSymbol(rtcls: RuntimeClass): ModuleSymbol

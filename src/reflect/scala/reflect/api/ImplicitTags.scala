@@ -1,9 +1,24 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package api
 
+import scala.annotation.nowarn
+
 /** Tags which preserve the identity of abstract types in the face of erasure.
  *  Can be used for pattern matching, instance tests, serialization and the like.
+ *
  *  @group Tags
  */
 trait ImplicitTags {
@@ -39,10 +54,8 @@ trait ImplicitTags {
 
   // Tags for Annotations.
   implicit val AnnotationTag: ClassTag[Annotation]
+  @nowarn("""cat=deprecation&origin=scala\.reflect\.api\.Annotations\.JavaArgument""")
   implicit val JavaArgumentTag: ClassTag[JavaArgument]
-  implicit val LiteralArgumentTag: ClassTag[LiteralArgument]
-  implicit val ArrayArgumentTag: ClassTag[ArrayArgument]
-  implicit val NestedArgumentTag: ClassTag[NestedArgument]
 
   // Tags for Symbols.
   implicit val TermSymbolTag: ClassTag[TermSymbol]

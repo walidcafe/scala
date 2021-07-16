@@ -1,6 +1,7 @@
+// scalac: -Yrangepos:false
+//
 import scala.reflect.runtime.universe._
 import scala.reflect.ClassTag
-import internal._
 
 object Test extends App {
   def typeTagIsManifest[T: TypeTag : ClassTag] = {

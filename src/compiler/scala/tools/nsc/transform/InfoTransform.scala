@@ -1,10 +1,19 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package transform
+
+import scala.annotation.nowarn
 
 /**
  * An InfoTransform contains a compiler phase that transforms trees and symbol infos -- making sure they stay consistent.
@@ -22,11 +31,16 @@ trait InfoTransform extends Transform {
   def transformInfo(sym: Symbol, tpe: Type): Type
 
   override def newPhase(prev: scala.tools.nsc.Phase): StdPhase =
-    new Phase(prev)
+    new InfoPhase(prev)
 
   protected def changesBaseClasses = true
   protected def keepsTypeParams = true
 
+  @nowarn("""cat=deprecation&origin=scala\.tools\.nsc\.transform\.InfoTransform\.Phase""")
+  final type InfoPhase = Phase
+
+  @nowarn("msg=shadowing a nested class of a parent is deprecated")
+  @deprecated("use InfoPhase instead", since = "2.13.4")
   class Phase(prev: scala.tools.nsc.Phase) extends super.Phase(prev) {
     override val keepsTypeParams = InfoTransform.this.keepsTypeParams
 

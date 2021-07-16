@@ -1,4 +1,3 @@
-import java.util.concurrent._
 import java.util.concurrent.atomic._
 
 object Test { def main(args: Array[String]): Unit = {
@@ -44,7 +43,7 @@ summers foreach { _.join() }
 
 val got = sum.get
 val expected = (n + 1) * n / 2
-println(got + " " + expected + " " + (got == expected))
+println(got.toString + " " + expected + " " + (got == expected))
 
 producers foreach { _.join() }
 

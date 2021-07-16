@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author  David Bernard, Manohar Jonnalagedda
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -107,11 +114,10 @@ abstract class Page {
 
   def kindToString(mbr: MemberEntity) =
     mbr match {
-      case c: Class => if (c.isCaseClass) "case class" else "class"
-      case c: AnnotationClass => if (c.isCaseClass) "case class" else "class"
+      case c: Class => if (c.isCase) "case class" else "class"
       case _: Trait => "trait"
       case _: Package => "package"
-      case _: Object => "object"
+      case o: Object => if (o.isCase) "case object" else "object"
       case _: AbstractType => "type"
       case _: AliasType => "type"
       case _: Constructor => "new"

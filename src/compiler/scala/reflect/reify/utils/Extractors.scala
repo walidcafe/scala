@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package utils
 
@@ -58,7 +70,7 @@ trait Extractors {
         }
         var prev = symtab
         var next = loop(symtab)
-        while (next.syms.length < prev.syms.length) {
+        while (next.syms.sizeCompare(prev.syms) < 0) {
           prev = next
           next = loop(prev)
         }
@@ -93,7 +105,7 @@ trait Extractors {
   }
 
   // if we're reifying a MethodType, we can't use it as a type argument for TypeTag ctor
-  // http://groups.google.com/group/scala-internals/browse_thread/thread/2d7bb85bfcdb2e2
+  // https://groups.google.com/group/scala-internals/browse_thread/thread/2d7bb85bfcdb2e2
   private def mkTarg(tpe: Type): Tree = (
     if ((tpe eq null) || !isUseableAsTypeArg(tpe)) TypeTree(AnyTpe)
     else TypeTree(tpe)

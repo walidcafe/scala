@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -17,9 +24,6 @@ package object util {
   type Set[T <: AnyRef] = scala.reflect.internal.util.Set[T]
   type HashSet[T >: Null <: AnyRef] = scala.reflect.internal.util.HashSet[T]
   val HashSet = scala.reflect.internal.util.HashSet
-
-  /** Apply a function and return the passed value */
-  def returning[T](x: T)(f: T => Unit): T = { f(x) ; x }
 
   /** Execute code and then wait for all non-daemon Threads
    *  created and begun during its execution to complete.
@@ -80,7 +84,7 @@ package object util {
     ps.close()
     bs.toString()
   }
-  def stackTraceString(ex: Throwable): String = stringFromWriter(ex printStackTrace _)
+  def stackTraceString(ex: Throwable): String = stringFromWriter(ex.printStackTrace)
 
   /** A one line string which contains the class of the exception, the
    *  message if any, and the first non-Predef location in the stack trace
@@ -98,7 +102,7 @@ package object util {
     /** Format the stack trace, returning the prefix consisting of frames that satisfy
      *  a given predicate.
      *  The format is similar to the typical case described in the Javadoc
-     *  for [[java.lang.Throwable#printStackTrace]].
+     *  for [[java.lang.Throwable#printStackTrace()*]].
      *  If a stack trace is truncated, it will be followed by a line of the form
      *  `... 3 elided`, by analogy to the lines `... 3 more` which indicate
      *  shared stack trace segments.
@@ -107,10 +111,15 @@ package object util {
     def stackTracePrefixString(p: StackTraceElement => Boolean): String = stackTracePrefixString(e)(p)
   }
 
+  implicit class `quickie stack dump`(private val sc: StringContext) extends AnyVal {
+    @deprecated("For debug only", since="forever")
+    def trace(args: Any*): Unit = new Throwable(sc.s(args: _*)).printStackTrace()
+  }
+
   lazy val trace = new SimpleTracer(System.out)
 
-  // These four deprecated since 2.10.0 are still used in (at least)
-  // the sbt 0.12.4 compiler interface.
+  // These four deprecated since 2.10.0 are still used in
+  // the sbt 0.13 compiler interface.
   @deprecated("Moved to scala.reflect.internal.util.Position", "2.10.0")
   type Position = scala.reflect.internal.util.Position
   @deprecated("Moved to scala.reflect.internal.util.NoPosition", "2.10.0")

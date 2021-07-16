@@ -11,14 +11,13 @@ else
 fi
 
 SBT_CMD=${SBT_CMD-sbt}
-SBT_CMD="$SBT_CMD -sbt-version 0.13.17"
+SBT_CMD="$SBT_CMD -sbt-version 1.5.5"
 
 # repo to publish builds
 integrationRepoUrl=${integrationRepoUrl-"https://scala-ci.typesafe.com/artifactory/scala-integration/"}
 
 # only used on jenkins
 sbtRepositoryConfig="$WORKSPACE/scripts/sbt-repositories-config"
-jcenterCacheUrl=${jcenterCacheUrl-"https://scala-ci.typesafe.com/artifactory/jcenter/"}
 
 # used by `checkAvailability`
 TMP_ROOT_DIR=$(mktemp -d -t pr-scala.XXXX)
@@ -82,7 +81,7 @@ function checkAvailability () {
 # Only used on Jenkins
 # Generate a repositories file with all allowed repositories in our build environment.
 # Takes a variable number of additional repositories as argument.
-# See http://www.scala-sbt.org/0.13/docs/Proxy-Repositories.html
+# See https://www.scala-sbt.org/1.x/docs/Proxy-Repositories.html
 function generateRepositoriesConfig() {
   echo > "$sbtRepositoryConfig" '[repositories]'
   if [[ $# -gt 0 ]]; then
@@ -92,11 +91,9 @@ function generateRepositoriesConfig() {
   fi
 
   cat >> "$sbtRepositoryConfig" << EOF
-  jcenter-cache: $jcenterCacheUrl
   local
   maven-central
-  typesafe-ivy-releases-boot: https://repo.lightbend.com/typesafe/ivy-releases/, [organisation]/[module]/[revision]/[type]s/[artifact](-[classifier]).[ext], bootOnly
-  typesafe-ivy-releases: https://dl.bintray.com/typesafe/ivy-releases/, [organisation]/[module]/(scala_[scalaVersion]/)(sbt_[sbtVersion]/)[revision]/[type]s/[artifact](-[classifier]).[ext]
+  typesafe-ivy-releases: https://repo.lightbend.com/typesafe/ivy-releases/, [organisation]/[module]/[revision]/[type]s/[artifact](-[classifier]).[ext]
   sbt-plugin-releases: https://repo.scala-sbt.org/scalasbt/sbt-plugin-releases/, [organisation]/[module]/(scala_[scalaVersion]/)(sbt_[sbtVersion]/)[revision]/[type]s/[artifact](-[classifier]).[ext]
 EOF
 }
@@ -184,7 +181,7 @@ triggerScalaDist() {
     -H "Authorization: token $TRAVIS_TOKEN" \
     -H "Content-Type: application/json" \
     -d "$json" \
-    https://api.travis-ci.org/repo/scala%2Fscala-dist/requests)
+    https://api.travis-ci.com/repo/scala%2Fscala-dist/requests)
 
   [[ "$curlStatus" == "202" ]] || {
     echo "failed to start job"

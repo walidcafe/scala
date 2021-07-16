@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala Parallel Testing               **
-**    / __/ __// _ | / /  / _ |    (c) 2007-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.tools.partest.sbt
 
@@ -14,12 +18,16 @@ import _root_.sbt.testing._
 
 import scala.tools.partest.TestState._
 import scala.tools.partest._
-import scala.tools.partest.nest.{AbstractRunner, FileManager, RunnerSpec, SuiteRunner}
+import scala.tools.partest.nest.{AbstractRunner, FileManager, RunnerSpec}
 
-class SBTRunner(val config: RunnerSpec.Config,
+class SBTRunner(config: RunnerSpec.Config,
                 partestFingerprint: Fingerprint, eventHandler: EventHandler, loggers: Array[Logger],
                 srcDir: String, testClassLoader: URLClassLoader, javaCmd: File, javacCmd: File,
-                scalacArgs: Array[String], args: Array[String]) extends AbstractRunner {
+                scalacArgs: Array[String], args: Array[String]) extends AbstractRunner(
+  config,
+  config.optSourcePath orElse Option(srcDir) getOrElse PartestDefaults.sourcePath,
+  new FileManager(testClassLoader = testClassLoader)
+) {
 
   // no summary, SBT will do that for us
   override protected val printSummary = false
@@ -31,7 +39,7 @@ class SBTRunner(val config: RunnerSpec.Config,
   }
 
   // Enable colors if there's an explicit override or all loggers support them
-  override protected val colorEnabled = {
+  override val log = new ConsoleLog({
     val ptOverride = defs.collect { case ("partest.colors", v) => v.toBoolean }.lastOption
     ptOverride.getOrElse {
       val sbtOverride1 = sys.props.get("sbt.log.format").map(_.toBoolean)
@@ -40,47 +48,36 @@ class SBTRunner(val config: RunnerSpec.Config,
         loggers.forall(_.ansiCodesSupported())
       }
     }
-  }
+  })
 
-  val javaOpts = {
+  override val javaOpts = {
     val l = defs.collect { case ("partest.java_opts", v) => v }
     if(l.isEmpty) PartestDefaults.javaOpts
     else l.mkString(" ")
   }
 
-  val scalacOpts = {
+  override val scalacOpts = {
     val l = defs.collect { case ("partest.scalac_opts", v) => v }
-    if(l.isEmpty) PartestDefaults.javaOpts
+    if(l.isEmpty) PartestDefaults.scalacOpts
     else l.mkString(" ")
   }
 
-  private val testSrcPath: String = config.optSourcePath orElse Option(srcDir) getOrElse PartestDefaults.sourcePath
+  override val javaCmdPath = Option(javaCmd).map(_.getAbsolutePath) getOrElse PartestDefaults.javaCmd
+  override val javacCmdPath = Option(javacCmd).map(_.getAbsolutePath) getOrElse PartestDefaults.javacCmd
+  override val scalacExtraArgs = scalacArgs.toIndexedSeq
 
-  val suiteRunner = new SuiteRunner(
-    testSourcePath = testSrcPath,
-    new FileManager(testClassLoader = testClassLoader),
-    updateCheck = config.optUpdateCheck,
-    failed  = config.optFailed,
-    nestUI = nestUI,
-    javaCmdPath = Option(javaCmd).map(_.getAbsolutePath) getOrElse PartestDefaults.javaCmd,
-    javacCmdPath = Option(javacCmd).map(_.getAbsolutePath) getOrElse PartestDefaults.javacCmd,
-    scalacExtraArgs = scalacArgs.toIndexedSeq,
-    javaOpts = javaOpts,
-    scalacOpts = scalacOpts) { self =>
-
-      override def onFinishTest(testFile: File, result: TestState, durationMs: Long): TestState = {
-        self.synchronized {
-          eventHandler.handle(new Event {
-            def fullyQualifiedName: String = scala.tools.partest.nest.PathSettings.testRoot.name + "/" + testSrcPath
-            def fingerprint: Fingerprint = partestFingerprint
-            def selector: Selector = new TestSelector(testFile.testIdent)
-            val (status, throwable) = makeStatus(result)
-            def duration: Long = durationMs
-          })
-        }
-        result
-      }
+  override def onFinishTest(testFile: File, result: TestState, durationMs: Long): TestState = {
+    synchronized {
+      eventHandler.handle(new Event {
+        def fullyQualifiedName: String = pathSettings.testRoot.name + "/" + testSourcePath
+        def fingerprint: Fingerprint = partestFingerprint
+        def selector: Selector = new TestSelector(testFile.testIdent)
+        val (status, throwable) = makeStatus(result)
+        def duration: Long = durationMs
+      })
     }
+    result
+  }
 
   def makeStatus(t: TestState): (Status, OptionalThrowable) = t match {
     case Uninitialized(_) => (Status.Pending, new OptionalThrowable)

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -8,6 +15,7 @@ package reflect.runtime
 
 import java.lang.{Class => jClass}
 import java.lang.reflect.{ Method, InvocationTargetException, UndeclaredThrowableException }
+import scala.annotation.tailrec
 import scala.reflect.internal.util.AbstractFileClassLoader
 import scala.reflect.io._
 
@@ -15,6 +23,7 @@ import scala.reflect.io._
  */
 object ReflectionUtils {
   // Unwraps some chained exceptions which arise during reflective calls.
+  @tailrec
   def unwrapThrowable(x: Throwable): Throwable = x match {
     case  _: InvocationTargetException |      // thrown by reflectively invoked method or constructor
           _: ExceptionInInitializerError |    // thrown when running a static initializer (e.g. a scala module constructor)
@@ -27,20 +36,20 @@ object ReflectionUtils {
   }
   // Transforms an exception handler into one which will only receive the unwrapped
   // exceptions (for the values of wrap covered in unwrapThrowable.)
-  def unwrapHandler[T](pf: PartialFunction[Throwable, T]): PartialFunction[Throwable, T] = {
-    case ex if pf isDefinedAt unwrapThrowable(ex)   => pf(unwrapThrowable(ex))
-  }
+  def unwrapHandler[T](pf: PartialFunction[Throwable, T]): PartialFunction[Throwable, T] =
+    pf.compose({ case ex => unwrapThrowable(ex) })
 
   def show(cl: ClassLoader): String = {
     import scala.language.reflectiveCalls
 
+    @tailrec
     def isAbstractFileClassLoader(clazz: Class[_]): Boolean = {
       if (clazz == null) return false
       if (clazz == classOf[AbstractFileClassLoader]) return true
       isAbstractFileClassLoader(clazz.getSuperclass)
     }
     def inferClasspath(cl: ClassLoader): String = cl match {
-      case cl: java.net.URLClassLoader =>
+      case cl: java.net.URLClassLoader if cl.getURLs != null =>
         (cl.getURLs mkString ",")
       case cl if cl != null && isAbstractFileClassLoader(cl.getClass) =>
         cl.asInstanceOf[{val root: scala.reflect.io.AbstractFile}].root.canonicalPath
@@ -51,10 +60,8 @@ object ReflectionUtils {
         "<unknown>"
     }
     cl match {
-      case cl if cl != null =>
-        "%s of type %s with classpath [%s] and parent being %s".format(cl, cl.getClass, inferClasspath(cl), show(cl.getParent))
-      case null =>
-        "primordial classloader with boot classpath [%s]".format(inferClasspath(cl))
+      case null => s"primordial classloader with boot classpath [${inferClasspath(cl)}]"
+      case _    => s"$cl of type ${cl.getClass} with classpath [${inferClasspath(cl)}] and parent being ${show(cl.getParent)}"
     }
   }
 
@@ -99,7 +106,7 @@ object ReflectionUtils {
     // I think we can keep the source code though, because it can be useful to the others
     //
     // def inferAssociatedFile(clazz: Class[_]): AbstractFile = {
-    //   // http://stackoverflow.com/questions/227486/find-where-java-class-is-loaded-from
+    //   // https://stackoverflow.com/questions/227486/find-where-java-class-is-loaded-from
     //   try {
     //     var cl = clazz.getClassLoader()
     //     if (cl == null) {

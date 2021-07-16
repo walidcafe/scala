@@ -1,20 +1,28 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 
-import scala.reflect.internal.util.{ SourceFile, NoSourceFile, FreshNameCreator }
+import scala.annotation.nowarn
+import scala.reflect.internal.util.{FreshNameCreator, NoSourceFile, SourceFile}
 import scala.collection.mutable
-import scala.collection.mutable.{ LinkedHashSet, ListBuffer }
+import scala.collection.mutable.{LinkedHashSet, ListBuffer}
 
 trait CompilationUnits { global: Global =>
 
   /** An object representing a missing compilation unit.
    */
   object NoCompilationUnit extends CompilationUnit(NoSourceFile) {
-    override lazy val isJava = false
+    override val isJava = false
     override def exists = false
     override def toString() = "NoCompilationUnit"
   }
@@ -32,6 +40,7 @@ trait CompilationUnits { global: Global =>
   /** One unit of compilation that has been submitted to the compiler.
     * It typically corresponds to a single file of source code.  It includes
     * error-reporting hooks.  */
+  @nowarn("""cat=deprecation&origin=scala\.reflect\.macros\.Universe\.CompilationUnitContextApi""")
   class CompilationUnit(val source: SourceFile, freshNameCreator: FreshNameCreator) extends CompilationUnitContextApi { self =>
     def this(source: SourceFile) = this(source, new FreshNameCreator)
     /** the fresh name creator */
@@ -61,30 +70,35 @@ trait CompilationUnits { global: Global =>
     /** Note: depends now contains toplevel classes.
      *  To get their sourcefiles, you need to dereference with .sourcefile
      */
-    private[this] val _depends = mutable.HashSet[Symbol]()
-    // sbt compatibility (scala/bug#6875)
-    //
-    // imagine we have a file named A.scala, which defines a trait named Foo and a module named Main
-    // Main contains a call to a macro, which calls compileLate to define a mock for Foo
-    // compileLate creates a virtual file Virt35af32.scala, which contains a class named FooMock extending Foo,
-    // and macro expansion instantiates FooMock. the stage is now set. let's see what happens next.
-    //
-    // without this workaround in scalac or without being patched itself, sbt will think that
-    // * Virt35af32 depends on A (because it extends Foo from A)
-    // * A depends on Virt35af32 (because it contains a macro expansion referring to FooMock from Virt35af32)
-    //
-    // after compiling A.scala, sbt will notice that it has a new source file named Virt35af32.
-    // it will also think that this file hasn't yet been compiled and since A depends on it
-    // it will think that A needs to be recompiled.
-    //
-    // recompilation will lead to another macro expansion. that another macro expansion might choose to create a fresh mock,
-    // producing another virtual file, say, Virtee509a, which will again trick sbt into thinking that A needs a recompile,
-    // which will lead to another macro expansion, which will produce another virtual file and so on
-    def depends = if (exists && !source.file.isVirtual) _depends else mutable.HashSet[Symbol]()
+    private[this] val _depends = if (settings.YtrackDependencies.value) mutable.HashSet[Symbol]() else null
+    @deprecated("Not supported and no longer used by Zinc", "2.12.9")
+    def depends: mutable.HashSet[Symbol] = if (_depends == null) mutable.HashSet[Symbol]() else _depends
+    def registerDependency(symbol: Symbol): Unit = if (settings.YtrackDependencies.value) {
+      // sbt compatibility (scala/bug#6875)
+      //
+      // imagine we have a file named A.scala, which defines a trait named Foo and a module named Main
+      // Main contains a call to a macro, which calls compileLate to define a mock for Foo
+      // compileLate creates a virtual file Virt35af32.scala, which contains a class named FooMock extending Foo,
+      // and macro expansion instantiates FooMock. the stage is now set. let's see what happens next.
+      //
+      // without this workaround in scalac or without being patched itself, sbt will think that
+      // * Virt35af32 depends on A (because it extends Foo from A)
+      // * A depends on Virt35af32 (because it contains a macro expansion referring to FooMock from Virt35af32)
+      //
+      // after compiling A.scala, sbt will notice that it has a new source file named Virt35af32.
+      // it will also think that this file hasn't yet been compiled and since A depends on it
+      // it will think that A needs to be recompiled.
+      //
+      // recompilation will lead to another macro expansion. that another macro expansion might choose to create a fresh mock,
+      // producing another virtual file, say, Virtee509a, which will again trick sbt into thinking that A needs a recompile,
+      // which will lead to another macro expansion, which will produce another virtual file and so on
+      if (exists && !source.file.isVirtual) _depends += symbol
+    }
 
     /** so we can relink
      */
     private[this] val _defined = mutable.HashSet[Symbol]()
+    @deprecated("Not supported", "2.12.9")
     def defined = if (exists && !source.file.isVirtual) _defined else mutable.HashSet[Symbol]()
 
     /** Synthetic definitions generated by namer, eliminated by typer.
@@ -130,23 +144,8 @@ trait CompilationUnits { global: Global =>
     /** For sbt compatibility (https://github.com/scala/scala/pull/4588) */
     val icode: LinkedHashSet[icodes.IClass] = new LinkedHashSet
 
-    @deprecated("Call global.reporter.echo directly instead.", "2.11.2")
-    final def echo(pos: Position, msg: String): Unit    = reporter.echo(pos, msg)
-    @deprecated("Call global.reporter.error (or typer.context.error) directly instead.", "2.11.2")
-    final def error(pos: Position, msg: String): Unit   = reporter.error(pos, msg)
-    @deprecated("Call global.reporter.warning (or typer.context.warning) directly instead.", "2.11.2")
-    final def warning(pos: Position, msg: String): Unit = reporter.warning(pos, msg)
-
-    @deprecated("Call global.currentRun.reporting.deprecationWarning directly instead.", "2.11.2")
-    final def deprecationWarning(pos: Position, msg: String, since: String): Unit = currentRun.reporting.deprecationWarning(pos, msg, since)
-    @deprecated("Call global.currentRun.reporting.uncheckedWarning directly instead.", "2.11.2")
-    final def uncheckedWarning(pos: Position, msg: String): Unit   = currentRun.reporting.uncheckedWarning(pos, msg)
-
-    @deprecated("This method will be removed. It does nothing.", "2.11.2")
-    final def comment(pos: Position, msg: String): Unit = {}
-
     /** Is this about a .java source file? */
-    lazy val isJava = source.file.name.endsWith(".java")
+    val isJava: Boolean = source.isJava
 
     override def toString() = source.toString()
   }

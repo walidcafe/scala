@@ -1,7 +1,6 @@
 package scala
 
 import org.junit.Test
-import org.junit.Assert._
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
@@ -16,15 +15,15 @@ class PartialFunctionSerializationTest {
     new ObjectOutputStream(new ByteArrayOutputStream()).writeObject(fn)
   }
 
-  @Test def canSerializeLiteral = assertSerializable(pf1)
+  @Test def canSerializeLiteral(): Unit = assertSerializable(pf1)
 
-  @Test def canSerializeLifted = assertSerializable(pf1.lift)
+  @Test def canSerializeLifted(): Unit = assertSerializable(pf1.lift)
 
-  @Test def canSerializeOrElse = assertSerializable(pf1 orElse pf2)
+  @Test def canSerializeOrElse(): Unit = assertSerializable(pf1 orElse pf2)
 
-  @Test def canSerializeUnlifted = assertSerializable(Function.unlift((x: Int) => Some(x)))
+  @Test def canSerializeUnlifted(): Unit = assertSerializable(Function.unlift((x: Int) => Some(x)))
 
-  @Test def canSerializeAndThen = assertSerializable(pf1.andThen((x: Int) => x))
+  @Test def canSerializeAndThen(): Unit = assertSerializable(pf1.andThen((x: Int) => x))
 
-  @Test def canSerializeEmpty = assertSerializable(PartialFunction.empty)
+  @Test def canSerializeEmpty(): Unit = assertSerializable(PartialFunction.empty)
 }

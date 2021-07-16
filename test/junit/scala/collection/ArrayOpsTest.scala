@@ -28,17 +28,25 @@ class ArrayOpsTest {
   }
 
   @Test
-  def reverseIterator: Unit = {
+  def reverseIterator(): Unit = {
     val a = Array(1,2,3)
     assertEquals(List(3,2,1), a.reverseIterator.toList)
   }
 
   @Test
-  def folds: Unit = {
+  def folds(): Unit = {
     val a = Array(1,2,3)
     assertEquals(6, a.foldLeft(0){ (a, b) => a+b })
     assertEquals(6, a.foldRight(0){ (a, b) => a+b })
     assertEquals(6, a.fold(0){ (a, b) => a+b })
+    val b = Array[Int]()
+    assertEquals(0, b.foldLeft(0){ (a, b) => a+b })
+    assertEquals(0, b.foldRight(0){ (a, b) => a+b })
+    assertEquals(0, b.fold(0){ (a, b) => a+b })
+    val c = Array(1)
+    assertEquals(3, c.foldLeft(2){ (a, b) => a+b })
+    assertEquals(3, c.foldRight(2){ (a, b) => a+b })
+    assertEquals(3, c.fold(2){ (a, b) => a+b })
   }
 
   @Test
@@ -70,6 +78,20 @@ class ArrayOpsTest {
   }
 
   @Test
+  def startsWith(): Unit = {
+    val l0 = Nil
+    val l1 = 1 :: Nil
+    val a0 = Array[Int]()
+    val a1 = Array[Int](1)
+    assertEquals(l0.startsWith(l0, 0), a0.startsWith(a0, 0))
+    assertEquals(l0.startsWith(l0, 1), a0.startsWith(a0, 1))
+    assertEquals(l0.startsWith(l1, 0), a0.startsWith(a1, 0))
+    assertEquals(l0.startsWith(l1, 1), a0.startsWith(a1, 1))
+    assertEquals(l0.startsWith(l1, -1), a0.startsWith(a1, -1))
+    assertEquals(l0.startsWith(l1, Int.MinValue), a0.startsWith(a1, Int.MinValue))
+  }
+
+  @Test
   def patch(): Unit = {
     val a1 = Array.empty[Int]
     val v1 = a1.toVector
@@ -80,5 +102,44 @@ class ArrayOpsTest {
     assertEquals(v2.patch(0, a2, 3), a2.patch(0, v2, 3).toSeq)
     assertEquals(v2.patch(0, a2, 8), a2.patch(0, v2, 8).toSeq)
     assertEquals(v1.patch(-1, a2, 1), a1.patch(-1, v2, 1).toSeq)
+  }
+
+  @Test
+  def slice(): Unit = {
+    assertArrayEquals(Array[Int](2), Array[Int](1, 2).slice(1, 2))
+    assertArrayEquals(Array[Int](), Array[Int](1).slice(1052471512, -1496048404))
+    assertArrayEquals(Array[Int](), Array[Int](1).slice(2, 3))
+  }
+
+  @Test
+  def copyToArrayOutOfBoundsTest(): Unit = {
+    val target = Array[Int]()
+    assertEquals(0, Array(1,2).copyToArray(target, 1, 0))
+  }
+
+  @Test
+  def t11499(): Unit = {
+    val a: Array[Byte] = new Array[Byte](1000).sortWith { _ < _ }
+    assertEquals(0, a(0))
+  }
+
+  @Test
+  def `empty intersection has correct component type for array`(): Unit = {
+    val something = Array(3.14)
+    val nothing   = Array[Double]()
+    val empty     = Array.empty[Double]
+
+    assertEquals(classOf[Double], nothing.intersect(something).getClass.getComponentType)
+    assertTrue(nothing.intersect(something).isEmpty)
+
+    assertEquals(classOf[Double], empty.intersect(something).getClass.getComponentType)
+    assertTrue(empty.intersect(something).isEmpty)
+    assertEquals(classOf[Double], empty.intersect(nothing).getClass.getComponentType)
+    assertTrue(empty.intersect(nothing).isEmpty)
+
+    assertEquals(classOf[Double], something.intersect(nothing).getClass.getComponentType)
+    assertTrue(something.intersect(nothing).isEmpty)
+    assertEquals(classOf[Double], something.intersect(empty).getClass.getComponentType)
+    assertTrue(something.intersect(empty).isEmpty)
   }
 }

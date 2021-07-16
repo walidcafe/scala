@@ -1,6 +1,7 @@
-'Test
+warning: 3 deprecations (since 2.13.0); re-run with -deprecation for details
+Symbol(Test)
 Success 1
-'Test
+Symbol(Test)
 Success 2
-'Test
+Symbol(Test)
 Success 3

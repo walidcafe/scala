@@ -1,6 +1,10 @@
+// java: -Dneeds.forked.jvm
+
 object Test {
   scala.sys.addShutdownHook {
-    Thread.sleep(1000)
+    // sleep is added here so main#shutdown happens before this hook.
+    // Thread.sleep(1000) was not enough according to https://github.com/scala/bug/issues/11536
+    Thread.sleep(3000)
     println("Test#shutdown.")
   }
 

@@ -9,26 +9,30 @@ trait GenerateAnyValReps {
 
     case class Op(op : String, doc : String)
 
-    private def companionCoercions(tos: AnyValRep*) = {
-      tos.toList map (to =>
-        s"implicit def @javaequiv@2${to.javaEquiv}(x: @name@): ${to.name} = x.to${to.name}"
-      )
-    }
+    private def companionCoercions(deprecated: Boolean, tos: AnyValRep*): List[String] =
+      tos.toList.flatMap { to =>
+        val code = s"implicit def @javaequiv@2${to.javaEquiv}(x: @name@): ${to.name} = x.to${to.name}"
+        if (deprecated)
+          List(s"""@deprecated("Implicit conversion from @name@ to ${to.name} is dangerous because it loses precision. Write `.to${to.name}` instead.", "2.13.1")""", code)
+        else
+          List(code)
+      }
+
     def coercionComment =
 """/** Language mandated coercions from @name@ to "wider" types. */
 import scala.language.implicitConversions"""
 
     def implicitCoercions: List[String] = {
       val coercions = this match {
-        case B     => companionCoercions(S, I, L, F, D)
-        case S | C => companionCoercions(I, L, F, D)
-        case I     => companionCoercions(L, F, D)
-        case L     => companionCoercions(F, D)
-        case F     => companionCoercions(D)
+        case B     => companionCoercions(deprecated = false, S, I, L, F, D)
+        case S | C => companionCoercions(deprecated = false, I, L, F, D)
+        case I     => companionCoercions(deprecated = true, F) ++ companionCoercions(deprecated = false, L, D)
+        case L     => companionCoercions(deprecated = true, F, D)
+        case F     => companionCoercions(deprecated = false, D)
         case _     => Nil
       }
       if (coercions.isEmpty) Nil
-      else coercionComment.lines.toList ++ coercions
+      else coercionComment.linesIterator.toList ++ coercions
     }
 
     def isCardinal: Boolean = isIntegerType(this)
@@ -146,10 +150,14 @@ import scala.language.implicitConversions"""
 
     def mkCoercions = numeric map (x => "def to%s: %s".format(x, x))
     def mkUnaryOps  = unaryOps map (x => "%s\n  def unary_%s : %s".format(x.doc, x.op, this opType I))
-    def mkStringOps = List("def +(x: String): String")
+    def mkStringOps = List(
+      "@deprecated(\"Adding a number and a String is deprecated. Use the string interpolation `s\\\"$num$str\\\"`\", \"2.13.0\")\n  def +(x: String): String"
+    )
     def mkShiftOps  = (
-      for (op <- shiftOps ; arg <- List(I, L)) yield
-        "%s\n  def %s(x: %s): %s".format(op.doc, op.op, arg, this opType I)
+      for (op <- shiftOps ; arg <- List(I, L)) yield {
+        val doc = op.doc + (if (this == L || arg == I) "" else "\n  @deprecated(\"shifting a value by a `Long` argument is deprecated (except when the value is a `Long`).\\nCall `toInt` on the argument to maintain the current behavior and avoid the deprecation warning.\", \"2.12.7\")")
+        "%s\n  def %s(x: %s): %s".format(doc, op.op, arg, this opType I)
+      }
     )
 
     def clumps: List[List[String]] = {
@@ -172,7 +180,7 @@ import scala.language.implicitConversions"""
     }
     def objectLines = {
       val comp = if (isCardinal) cardinalCompanion else floatingCompanion
-      interpolate(comp + allCompanions + "\n" + nonUnitCompanions).trim.lines.toList ++ (implicitCoercions map interpolate)
+      interpolate(comp + allCompanions + "\n" + nonUnitCompanions).trim.linesIterator.toList ++ (implicitCoercions map interpolate)
     }
 
     /** Makes a set of binary operations based on the given set of ops, args, and resultFn.
@@ -218,7 +226,7 @@ import scala.language.implicitConversions"""
     def representation = repr.map(", a " + _).getOrElse("")
 
     def indent(s: String)  = if (s == "") "" else "  " + s
-    def indentN(s: String) = s.lines map indent mkString "\n"
+    def indentN(s: String) = s.linesIterator map indent mkString "\n"
 
     def boxUnboxInterpolations = Map(
       "@boxRunTimeDoc@" -> """
@@ -232,6 +240,7 @@ import scala.language.implicitConversions"""
       "@unboxImpl@" -> "???"
     )
     def interpolations = Map(
+      "@article@"   -> (if (this == I) "an" else "a"),
       "@name@"      -> name,
       "@representation@" -> representation,
       "@javaequiv@" -> javaEquiv,
@@ -268,13 +277,17 @@ import scala.language.implicitConversions"""
 }
 
 trait GenerateAnyValTemplates {
-  def headerTemplate = """/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+  def headerTemplate = """/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 // DO NOT EDIT, CHANGES WILL BE LOST
 // This auto-generated code can be modified in "project/GenerateAnyVals.scala".
@@ -319,10 +332,10 @@ override def toString = "object scala.@name@"
   def nonUnitCompanions = ""  // todo
 
   def cardinalCompanion = """
-/** The smallest value representable as a @name@. */
+/** The smallest value representable as @article@ @name@. */
 final val MinValue = @boxed@.MIN_VALUE
 
-/** The largest value representable as a @name@. */
+/** The largest value representable as @article@ @name@. */
 final val MaxValue = @boxed@.MAX_VALUE
 """
 
@@ -441,9 +454,9 @@ def ^(x: Boolean): Boolean
 
 // Provide a more specific return type for Scaladoc
 override def getClass(): Class[Boolean] = ???
-    """.trim.lines.toList
+    """.trim.linesIterator.toList
 
-    def objectLines = interpolate(allCompanions + "\n" + nonUnitCompanions).lines.toList
+    def objectLines = interpolate(allCompanions + "\n" + nonUnitCompanions).linesIterator.toList
   }
   object U extends AnyValRep("Unit", None, "void") {
     override def classDoc = """
@@ -457,11 +470,20 @@ override def getClass(): Class[Boolean] = ???
       "// Provide a more specific return type for Scaladoc",
       "override def getClass(): Class[Unit] = ???"
     )
-    def objectLines = interpolate(allCompanions).lines.toList
+    def objectLines = interpolate(allCompanions).linesIterator.toList
+
+    private def nono = "`Unit` companion object is not allowed in source; instead, use `()` for the unit value"
+    override def mkObject = s"""@scala.annotation.compileTimeOnly("$nono")\n${super.mkObject}"""
 
     override def boxUnboxInterpolations = Map(
-      "@boxRunTimeDoc@" -> "",
-      "@unboxRunTimeDoc@" -> "",
+      "@boxRunTimeDoc@" -> """
+ *  This method is not intended for use in source code.
+ *  The runtime representation of this value is platform specific.
+ *""",
+      "@unboxRunTimeDoc@" -> """
+ *  This method is not intended for use in source code.
+ *  The result of successfully unboxing a value is `()`.
+ *""",
       "@unboxDoc@" -> "the Unit value ()",
       "@boxImpl@" -> "scala.runtime.BoxedUnit.UNIT",
       "@unboxImpl@" -> "x.asInstanceOf[scala.runtime.BoxedUnit]"
@@ -486,7 +508,7 @@ object GenerateAnyVals {
 
     av.make() foreach { case (name, code ) =>
       val file = new java.io.File(outDir, name + ".scala")
-      sbt.IO.write(file, code, java.nio.charset.Charset.forName("UTF-8"), false)
+      sbt.IO.write(file, code, java.nio.charset.StandardCharsets.UTF_8, false)
     }
   }
 }

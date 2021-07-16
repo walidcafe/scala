@@ -1,9 +1,19 @@
+/*
+ * Scala classfile decoder (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.scalap
 package scalax
 package rules
 package scalasig
-
-import language.postfixOps
 
 import java.io.IOException
 
@@ -53,7 +63,7 @@ class ByteCode(val bytes: Array[Byte], val pos: Int, val length: Int) {
     result
   }
 
-  override def toString = length + " bytes"
+  override def toString = "" + length + " bytes"
 
   def toInt = fold(0) { (x, b) => (x << 8) + (b & 0xFF)}
   def toLong = fold(0L) { (x, b) => (x << 8) + (b & 0xFF)}
@@ -84,22 +94,22 @@ trait ByteCodeReader extends RulesWithState {
   type S = ByteCode
   type Parser[A] = Rule[A, String]
 
-  val byte = apply(_ nextByte)
+  val byte = apply(_.nextByte)
 
   val u1 = byte ^^ (_ & 0xFF)
-  val u2 = bytes(2) ^^ (_ toInt)
-  val u4 = bytes(4) ^^ (_ toInt) // should map to Long??
+  val u2 = bytes(2) ^^ (_.toInt)
+  val u4 = bytes(4) ^^ (_.toInt) // should map to Long??
 
   def bytes(n: Int) = apply(_ next n)
 }
 
 object ClassFileParser extends ByteCodeReader {
-  def parse(byteCode: ByteCode) = expect(classFile)(byteCode)
-  def parseAnnotations(byteCode: ByteCode) = expect(annotations)(byteCode)
+  def parse(byteCode: ByteCode): ClassFile                  = expect(classFile)(byteCode)
+  def parseAnnotations(byteCode: ByteCode): Seq[Annotation] = expect(annotations)(byteCode)
 
   val magicNumber = (u4 filter (_ == 0xCAFEBABE)) | error("Not a valid class file")
   val version = u2 ~ u2 ^^ { case minor ~ major => (major,  minor) }
-  val constantPool = (u2 ^^ ConstantPool) >> repeatUntil(constantPoolEntry)(_ isFull)
+  val constantPool = (u2 ^^ ConstantPool) >> repeatUntil(constantPoolEntry)(_.isFull)
 
   // NOTE currently most constants just evaluate to a string description
   // TODO evaluate to useful values
@@ -143,13 +153,13 @@ object ClassFileParser extends ByteCodeReader {
   val attributes = u2 >> attribute.times
 
   // parse runtime-visible annotations
-  abstract class ElementValue
-  case class AnnotationElement(elementNameIndex: Int, elementValue: ElementValue)
-  case class ConstValueIndex(index: Int) extends ElementValue
-  case class EnumConstValue(typeNameIndex: Int, constNameIndex: Int) extends ElementValue
-  case class ClassInfoIndex(index: Int) extends ElementValue
-  case class Annotation(typeIndex: Int, elementValuePairs: Seq[AnnotationElement]) extends ElementValue
-  case class ArrayValue(values: Seq[ElementValue]) extends ElementValue
+  sealed abstract class ElementValue
+  final case class AnnotationElement(elementNameIndex: Int, elementValue: ElementValue)
+  final case class ConstValueIndex(index: Int) extends ElementValue
+  final case class EnumConstValue(typeNameIndex: Int, constNameIndex: Int) extends ElementValue
+  final case class ClassInfoIndex(index: Int) extends ElementValue
+  final case class Annotation(typeIndex: Int, elementValuePairs: Seq[AnnotationElement]) extends ElementValue
+  final case class ArrayValue(values: Seq[ElementValue]) extends ElementValue
 
   def element_value: Parser[ElementValue] = u1 >> {
     case 'B'|'C'|'D'|'F'|'I'|'J'|'S'|'Z'|'s' => u2 ^^ ConstValueIndex
@@ -169,8 +179,8 @@ object ClassFileParser extends ByteCodeReader {
   val method = u2 ~ u2 ~ u2 ~ attributes ^~~~^ Method
   val methods = u2 >> method.times
 
-  val header = magicNumber -~ u2 ~ u2 ~ constantPool ~ u2 ~ u2 ~ u2 ~ interfaces ^~~~~~~^ ClassFileHeader
-  val classFile = header ~ fields ~ methods ~ attributes ~- !u1 ^~~~^ ClassFile
+  val header = magicNumber -~ u2 ~ u2 ~ constantPool ~ u2 ~ u2 ~ u2 ~ interfaces ^~~~~~~^ (ClassFileHeader.apply _)
+  val classFile = header ~ fields ~ methods ~ attributes ~- !u1 ^~~~^ (ClassFile.apply _)
 
   // TODO create a useful object, not just a string
   def memberRef(description: String) = u2 ~ u2 ^^ add1 {

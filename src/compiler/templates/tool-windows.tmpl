@@ -1,18 +1,22 @@
 @@echo off
 
 rem ##########################################################################
-rem # Copyright 2002-2013 LAMP/EPFL
+rem # Scala (https://www.scala-lang.org)
 rem #
-rem # This is free software; see the distribution for copying conditions.
-rem # There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
-rem # PARTICULAR PURPOSE.
+rem # Copyright EPFL and Lightbend, Inc.
+rem #
+rem # Licensed under Apache License 2.0
+rem # (http://www.apache.org/licenses/LICENSE-2.0).
+rem #
+rem # See the NOTICE file distributed with this work for
+rem # additional information regarding copyright ownership.
 rem ##########################################################################
 
 setlocal enableextensions enabledelayedexpansion
 
 set _LINE_TOOLCP=
 
-rem Use "%~1" to handle spaces in paths. See http://ss64.com/nt/syntax-args.html
+rem Use "%~1" to handle spaces in paths. See https://ss64.com/nt/syntax-args.html
 rem scala/bug#7295 The goto here is needed to avoid problems with `scala Script.cmd "arg(with)paren"`,
 rem                we must not evaluate %~2 eagerly, but delayed expansion doesn't seem to allow
 rem                removal of quotation marks.
@@ -136,6 +140,7 @@ if not "%_LINE_TOOLCP%"=="" call :add_cpath "%_LINE_TOOLCP%"
 
 set _PROPS=-Dscala.home="!_SCALA_HOME!" %_OVERRIDE_USEJAVACP% @properties@
 
+setlocal DisableDelayedExpansion
 rem echo "%_JAVACMD%" %_JAVA_OPTS% %_PROPS% -cp "%_TOOL_CLASSPATH%" @class@ @toolflags@ %*
 "%_JAVACMD%" %_JAVA_OPTS% %_PROPS% -cp "%_TOOL_CLASSPATH%" @class@ @toolflags@ %*
 goto end
@@ -152,7 +157,7 @@ rem # subroutines
 goto :eof
 
 rem Variable "%~dps0" works on WinXP SP2 or newer
-rem (see http://support.microsoft.com/?kbid=833431)
+rem (see https://support.microsoft.com/?kbid=833431)
 rem set _SCALA_HOME=%~dps0..
 :set_home
   set _BIN_DIR=
@@ -163,5 +168,5 @@ goto :eof
 :end
 @@endlocal
 
-REM exit code fix, see http://stackoverflow.com/questions/4632891/exiting-batch-with-exit-b-x-where-x-1-acts-as-if-command-completed-successfu
+REM exit code fix, see https://stackoverflow.com/questions/4632891/exiting-batch-with-exit-b-x-where-x-1-acts-as-if-command-completed-successfu
 @@"%COMSPEC%" /C exit %errorlevel% >nul

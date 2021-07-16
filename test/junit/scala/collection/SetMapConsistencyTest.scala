@@ -1,13 +1,11 @@
 package scala.collection
 
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 import org.junit.Test
 import scala.collection.{mutable => cm, immutable => ci}
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 /* Tests various maps by making sure they all agree on the same answers. */
-@RunWith(classOf[JUnit4])
+@deprecated("Tests deprecated API", since="2.13")
 class SetMapConsistencyTest {
   
   trait MapBox[A] {
@@ -82,11 +80,11 @@ class SetMapConsistencyTest {
       case _ => oor("get", n)
     }
     override def fiddlers = 2
-    override def fiddle(n: Int): Unit = { n match {
+    override def fiddle(n: Int): Unit = n match {
       case 0 => m = arm.clone
-      case 1 => arm.repack
+      case 1 => arm.repack()
       case _ => oor("fiddle", n)
-    }}
+    }
   }
   
   def boxMjm = new BoxMutableMap[Long, cm.LongMap[Int]](new cm.LongMap[Int](_ => -1), "mutable.LongMap") {
@@ -104,7 +102,7 @@ class SetMapConsistencyTest {
     override def fiddlers = 2
     override def fiddle(n: Int): Unit = { n match {
       case 0 => m = lm.clone
-      case 1 => lm.repack
+      case 1 => lm.repack()
       case _ => oor("fiddle", n)
     }}
   }
@@ -238,20 +236,20 @@ class SetMapConsistencyTest {
   def churn[A](map1: MapBox[A], map2: MapBox[A], keys: Array[A], n: Int = 1000, seed: Int = 42, valuer: Int => Int = identity) = {
     def check = map1.keys.forall(map2 has _) && map2.keys.forall(map1 has _)
     val rn = new scala.util.Random(seed)
-    var what = new StringBuilder
+    val what = new StringBuilder
     what ++= "creation"
     for (i <- 0 until n) {
       if (!check) {
         val temp = map2 match {
           case b: BoxImmutableMap[_, _] => b.m match {
-            case hx: ci.HashMap.HashTrieMap[_,_] =>
-              val h = hx.asInstanceOf[ci.HashMap.HashTrieMap[A, Int]]
-              Some((h.bitmap.toHexString, h.elems.mkString, h.size))
+            case hx: ci.HashMap[_,_] =>
+              val h = hx.asInstanceOf[ci.HashMap[A, Int]]
+              Some((h.mkString, h.size))
             case _ => None
           }
           case _ => None
         }
-        throw new Exception(s"Disagreement after ${what.result} between ${map1.title} and ${map2.title} because ${map1.keys.map(map2 has _).mkString(",")} ${map2.keys.map(map1 has _).mkString(",")} at step $i:\n$map1\n$map2\n$temp")
+        throw new Exception(s"Disagreement after ${what.result()} between ${map1.title} and ${map2.title} because ${map1.keys.map(map2 has _).mkString(",")} ${map2.keys.map(map1 has _).mkString(",")} at step $i:\n$map1\n$map2\n$temp")
       }
       what ++= " (%d) ".format(i)
       if (rn.nextInt(10)==0) {
@@ -267,7 +265,7 @@ class SetMapConsistencyTest {
           n
         })
       }
-      if (rn.nextBoolean) {
+      if (rn.nextBoolean()) {
         val idx = rn.nextInt(keys.length)
         val key = keys(rn.nextInt(keys.length))
         val n1 = rn.nextInt(map1.adders)
@@ -294,15 +292,14 @@ class SetMapConsistencyTest {
       if (g1 != g2) {
         val temp = map2 match {
           case b: BoxImmutableMap[_, _] => b.m match {
-            case hx: ci.HashMap.HashTrieMap[_,_] =>
-              val h = hx.asInstanceOf[ci.HashMap.HashTrieMap[A, Int]]
-              val y = (ci.HashMap.empty[A, Int] ++ h).asInstanceOf[ci.HashMap.HashTrieMap[A, Int]]
-              Some(((h.bitmap.toHexString, h.elems.mkString, h.size),(y.bitmap.toHexString, y.elems.mkString, y.size)))
+            case hx: ci.HashMap[_,_] =>
+              val y = ci.HashMap.empty[A, Int] ++ hx
+              Some(((hx.mkString, hx.size),(y.mkString, y.size)))
             case _ => None
           }
           case _ => None
         }
-        throw new Exception(s"Disagreement after ${what.result} between ${map1.title} and ${map2.title} on get of ${keys(j)} (#$j) on step $i: $g1 != $g2 using methods $gn1 and $gn2 resp.; in full\n$map1\n$map2\n$temp")
+        throw new Exception(s"Disagreement after ${what.result()} between ${map1.title} and ${map2.title} on get of ${keys(j)} (#$j) on step $i: $g1 != $g2 using methods $gn1 and $gn2 resp.; in full\n$map1\n$map2\n$temp")
       }
     }
     true
@@ -310,11 +307,11 @@ class SetMapConsistencyTest {
   
   
   // Actual tests
-  val smallKeys = Array(0, 1, 42, 9127)
-  val intKeys = smallKeys ++ Array(-1, Int.MaxValue, Int.MinValue, -129385)
-  val longKeys = intKeys.map(_.toLong) ++ Array(Long.MaxValue, Long.MinValue, 1397198789151L, -41402148014L)
+  val smallKeys  = Array(0, 1, 42, 9127)
+  val intKeys    = smallKeys ++ Array(-1, Int.MaxValue, Int.MinValue, -129385)
+  val longKeys   = intKeys.map(_.toLong) ++ Array(Long.MaxValue, Long.MinValue, 1397198789151L, -41402148014L)
   val stringKeys = intKeys.map(_.toString) ++ Array("", null)
-  val anyKeys = stringKeys.filter(_ != null) ++ Array(0L) ++ Array(true) ++ Array(math.Pi)
+  val anyKeys    = (stringKeys.filter(_ != null) ++ Array(0L): Array[Any]) ++ Array(true) ++ Array(math.Pi)
 
   @Test
   def churnIntMaps(): Unit = {
@@ -397,7 +394,7 @@ class SetMapConsistencyTest {
 
     assert {
       val lm2 = new LongMap[String](_.toString)
-      lm2 += (5L -> "fish", 0L -> "unicorn")
+      lm2.+=(5L -> "fish", 0L -> "unicorn")
       val hm2 = (new HashMap[Long,String]) ++= lm2
       List(Long.MinValue, 0L, 1L, 5L).forall(i =>
         lm2.get(i) == hm2.get(i) &&
@@ -444,14 +441,12 @@ class SetMapConsistencyTest {
 
     assert {
       val arm2 = new AnyRefMap[String, String](x => if (x==null) "null" else x)
-      arm2 += ("cod" -> "fish", "Rarity" -> "unicorn")
+      arm2.+=("cod" -> "fish", "Rarity" -> "unicorn")
       val hm2 = (new HashMap[String,String]) ++= arm2
-      List(null, "cod", "sparrow", "Rarity").forall(i =>
-        arm2.get(i) == hm2.get(i) &&
-        arm2.getOrElse(i, "") == hm2.getOrElse(i, "") &&
-        arm2(i) == hm2.get(i).getOrElse(if (i==null) "null" else i.toString) &&
-        arm2.getOrNull(i) == hm2.get(i).orNull
-      )
+      List(null, "cod", "sparrow", "Rarity").forall { i =>
+        //println((arm2.get(i), hm2.get(i)))
+        arm2.get(i) == hm2.get(i)
+      }
     }
   }
   
@@ -465,19 +460,20 @@ class SetMapConsistencyTest {
     def ihm: M = ci.HashMap.empty[Int, Boolean] ++ manyKVs
     val densities = List(0, 0.05, 0.2, 0.5, 0.8, 0.95, 1)
     def repeat = rn.nextInt(100) < 33
-    def pick(m: M, density: Double) = m.keys.filter(_ => rn.nextDouble < density).toSet
-    def test: Boolean = {
-      for (i <- 0 to 100) {
+    def pick(m: M, density: Double) = m.keys.filter(_ => rn.nextDouble() < density).toSet
+    def test: Boolean =
+      (1 to 100).forall { _ =>
         var ms = List(mhm, mohm, ihm)
-        do {
+        var res = 0
+        while (res == 0) {
           val density = densities(rn.nextInt(densities.length))
           val keep = pick(ms.head, density)
           ms = ms.map(_.filter(keep contains _._1))
-          if (!ms.sliding(2).forall(s => s(0) == s(1))) return false
-        } while (repeat)
+          if (!ms.sliding(2).forall(s => s(0) == s(1))) res = -1
+          else if (!repeat) res = 1
+        }
+        res > 0
       }
-      true
-    }
     assert(test)
   }
   
@@ -485,11 +481,11 @@ class SetMapConsistencyTest {
   def testSI8213(): Unit = {
     val am = new scala.collection.mutable.AnyRefMap[String, Int]
     for (i <- 0 until 1024) am += i.toString -> i
-    am.getOrElseUpdate("1024", { am.clear; -1 })
+    am.getOrElseUpdate("1024", { am.clear(); -1 })
     assert(am == scala.collection.mutable.AnyRefMap("1024" -> -1))
     val lm = new scala.collection.mutable.LongMap[Int]
     for (i <- 0 until 1024) lm += i.toLong -> i
-    lm.getOrElseUpdate(1024, { lm.clear; -1 })
+    lm.getOrElseUpdate(1024, { lm.clear(); -1 })
     assert(lm == scala.collection.mutable.LongMap(1024L -> -1))
   }
   
@@ -503,11 +499,11 @@ class SetMapConsistencyTest {
       it.hasNext
       xs.clear()
     
-      if (it.hasNext) Some(it.next)
+      if (it.hasNext) Some(it.next())
       else None
     }
     assert(f() match {
-      case Some((a,b)) if (a==null || b==null) => false
+      case Some((null, _)) => false
       case _ => true
     })
   }
@@ -522,10 +518,10 @@ class SetMapConsistencyTest {
   @Test
   def testSI8815(): Unit = {
     val lm = new scala.collection.mutable.LongMap[String]
-    lm += (Long.MinValue, "min")
-    lm += (-1, "neg-one")
-    lm += (0, "zero")
-    lm += (Long.MaxValue, "max")
+    lm.+=(Long.MinValue, "min")
+    lm.+=(-1, "neg-one")
+    lm.+=(0, "zero")
+    lm.+=(Long.MaxValue, "max")
     var nit = 0
     lm.iterator.foreach(_ => nit += 1)
     var nfe = 0
@@ -536,11 +532,9 @@ class SetMapConsistencyTest {
 
   @Test
   def test_SI8727(): Unit = {
-    import scala.tools.testing.AssertUtil._
-    type NSEE = NoSuchElementException
     val map = Map(0 -> "zero", 1 -> "one")
-    val m = map.filterKeys(i => if (map contains i) true else throw new NSEE).toMap
-    assert{ (m contains 0) && (m get 0).nonEmpty }
+    val m = map.view.filterKeys(i => if (map contains i) true else throw new NoSuchElementException).toMap
+    assert(m.contains(0) && m.get(0).nonEmpty)
     // The Scala 2.13 collections library reverses the decision taken in https://github.com/scala/scala/pull/4159.
     // Now filterKeys may only apply its predicate to keys of the source map. In Scala 2.12 the following expressions
     // would have thrown a NSEE:

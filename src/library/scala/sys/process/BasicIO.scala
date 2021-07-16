@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package sys
@@ -34,26 +38,48 @@ object BasicIO {
   /** Used to separate lines in the `processFully` function that takes `Appendable`. */
   final val Newline    = System.lineSeparator
 
+  private[process] final class LazilyListed[T](
+    val  process:   T => Unit,
+    val     done: Int => Unit,
+    val lazyList: LazyList[T]
+  )
+
+  private[process] object LazilyListed {
+    def apply[T](nonzeroException: Boolean, capacity: Integer): LazilyListed[T] = {
+      val queue = new LinkedBlockingQueue[Either[Int, T]](capacity)
+      val ll = LazyList.unfold(queue) { q =>
+        q.take() match {
+          case Left(0)    => None
+          case Left(code) => if (nonzeroException) scala.sys.error("Nonzero exit code: " + code) else None
+          case Right(s)   => Some((s, q))
+        }
+      }
+      new LazilyListed((s: T) => queue put Right(s), code => queue put Left(code), ll)
+    }
+  }
+
+  @deprecated("internal", since = "2.13.4")
   private[process] final class Streamed[T](
     val process:   T => Unit,
     val    done: Int => Unit,
-    val  stream:  () => LazyList[T]
+    val  stream:  () => Stream[T]
   )
 
+  @deprecated("internal", since = "2.13.4")
   private[process] object Streamed {
     def apply[T](nonzeroException: Boolean, capacity: Integer): Streamed[T] = {
       val q = new LinkedBlockingQueue[Either[Int, T]](capacity)
-      def next(): LazyList[T] = q.take match {
-        case Left(0)    => LazyList.empty
-        case Left(code) => if (nonzeroException) scala.sys.error("Nonzero exit code: " + code) else LazyList.empty
-        case Right(s)   => LazyList.cons(s, next())
+      def next(): Stream[T] = q.take() match {
+        case Left(0)    => Stream.empty
+        case Left(code) => if (nonzeroException) scala.sys.error("Nonzero exit code: " + code) else Stream.empty
+        case Right(s)   => Stream.cons(s, next())
       }
       new Streamed((s: T) => q put Right(s), code => q put Left(code), () => next())
     }
   }
 
   private[process] trait Uncloseable extends Closeable {
-    final override def close(): Unit = { }
+    final override def close(): Unit = ()
   }
   private[process] object Uncloseable {
     def apply(in: InputStream): InputStream      = new FilterInputStream(in) with Uncloseable { }
@@ -82,7 +108,7 @@ object BasicIO {
   def apply(withIn: Boolean, output: String => Unit, log: Option[ProcessLogger]) =
     new ProcessIO(input(withIn), processFully(output), getErr(log))
 
-  /** Creates a `ProcessIO` that appends its output to a `StringBuffer`. It can
+  /** Creates a `ProcessIO` that appends its output to an `Appendable`. It can
     * attach the process input to stdin, and it will either send the error
     * stream to stderr, or to a `ProcessLogger`.
     *
@@ -96,13 +122,13 @@ object BasicIO {
     * }}}
     *
     * @param withIn True if the process input should be attached to stdin.
-    * @param buffer A `StringBuffer` which will receive the process normal
+    * @param buffer An `Appendable` which will receive the process normal
     *               output.
     * @param log    An optional `ProcessLogger` to which the output should be
     *               sent. If `None`, output will be sent to stderr.
     * @return A `ProcessIO` with the characteristics above.
     */
-  def apply(withIn: Boolean, buffer: StringBuffer, log: Option[ProcessLogger]) =
+  def apply(withIn: Boolean, buffer: Appendable, log: Option[ProcessLogger]) =
     new ProcessIO(input(withIn), processFully(buffer), getErr(log))
 
   /** Creates a `ProcessIO` from a `ProcessLogger` . It can attach the
@@ -169,15 +195,16 @@ object BasicIO {
    *  `null` or the current thread is interrupted.
    */
   def processLinesFully(processLine: String => Unit)(readLine: () => String): Unit = {
-    def working = (Thread.currentThread.isInterrupted == false)
+    def working = !Thread.currentThread.isInterrupted
     def halting = { Thread.currentThread.interrupt(); null }
+    @tailrec
     def readFully(): Unit =
       if (working) {
         val line =
           try readLine()
           catch {
             case _: InterruptedException    => halting
-            case e: IOException if !working => halting
+            case _: IOException if !working => halting
           }
         if (line != null) {
           processLine(line)
@@ -191,13 +218,16 @@ object BasicIO {
   def connectToIn(o: OutputStream): Unit = transferFully(Uncloseable protect stdin, o)
 
   /** Returns a function `OutputStream => Unit` that either reads the content
-    * from stdin or does nothing. This function can be used by
+    * from stdin or does nothing but close the stream. This function can be used by
     * [[scala.sys.process.ProcessIO]].
     */
-  def input(connect: Boolean): OutputStream => Unit = { outputToProcess =>
-    if (connect) connectToIn(outputToProcess)
-    outputToProcess.close()
-  }
+  def input(connect: Boolean): OutputStream => Unit = if (connect) connectToStdIn else connectNoOp
+
+  /** A sentinel value telling ProcessBuilderImpl to redirect. */
+  private[process] val connectToStdIn: OutputStream => Unit = _ => ()
+
+  /** A sentinel value telling ProcessBuilderImpl not to process. */
+  private[process] val connectNoOp: OutputStream => Unit = _ => ()
 
   /** Returns a `ProcessIO` connected to stdout and stderr, and, optionally, stdin. */
   def standard(connectInput: Boolean): ProcessIO = standard(input(connectInput))

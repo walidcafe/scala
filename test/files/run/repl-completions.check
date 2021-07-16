@@ -2,7 +2,7 @@
 scala> // completions!
 
 scala> object O { def x_y_x = 1; def x_y_z = 2; def getFooBarZot = 3}
-defined object O
+object O
 
 scala> :completions O.x
 [completions] O.x_y_x
@@ -20,9 +20,6 @@ scala> :completions x_y_
 [completions] x_y_z
 
 scala> :completions x_y_a
-
-scala> :completions fBZ
-[completions] getFooBarZot
 
 scala> :completions object O2 { val x = O.
 [completions] object O2 { val x = O.getFooBarZot

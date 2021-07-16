@@ -1,6 +1,15 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2017 LAMP/EPFL and Lightbend, Inc.
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.nsc.interpreter
 
 import scala.tools.nsc.Settings
@@ -20,7 +29,7 @@ class ScriptedInterpreter(initialSettings: Settings, reporter: ReplReporter, imp
   /* Modify the template to snag definitions from dynamic context.
    * So object $iw { x + 42 } becomes object $iw { def x = $ctx.x ; x + 42 }
    */
-  override protected def importsCode(wanted: Set[Name], request: Request, definesClass: Boolean, generousImports: Boolean) = {
+  override protected def importsCode(wanted: Set[Name], request: Request, generousImports: Boolean) = {
     val ImportContextPreamble(exclude, include, scriptedPreamble) =
       importContextPreamble(wanted.filter(_.isTermName).map(_.decodedName.toString))
 
@@ -28,11 +37,11 @@ class ScriptedInterpreter(initialSettings: Settings, reporter: ReplReporter, imp
       val scriptedWanted = (wanted &~ exclude.map(TermName.apply)) ++ include.map(TermName.apply)
 
       val ComputedImports(header, preamble, trailer, path) =
-        super.importsCode(scriptedWanted, request, definesClass, generousImports)
+        super.importsCode(scriptedWanted, request, generousImports)
 
       ComputedImports(header, preamble + scriptedPreamble, trailer, path)
     }
-    else super.importsCode(wanted, request, definesClass, generousImports)
+    else super.importsCode(wanted, request, generousImports)
   }
 
 
@@ -45,7 +54,7 @@ class ScriptedInterpreter(initialSettings: Settings, reporter: ReplReporter, imp
       val newReq = requestFromLine(
         (s"val $$INSTANCE = new ${req.lineRep.readPath}" :: (defines map (d =>
             s"val `$d` = $$INSTANCE${req.accessPath}.`$d`"))).mkString(";")
-      ).right.get
+      ).toOption.get
       newReq.compile
       Right(newReq)
     }

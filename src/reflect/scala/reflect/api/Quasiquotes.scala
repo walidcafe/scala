@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect
 package api
 
@@ -7,7 +19,7 @@ trait Quasiquotes { self: Universe =>
    *  that are also known as quasiquotes. With their help you can easily manipulate
    *  Scala reflection ASTs.
    *
-   *  @see [[http://docs.scala-lang.org/overviews/quasiquotes/intro.html]]
+   *  @see [[https://docs.scala-lang.org/overviews/quasiquotes/intro.html]]
    */
   implicit class Quasiquote(ctx: StringContext) {
     protected trait api {

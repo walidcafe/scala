@@ -1,7 +1,7 @@
 import scala.tools.partest._
 
 object Test extends StoreReporterDirectTest {
-  override def extraSettings: String = "-usejavacp -Xprint:typer -Ystop-after:typer"
+  override def extraSettings: String = "-usejavacp -Vprint:typer -Ystop-after:typer"
 
   override def code =
     """@scala.annotation.meta.field class blort extends scala.annotation.StaticAnnotation
@@ -21,7 +21,7 @@ object Test extends StoreReporterDirectTest {
     Console.withOut(baos)(Console.withErr(baos)(compile()))
     val out = baos.toString("UTF-8")
 
-    val fooDefs = out.lines.filter(_.contains("private[this] val foo")).map(_.trim).toList
+    val fooDefs = out.linesIterator.filter(_.contains("private[this] val foo")).map(_.trim).toList
     assert(fooDefs.length == 2)
     assert(fooDefs.forall(_.startsWith("@blort private[this] val foo: String =")), fooDefs)
   }

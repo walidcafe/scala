@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 
 import scala.tools.nsc.Global
@@ -7,9 +19,6 @@ import scala.reflect.reify.utils.Utils
 
 /** Given a tree or a type, generate a tree that when executed at runtime produces the original tree or type.
  *  See more info in the comments to `reify` in scala.reflect.api.Universe.
- *
- *  @author   Martin Odersky
- *  @since    2.10
  */
 abstract class Reifier extends States
                           with Phases
@@ -68,7 +77,7 @@ abstract class Reifier extends States
           val rtree = pipeline(tree)
 
           val tpe = typer.packedType(tree, NoSymbol)
-          val ReifiedType(_, _, tpeSymtab, _, rtpe, tpeReificationIsConcrete) = `package`.reifyType(global)(typer, universe, mirror, tpe, concrete = false)
+          val ReifiedType(_, _, tpeSymtab, _, rtpe, tpeReificationIsConcrete) = `package`.reifyType(global)(typer, universe, mirror, tpe, concrete = false): @unchecked
           state.reificationIsConcrete &= tpeReificationIsConcrete
           state.symtab ++= tpeSymtab
           ReifiedTree(universe, mirror, symtab, rtree, tpe, rtpe, reificationIsConcrete)

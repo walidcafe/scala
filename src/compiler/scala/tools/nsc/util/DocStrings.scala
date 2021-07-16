@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2006-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -37,7 +44,7 @@ object DocStrings {
   /** Returns index of string `str` after `start` skipping longest
    *  sequence of space and tab characters, possibly also containing
    *  a single `*` character or the `/``**` sequence.
-   *  @pre  start == str.length || str(start) == `\n`
+   *  @note Pre-condition:  start == str.length || str(start) == `\n`
    */
   def skipLineLead(str: String, start: Int): Int =
     if (start == str.length) start

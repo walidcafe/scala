@@ -1,20 +1,22 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package math
 
+import scala.collection.StringParsers
 import scala.language.implicitConversions
 import scala.util.Try
 
-/**
- * @since 2.8
- */
 object Numeric {
   @inline def apply[T](implicit num: Numeric[T]): Numeric[T] = num
 
@@ -26,7 +28,7 @@ object Numeric {
      *  def plus[T: Numeric](x: T, y: T) = x + y
      *  }}}
      */
-    implicit def infixNumericOps[T](x: T)(implicit num: Numeric[T]): Numeric[T]#Ops = new num.Ops(x)
+    implicit def infixNumericOps[T](x: T)(implicit num: Numeric[T]): Numeric[T]#NumericOps = new num.NumericOps(x)
   }
   object Implicits extends ExtraImplicits { }
 
@@ -54,11 +56,13 @@ object Numeric {
     def rem(x: Int, y: Int): Int = x % y
     def negate(x: Int): Int = -x
     def fromInt(x: Int): Int = x
-    def parseString(str: String): Option[Int] = Try(str.toInt).toOption
+    def parseString(str: String): Option[Int] = StringParsers.parseInt(str)
     def toInt(x: Int): Int = x
     def toLong(x: Int): Long = x.toLong
     def toFloat(x: Int): Float = x.toFloat
     def toDouble(x: Int): Double = x.toDouble
+    override def signum(x: Int): Int = math.signum(x)
+    override def sign(x: Int): Int = math.signum(x)
   }
   implicit object IntIsIntegral extends IntIsIntegral with Ordering.IntOrdering
 
@@ -70,11 +74,13 @@ object Numeric {
     def rem(x: Short, y: Short): Short = (x % y).toShort
     def negate(x: Short): Short = (-x).toShort
     def fromInt(x: Int): Short = x.toShort
-    def parseString(str: String): Option[Short] = Try(str.toShort).toOption
+    def parseString(str: String): Option[Short] = StringParsers.parseShort(str)
     def toInt(x: Short): Int = x.toInt
     def toLong(x: Short): Long = x.toLong
     def toFloat(x: Short): Float = x.toFloat
     def toDouble(x: Short): Double = x.toDouble
+    override def signum(x: Short): Int = math.signum(x.toInt)
+    override def sign(x: Short): Short = math.signum(x.toInt).toShort
   }
   implicit object ShortIsIntegral extends ShortIsIntegral with Ordering.ShortOrdering
 
@@ -86,11 +92,13 @@ object Numeric {
     def rem(x: Byte, y: Byte): Byte = (x % y).toByte
     def negate(x: Byte): Byte = (-x).toByte
     def fromInt(x: Int): Byte = x.toByte
-    def parseString(str: String): Option[Byte] = Try(str.toByte).toOption
+    def parseString(str: String): Option[Byte] = StringParsers.parseByte(str)
     def toInt(x: Byte): Int = x.toInt
     def toLong(x: Byte): Long = x.toLong
     def toFloat(x: Byte): Float = x.toFloat
     def toDouble(x: Byte): Double = x.toDouble
+    override def signum(x: Byte): Int = math.signum(x.toInt)
+    override def sign(x: Byte): Byte = math.signum(x.toInt).toByte
   }
   implicit object ByteIsIntegral extends ByteIsIntegral with Ordering.ByteOrdering
 
@@ -107,6 +115,8 @@ object Numeric {
     def toLong(x: Char): Long = x.toLong
     def toFloat(x: Char): Float = x.toFloat
     def toDouble(x: Char): Double = x.toDouble
+    override def signum(x: Char): Int = math.signum(x.toInt)
+    override def sign(x: Char): Char = math.signum(x.toInt).toChar
   }
   implicit object CharIsIntegral extends CharIsIntegral with Ordering.CharOrdering
 
@@ -118,11 +128,13 @@ object Numeric {
     def rem(x: Long, y: Long): Long = x % y
     def negate(x: Long): Long = -x
     def fromInt(x: Int): Long = x.toLong
-    def parseString(str: String): Option[Long] = Try(str.toLong).toOption
+    def parseString(str: String): Option[Long] = StringParsers.parseLong(str)
     def toInt(x: Long): Int = x.toInt
     def toLong(x: Long): Long = x
     def toFloat(x: Long): Float = x.toFloat
     def toDouble(x: Long): Double = x.toDouble
+    override def signum(x: Long): Int = math.signum(x).toInt
+    override def sign(x: Long): Long = math.signum(x)
   }
   implicit object LongIsIntegral extends LongIsIntegral with Ordering.LongOrdering
 
@@ -132,7 +144,7 @@ object Numeric {
     def times(x: Float, y: Float): Float = x * y
     def negate(x: Float): Float = -x
     def fromInt(x: Int): Float = x.toFloat
-    def parseString(str: String): Option[Float] = Try(str.toFloat).toOption
+    def parseString(str: String): Option[Float] = StringParsers.parseFloat(str)
     def toInt(x: Float): Int = x.toInt
     def toLong(x: Float): Long = x.toLong
     def toFloat(x: Float): Float = x
@@ -140,6 +152,8 @@ object Numeric {
     def div(x: Float, y: Float): Float = x / y
     // logic in Numeric base trait mishandles abs(-0.0f)
     override def abs(x: Float): Float = math.abs(x)
+    // logic in Numeric base trait mishandles sign(-0.0f) and sign(Float.NaN)
+    override def sign(x: Float): Float = math.signum(x)
   }
   implicit object FloatIsFractional extends FloatIsFractional with Ordering.Float.IeeeOrdering
 
@@ -149,7 +163,7 @@ object Numeric {
     def times(x: Double, y: Double): Double = x * y
     def negate(x: Double): Double = -x
     def fromInt(x: Int): Double = x.toDouble
-    def parseString(str: String): Option[Double] = Try(str.toDouble).toOption
+    def parseString(str: String): Option[Double] = StringParsers.parseDouble(str)
     def toInt(x: Double): Int = x.toInt
     def toLong(x: Double): Long = x.toLong
     def toFloat(x: Double): Float = x.toFloat
@@ -157,6 +171,8 @@ object Numeric {
     def div(x: Double, y: Double): Double = x / y
     // logic in Numeric base trait mishandles abs(-0.0)
     override def abs(x: Double): Double = math.abs(x)
+    // logic in Numeric base trait mishandles sign(-0.0) and sign(Double.NaN)
+    override def sign(x: Double): Double = math.signum(x)
   }
   implicit object DoubleIsFractional extends DoubleIsFractional with Ordering.Double.IeeeOrdering
 
@@ -203,22 +219,28 @@ trait Numeric[T] extends Ordering[T] {
   def one = fromInt(1)
 
   def abs(x: T): T = if (lt(x, zero)) negate(x) else x
-  def signum(x: T): Int =
+
+  @deprecated("use `sign` method instead", since = "2.13.0") def signum(x: T): Int =
     if (lt(x, zero)) -1
     else if (gt(x, zero)) 1
     else 0
+  def sign(x: T): T =
+    if (lt(x, zero)) negate(one)
+    else if (gt(x, zero)) one
+    else zero
 
-  class Ops(lhs: T) {
+  class NumericOps(lhs: T) {
     def +(rhs: T) = plus(lhs, rhs)
     def -(rhs: T) = minus(lhs, rhs)
     def *(rhs: T) = times(lhs, rhs)
-    def unary_-() = negate(lhs)
-    def abs(): T = Numeric.this.abs(lhs)
-    def signum(): Int = Numeric.this.signum(lhs)
-    def toInt(): Int = Numeric.this.toInt(lhs)
-    def toLong(): Long = Numeric.this.toLong(lhs)
-    def toFloat(): Float = Numeric.this.toFloat(lhs)
-    def toDouble(): Double = Numeric.this.toDouble(lhs)
+    def unary_- = negate(lhs)
+    def abs: T = Numeric.this.abs(lhs)
+    @deprecated("use `sign` method instead", since = "2.13.0") def signum: Int = Numeric.this.signum(lhs)
+    def sign: T = Numeric.this.sign(lhs)
+    def toInt: Int = Numeric.this.toInt(lhs)
+    def toLong: Long = Numeric.this.toLong(lhs)
+    def toFloat: Float = Numeric.this.toFloat(lhs)
+    def toDouble: Double = Numeric.this.toDouble(lhs)
   }
-  implicit def mkNumericOps(lhs: T): Ops = new Ops(lhs)
+  implicit def mkNumericOps(lhs: T): NumericOps = new NumericOps(lhs)
 }

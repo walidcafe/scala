@@ -1,3 +1,5 @@
+// scalac: -Werror -Wunused:imports
+//
 class Bippo {
   def length: Int = 123
   class Tree

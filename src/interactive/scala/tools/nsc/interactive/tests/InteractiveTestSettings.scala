@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package interactive
 package tests
@@ -5,15 +17,11 @@ package tests
 import java.io.File.pathSeparatorChar
 import java.io.File.separatorChar
 import scala.tools.nsc.interactive.tests.core.PresentationCompilerInstance
-import scala.tools.nsc.io.{File,Path}
+import scala.tools.nsc.io.Path
 import core.Reporter
 import core.TestSettings
 
 trait InteractiveTestSettings extends TestSettings with PresentationCompilerInstance {
-  /** Character delimiter for comments in .opts file */
-  private final val CommentStartDelimiter = "#"
-
-  private final val TestOptionsFileExtension = "flags"
 
   /** Prepare the settings object. Load the .opts file and adjust all paths from the
    *  Unix-like syntax to the platform specific syntax. This is necessary so that a
@@ -51,14 +59,7 @@ trait InteractiveTestSettings extends TestSettings with PresentationCompilerInst
     adjustPaths(settings.bootclasspath, settings.classpath, settings.javabootclasspath, settings.sourcepath)
   }
 
-  /** If there's a file ending in .opts, read it and parse it for cmd line arguments. */
-  protected val argsString = {
-    val optsFile = outDir / "%s.%s".format(System.getProperty("partest.testname"), TestOptionsFileExtension)
-    val str = try File(optsFile).slurp() catch {
-      case e: java.io.IOException => ""
-    }
-    str.lines.filter(!_.startsWith(CommentStartDelimiter)).mkString(" ")
-  }
+  protected def argsString: String = ""
 
   override protected def printClassPath(implicit reporter: Reporter): Unit = {
     reporter.println("\toutDir: %s".format(outDir.path))

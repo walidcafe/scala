@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package phases
 
@@ -7,7 +19,10 @@ trait Calculate {
   import global._
 
   implicit class RichCalculateSymbol(sym: Symbol) {
-    def metalevel: Int = { assert(sym != null && sym != NoSymbol); localSymbols.getOrElse(sym, 0) }
+    def metalevel: Int = {
+      assert(sym != null && sym != NoSymbol, "Missing symbol")
+      localSymbols.getOrElse(sym, 0)
+    }
     def isLocalToReifee = (localSymbols contains sym) // todo. how do I account for local skolems?
   }
 

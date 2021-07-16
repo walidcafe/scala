@@ -1,12 +1,12 @@
 package scala.tools.nsc
 package symtab
 
-import org.junit.Assert._
+import org.junit.Assert.{ assertThrows => _, _ }
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
-import scala.tools.testing.AssertUtil._
+import scala.tools.testkit.AssertUtil._
 
 @RunWith(classOf[JUnit4])
 class StdNamesTest {

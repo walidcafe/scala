@@ -1,28 +1,31 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2016 LAMP/EPFL
- * @author David Bernard, Manohar Jonnalagedda, Felix Mulder
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
-package scala
-package tools
-package nsc
+package scala.tools.nsc
 package doc
 package html
 package page
 
 import base._
 import base.comment._
-import scala.reflect.internal.Reporter
-import scala.collection.mutable
-import scala.language.postfixOps
 import model._
 import model.diagram._
-import diagram._
+import page.diagram._
+
+import scala.collection.mutable
+import scala.reflect.internal.Reporter
 
 trait EntityPage extends HtmlPage {
   import HtmlTags._
-
-  import ScalaDoc.SummaryReporter
 
   def universe: doc.Universe
   def generator: DiagramGenerator
@@ -41,16 +44,23 @@ trait EntityPage extends HtmlPage {
   def headers: Elems = {
     def extScript(str: String) = Script(`type` = "text/javascript", src = str)
     def libScript(value: String) = extScript(relativeLinkTo(List(value, "lib")))
-
-    List(HtmlTags.Link(href = relativeLinkTo(List("index.css", "lib")), media = "screen", `type` = "text/css", rel = "stylesheet"),
+    val canonicalSetting = universe.settings.docCanonicalBaseUrl
+    val canonicalLink =  if (canonicalSetting.isSetByUser) {
+      val canonicalUrl =
+        if (canonicalSetting.value.endsWith("/")) canonicalSetting.value
+        else canonicalSetting.value + "/"
+      List(HtmlTags.Link(href = canonicalUrl + Page.relativeLinkTo(List("."), path), rel = "canonical"))
+    } else Nil
+    canonicalLink ++ List(
+      HtmlTags.Link(href = relativeLinkTo(List("index.css", "lib")), media = "screen", `type` = "text/css", rel = "stylesheet"),
     HtmlTags.Link(href = relativeLinkTo(List("template.css", "lib")), media = "screen", `type` = "text/css", rel = "stylesheet"),
+    HtmlTags.Link(href = relativeLinkTo(List("print.css", "lib")), media = "print", `type` = "text/css", rel = "stylesheet"),
     HtmlTags.Link(href = relativeLinkTo(List("diagrams.css", "lib")), media = "screen", `type` = "text/css", rel = "stylesheet", id = "diagrams-css"),
-    libScript("jquery.js"),
+    libScript("jquery.min.js"),
     libScript("index.js"),
     extScript(relativeLinkTo(List("index.js"))),
     libScript("scheduler.js"),
-    libScript("template.js"),
-    libScript("tools.tooltip.js")) ++
+    libScript("template.js")) ++
     ((if (!universe.settings.docDiagrams.value) Nil
      else (List(
          extScript("https://d3js.org/d3.v4.js"),
@@ -162,7 +172,7 @@ trait EntityPage extends HtmlPage {
        )
 
   val valueMembers =
-    tpl.methods ++ tpl.values ++ tpl.templates.filter(x => x.isObject) sorted
+    (tpl.methods ++ tpl.values ++ tpl.templates.filter(x => x.isObject)).sorted
 
   val (absValueMembers, nonAbsValueMembers) =
     valueMembers partition (_.isAbstract)
@@ -173,8 +183,12 @@ trait EntityPage extends HtmlPage {
   val (concValueMembers, shadowedImplicitMembers) =
     nonDeprValueMembers partition (!_.isShadowedOrAmbiguousImplicit)
 
-  val typeMembers =
+  val allTypeMembers =
     tpl.abstractTypes ++ tpl.aliasTypes ++ tpl.templates.filter(x => x.isTrait || x.isClass) sorted (implicitly[Ordering[MemberEntity]])
+
+  val (deprTypeMembers, typeMembers) = allTypeMembers partition (_.deprecation.isDefined)
+
+  val packageMembers = tpl.templates.filter(x => x.isPackage) sorted (implicitly[Ordering[MemberEntity]])
 
   val constructors = (tpl match {
     case cls: Class => (cls.constructors: List[MemberEntity]).sorted
@@ -187,7 +201,7 @@ trait EntityPage extends HtmlPage {
   val content = {
     val templateName = Txt(if (tpl.isRootPackage) "root package " else tpl.name)
     val displayName: Elems = tpl.companion match {
-      case Some(companion) if (companion.visibility.isPublic && companion.inSource != None) =>
+      case Some(companion) if (companion.visibility.isPublic && companion.inSource.isDefined) =>
         A(href= relativeLinkTo(companion), title= docEntityKindToCompanionTitle(tpl), elems=templateName)
       case _ =>
         templateName
@@ -205,7 +219,7 @@ trait EntityPage extends HtmlPage {
           {val imageClass = docEntityImageClass(tpl)
 
           tpl.companion match {
-            case Some(companion) if (companion.visibility.isPublic && companion.inSource != None) =>
+            case Some(companion) if (companion.visibility.isPublic && companion.inSource.isDefined) =>
               A(href= relativeLinkTo(companion), title= docEntityKindToCompanionTitle(tpl), elems= Div(`class`= s"big-circle $imageClass", elems=Txt(imageClass.substring(0,1))))
             case _ =>
               Div(`class`= s"big-circle $imageClass", elems=Txt(imageClass.substring(0,1)))
@@ -216,7 +230,7 @@ trait EntityPage extends HtmlPage {
       ))
 
     val memberSel: Elems =
-      if (valueMembers.filterNot(_.kind == "package").isEmpty) NoElems
+      if (valueMembers.forall(_.kind == "package")) NoElems
       else List(Div(id="mbrsel", elems=
         Div(`class`="toggle") ::
         Div(id="memberfilter", elems=
@@ -276,7 +290,10 @@ trait EntityPage extends HtmlPage {
           Div(id="visbl", elems=
               Span(`class`="filtertype", elems=Txt("Visibility")) ::
               Ol(elems=
-                Li(`class`="public in", elems= Span(elems=Txt("Public"))) :: Li(`class`="all out", elems= Span(elems=Txt("All"))))
+                List(
+                  Li(`class`="public in", elems=Span(elems=Txt("Public"))),
+                  Li(`class`="protected out", elems=Span(elems=Txt("Protected")))
+                ) ++ List(Li(`class`="private out", elems=Span(elems=Txt("Private")))).filter(_ => universe.settings.visibilityPrivate))
           ))
         )
       ))
@@ -284,8 +301,10 @@ trait EntityPage extends HtmlPage {
     val template: Elems = List(
      Div(id="template", elems= List(
         Div(id="allMembers", elems=
-          memsDiv("members", "Instance Constructors", constructors, "constructors")
+             memsDiv("package members", "Package Members", packageMembers, "packages")
+          ++ memsDiv("members", "Instance Constructors", constructors, "constructors")
           ++ memsDiv("types members", "Type Members", typeMembers, "types")
+          ++ memsDiv("types members", "Deprecated Type Members", deprTypeMembers, "deprecatedTypes")
           ++ memsDiv("values members", "Abstract Value Members", absValueMembers)
           ++ memsDiv("values members", if (absValueMembers.isEmpty) "Value Members" else "Concrete Value Members", concValueMembers)
           ++ memsDiv("values members", "Shadowed Implicit Value Members", shadowedImplicitMembers)
@@ -322,7 +341,7 @@ trait EntityPage extends HtmlPage {
     val postamble =
       List(Div(id = "tooltip"),
            if (Set("epfl", "EPFL").contains(tpl.universe.settings.docfooter.value))
-             Div(id = "footer", elems = Txt("Scala programming documentation. Copyright (c) 2003-2018 ") :: A(href = "http://www.epfl.ch", target = "_top", elems = Txt("EPFL")) :: Txt(", with contributions from ") :: A(href = "http://www.lightbend.com", target = "_top", elems = Txt("Lightbend")) :: Txt("."))
+             Div(id = "footer", elems = Txt("Scala programming documentation. Copyright (c) 2002-2021 ") :: A(href = "https://www.epfl.ch", target = "_top", elems = Txt("EPFL")) :: Txt(" and ") :: A(href = "https://www.lightbend.com", target = "_top", elems = Txt("Lightbend")) :: Txt("."))
            else
              Div(id = "footer", elems = Txt(tpl.universe.settings.docfooter.value)))
 
@@ -342,17 +361,22 @@ trait EntityPage extends HtmlPage {
     indentation: Int = 0
   ): Elems = {
     // Sometimes it's same, do we need signatureCompat still?
-    val sig = if (mbr.signature == mbr.signatureCompat) {
-      A(id= mbr.signature) :: NoElems
-    } else {
-      A(id= mbr.signature) :: A(id= mbr.signatureCompat) :: NoElems
+    val sig = {
+      val anchorToMember = "anchorToMember"
+
+      if (mbr.signature == mbr.signatureCompat) {
+        A(id= mbr.signature, `class` = anchorToMember) :: NoElems
+      } else {
+        A(id= mbr.signature, `class` = anchorToMember) :: A(id= mbr.signatureCompat, `class` = anchorToMember) :: NoElems
+      }
     }
 
     val memberComment = memberToCommentHtml(mbr, inTpl, isSelf = false)
-    Li(name= mbr.definitionName, visbl= if (mbr.visibility.isProtected) "prt" else "pub",
+    Li(name= mbr.definitionName,
+      visbl=if (mbr.visibility.isPublic) "pub" else if (mbr.visibility.isProtected) "prt" else "prv",
       `class`= s"indented$indentation " + (if (mbr eq inTpl) "current" else ""),
       `data-isabs`= mbr.isAbstract.toString,
-      fullComment= if(memberComment.filter(_.tagName=="div").isEmpty) "no" else "yes",
+      fullComment= if(!memberComment.exists(_.tagName == "div")) "no" else "yes",
       group= mbr.group, elems=
       { sig } ++
       (Txt(" ") :: { signature (mbr, isSelf = false) }) ++
@@ -364,7 +388,7 @@ trait EntityPage extends HtmlPage {
     mbr match {
       // comment of class itself
       case dte: DocTemplateEntity if isSelf =>
-        Div(id="comment", `class`="fullcommenttop", elems= memberToCommentBodyHtml(mbr, inTpl, isSelf = true))
+        Div(id="comment", `class`="fullcommenttop", elems= memberToCommentBodyHtml(dte, inTpl, isSelf = true))
       case _ =>
         // comment of non-class member or non-documented inner class
         val commentBody = memberToCommentBodyHtml(mbr, inTpl, isSelf = false)
@@ -443,8 +467,9 @@ trait EntityPage extends HtmlPage {
 
       mbr.comment.fold(NoElems) { comment =>
         val cmtedPrs = prs filter {
-          case tp: TypeParam => comment.typeParams isDefinedAt tp.name
+          case tp: TypeParam  => comment.typeParams isDefinedAt tp.name
           case vp: ValueParam => comment.valueParams isDefinedAt vp.name
+          case x              => throw new MatchError(x)
         }
         if (cmtedPrs.isEmpty && comment.result.isEmpty) NoElems
         else {
@@ -484,7 +509,7 @@ trait EntityPage extends HtmlPage {
             case constraints =>
               Br :: Txt("This conversion will take place only if all of the following constraints are met:") :: Br :: {
                 var index = 0
-                constraints flatMap { constraint => Txt({ index += 1; index } + ". ") :: (constraintToHtml(constraint) :+ Br) }
+                constraints flatMap { constraint => Txt("" + { index += 1; index } + ". ") :: (constraintToHtml(constraint) :+ Br) }
               }
           }
 
@@ -499,11 +524,11 @@ trait EntityPage extends HtmlPage {
             // see ImplicitMemberShadowing trait for more information
             val shadowingSuggestion = {
               val params = mbr match {
-                case d: Def => d.valueParams map (_ map (_ name) mkString("(", ", ", ")")) mkString
+                case d: Def => d.valueParams.map(_.map(_.name).mkString("(", ", ", ")")).mkString
                 case _      => "" // no parameters
               }
               Br ++ Txt("To access this member you can use a ") ++
-              A(href="http://stackoverflow.com/questions/2087250/what-is-the-purpose-of-type-ascription-in-scala",
+              A(href="https://stackoverflow.com/questions/2087250/what-is-the-purpose-of-type-ascription-in-scala",
                 target="_blank", elems= Txt("type ascription")) ++ Txt(":") ++
               Br ++ Div(`class`="cmt", elems=Pre(Txt(s"(${EntityPage.lowerFirstLetter(tpl.name)}: ${conv.targetType.name}).${mbr.name}$params")))
             }
@@ -531,11 +556,11 @@ trait EntityPage extends HtmlPage {
 
     // --- start attributes block vals
     val attributes: Elems = {
-      val fvs: List[comment.Paragraph] = visibility(mbr).toList
+      val fvs: List[Elems] = visibility(mbr).toList
       if (fvs.isEmpty || isReduced) NoElems
       else {
         dt("Attributes") ::
-        Dd(elems=  fvs flatMap { fv => { inlineToHtml(fv.text) :+ Txt(" ") } }  ) :: NoElems
+        Dd(elems = fvs.flatMap(_ :+ Txt(" "))) :: NoElems
       }
     }
 
@@ -595,7 +620,7 @@ trait EntityPage extends HtmlPage {
       case _ => NoElems
     }
 
-    val deprecation: Elems =
+    val deprecations: Elems =
       mbr.deprecation match {
         case Some(deprecation) if !isReduced =>
           dt("Deprecated") ::
@@ -603,7 +628,7 @@ trait EntityPage extends HtmlPage {
         case _ => NoElems
       }
 
-    val migration: Elems =
+    val migrations: Elems =
       mbr.migration match {
         case Some(migration) if !isReduced =>
           dt("Migration") ::
@@ -613,12 +638,12 @@ trait EntityPage extends HtmlPage {
 
     val mainComment: Elems = mbr.comment match {
       case Some(comment) if (! isReduced) =>
-        def orEmpty[T](it: Iterable[T])(gen:  =>Elems): Elems =
+        def orEmpty[T](it: Iterable[T])(gen: => Elems): Elems =
           if (it.isEmpty) NoElems else gen
 
         val example =
           orEmpty(comment.example) {
-            Div(`class`="block", elems= Txt(s"Example${if (comment.example.length > 1) "s" else ""}:") ::
+            Div(`class`="block", elems= Txt(s"Example${if (comment.example.lengthIs > 1) "s" else ""}:") ::
                Ol(elems = {
                  val exampleXml: List[Elems] = for (ex <- comment.example) yield
                    Li(`class`= "cmt", elems= bodyToHtml(ex)) :: NoElems
@@ -683,7 +708,7 @@ trait EntityPage extends HtmlPage {
     }
     // end attributes block vals ---
 
-    val attributesInfo = implicitInformation ++ attributes ++ definitionClasses ++ fullSignature ++ selfType ++ annotations ++ deprecation ++ migration ++ sourceLink ++ mainComment
+    val attributesInfo = implicitInformation ++ attributes ++ definitionClasses ++ fullSignature ++ selfType ++ annotations ++ deprecations ++ migrations ++ sourceLink ++ mainComment
     val attributesBlock =
       if (attributesInfo.isEmpty)
         NoElems
@@ -692,36 +717,40 @@ trait EntityPage extends HtmlPage {
 
     val linearization = mbr match {
       case dtpl: DocTemplateEntity if isSelf && !isReduced && dtpl.linearizationTemplates.nonEmpty =>
-        Div(`class`= "toggleContainer block", elems=
-          Span(`class`= "toggle", elems=
-            Txt("Linear Supertypes")
-          ) ::
-          Div(`class`= "superTypes hiddenContent", elems=
-            typesToHtml(dtpl.linearizationTypes, hasLinks = true, sep = Txt(", "))
-          )
-        )  :: NoElems
+        Div(`class` = "toggleContainer", elems =
+          Div(`class` = "toggle block", elems =
+            Span(elems =
+              Txt("Linear Supertypes")
+            ) ::
+              Div(`class` = "superTypes hiddenContent", elems =
+                typesToHtml(dtpl.linearizationTypes, hasLinks = true, sep = Txt(", "))
+              )
+          )) :: NoElems
       case _ => NoElems
     }
 
     val subclasses = mbr match {
       case dtpl: DocTemplateEntity if isSelf && !isReduced =>
         val subs = mutable.HashSet.empty[DocTemplateEntity]
+
         def transitive(dtpl: DocTemplateEntity): Unit = {
           for (sub <- dtpl.directSubClasses if !(subs contains sub)) {
             subs add sub
             transitive(sub)
           }
         }
+
         transitive(dtpl)
         if (subs.nonEmpty)
-          Div(`class`= "toggleContainer block", elems=
-            Span(`class`= "toggle", elems=
-              Txt("Known Subclasses")
-                ) ::
-            Div(`class`= "subClasses hiddenContent", elems=
-              templatesToHtml(subs.toList.sorted(Entity.EntityOrdering), Txt(", "))
-               )
-             )  :: NoElems
+          Div(`class` = "toggleContainer", elems =
+            Div(`class` = "toggle block", elems =
+              Span(elems =
+                Txt("Known Subclasses")
+              ) ::
+                Div(`class` = "subClasses hiddenContent", elems =
+                  templatesToHtml(subs.toList.sorted(Entity.EntityOrdering), Txt(", "))
+                )
+            )) :: NoElems
         else NoElems
       case _ => NoElems
     }
@@ -752,22 +781,20 @@ trait EntityPage extends HtmlPage {
     bound0(lo, " >: ") ++ bound0(hi, " <: ")
   }
 
-  def visibility(mbr: MemberEntity): Option[comment.Paragraph] = {
-    import comment._
-    import comment.{ Text => CText }
+  def visibility(mbr: MemberEntity): Option[Elems] = {
     mbr.visibility match {
       case PrivateInInstance() =>
-        Some(Paragraph(CText("private[this]")))
-      case PrivateInTemplate(owner) if (owner == mbr.inTemplate) =>
-        Some(Paragraph(CText("private")))
-      case PrivateInTemplate(owner) =>
-        Some(Paragraph(Chain(List(CText("private["), EntityLink(comment.Text(owner.qualifiedName), LinkToTpl(owner)), CText("]")))))
+        Some(Txt("private[this]"))
+      case PrivateInTemplate(None) =>
+        Some(Txt("private"))
+      case PrivateInTemplate(Some(owner)) =>
+        Some((Txt("private[") :: typeToHtml(owner, true)) :+ Txt("]"))
       case ProtectedInInstance() =>
-        Some(Paragraph(CText("protected[this]")))
-      case ProtectedInTemplate(owner) if (owner == mbr.inTemplate) =>
-        Some(Paragraph(CText("protected")))
-      case ProtectedInTemplate(owner) =>
-        Some(Paragraph(Chain(List(CText("protected["), EntityLink(comment.Text(owner.qualifiedName), LinkToTpl(owner)), CText("]")))))
+        Some(Txt("protected[this]"))
+      case ProtectedInTemplate(None) =>
+        Some(Txt("protected"))
+      case ProtectedInTemplate(Some(owner)) =>
+        Some((Txt("protected[") :: typeToHtml(owner, true)) :+ Txt("]"))
       case Public() =>
         None
     }
@@ -848,7 +875,7 @@ trait EntityPage extends HtmlPage {
                 case vl :: vls => if(vl.isImplicit) { Span(`class`= "implicit", elems= Txt("implicit ")) } else Txt("")
                 case _ => Txt("")
               }
-              vlsss map { vlss => Span(`class`= "params", elems= Txt("(") :: implicitCheck(vlss) ++ params0(vlss) :+ Txt(")")) }
+              vlsss map { vlss => Span(`class`= "params", elems = Txt("(") :: implicitCheck(vlss) ++ params0(vlss) ++ Txt(")")) }
             }
             mbr match {
               case cls: Class => paramsToHtml(cls.valueParams)
@@ -881,7 +908,7 @@ trait EntityPage extends HtmlPage {
 
     mbr match {
       case dte: DocTemplateEntity if !isSelf =>
-        permalink(dte, isSelf) :: Txt(" ") ++ { inside(hasLinks = true, nameLink = relativeLinkTo(dte)) }
+        permalink(dte) :: Txt(" ") ++ { inside(hasLinks = true, nameLink = relativeLinkTo(dte)) }
       case _ if isSelf =>
         H(4, id="signature", `class`= "signature", elems= inside(hasLinks = true))
       case _ =>
@@ -910,7 +937,7 @@ trait EntityPage extends HtmlPage {
       }
       def indentation:Elems = {
         var indentXml = NoElems
-        for (x <- 1 to indent) indentXml ++= Txt("  ") // TODO: &nbsp;&nbsp;
+        for (_ <- 1 to indent) indentXml ++= Txt("  ") // TODO: &nbsp;&nbsp;
         indentXml
       }
       goodLookingXml
@@ -934,6 +961,7 @@ trait EntityPage extends HtmlPage {
             val anchor = "#" + mbr.signature
             val link = relativeLinkTo(mbr.inTemplate)
             myXml ++= Span(`class`="name", elems= A(href=link + anchor, elems= Txt(str.substring(from, to))))
+          case x => throw new MatchError(x)
         }
         index = to
       }
@@ -967,11 +995,11 @@ trait EntityPage extends HtmlPage {
   }
 
   private def bodyToStr(body: comment.Body): String =
-    body.blocks flatMap (blockToStr(_)) mkString ""
+    body.blocks flatMap blockToStr mkString ""
 
   private def blockToStr(block: comment.Block): String = block match {
     case comment.Paragraph(in) => Page.inlineToStr(in)
-    case _ => block.toString
+    case _                     => block.toString
   }
 
   private def constraintToHtml(constraint: Constraint): Elems = constraint match {
@@ -980,7 +1008,7 @@ trait EntityPage extends HtmlPage {
         templateToHtml(ktcc.typeClassEntity) ++ Txt(")")
     case tcc: TypeClassConstraint =>
       Txt(tcc.typeParamName + " is ") ++
-        A(href="http://stackoverflow.com/questions/2982276/what-is-a-context-bound-in-scala", target="_blank", elems=
+        A(href="https://stackoverflow.com/questions/2982276/what-is-a-context-bound-in-scala", target="_blank", elems=
         Txt("context-bounded")) ++ Txt(" by " + tcc.typeClassEntity.qualifiedName + " (" + tcc.typeParamName + ": ") ++
         templateToHtml(tcc.typeClassEntity) ++ Txt(")")
     case impl: ImplicitInScopeConstraint =>

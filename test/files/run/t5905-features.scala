@@ -1,11 +1,11 @@
+// scalac: -nowarn
+//
 
 import tools.partest.DirectTest
 
 // verify that all languageFeature names are accepted by -language
 object Test extends DirectTest {
   override def code = "class Code { def f = (1 to 10) size }" // exercise a feature to sanity-check coverage of -language options
-
-  override def extraSettings = s"-usejavacp -d ${testOutput.path}"
 
   override def show() = {
     val global = newCompiler("-Ystop-after:typer")

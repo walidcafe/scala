@@ -1,9 +1,17 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
-package scala.tools.nsc.interpreter.shell
+package scala.tools.nsc.interpreter
+package shell
 
 import java.io.{PrintWriter => JPrintWriter}
 
@@ -129,16 +137,16 @@ trait LoopCommands {
           case cmd :: Nil =>
             val completion = if (cmd.isInstanceOf[NullaryCmd] || cursor < line.length) cmd.name else cmd.name + " "
             new Completion {
-              def resetVerbosity(): Unit = ()
-              def complete(buffer: String, cursor: Int) = CompletionResult(cursor = 1, List(completion))
+              def complete(buffer: String, cursor: Int) =
+                CompletionResult(buffer, cursor = 1, List(CompletionCandidate(completion)))
             }
           case cmd :: rest =>
             new Completion {
-              def resetVerbosity(): Unit = ()
-              def complete(buffer: String, cursor: Int) = CompletionResult(cursor = 1, cmds.map(_.name))
+              def complete(buffer: String, cursor: Int) =
+                CompletionResult(buffer, cursor = 1, cmds.map(cmd => CompletionCandidate(cmd.name)))
             }
         }
-      case _       => NoCompletion
+      case _ => NoCompletion
     }
 
   class NullaryCmd(name: String, help: String, detailedHelp: Option[String],

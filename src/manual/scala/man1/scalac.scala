@@ -13,7 +13,7 @@ object scalac extends Command {
   val name = Section("NAME",
 
     MBold(command) & " " & NDash & " Compiler for the " &
-    Link("Scala 2", "http://scala-lang.org/") & " language")
+    Link("Scala 2", "https://scala-lang.org/") & " language")
 
   val synopsis = Section("SYNOPSIS",
 
@@ -94,7 +94,7 @@ object scalac extends Command {
             "Specify character encoding used by source files.",
             "The default value is platform-specific (Linux: " & Mono("\"UTF8\"") &
             ", Windows: " & Mono("\"Cp1252\"") & "). Executing the following " &
-            "code in the Scala interpreter will return the default value " &
+            "code in the Scala REPL will return the default value " &
             "on your system:",
             MBold("    scala> ") &
             Mono("new java.io.InputStreamReader(System.in).getEncoding"))),
@@ -206,9 +206,6 @@ object scalac extends Command {
           CmdOption("Xfull-lubs"),
           "Retain pre 2.10 behavior of less aggressive truncation of least upper bounds."),
         Definition(
-          CmdOption("Xfuture"),
-          "Turn on future language features."),
-        Definition(
           CmdOption("Xgenerate-phase-graph", Argument("file")),
           "Generate the phase graphs (outputs .dot files) to fileX.dot."),
         Definition(
@@ -224,9 +221,6 @@ object scalac extends Command {
           CmdOption("Xlog-implicit-conversions"),
           "Print a message whenever an implicit conversion is inserted."),
         Definition(
-          CmdOption("Xlog-implicits"),
-          "Show more detail on why some implicits are not applicable."),
-        Definition(
           CmdOption("Xlog-reflective-calls"),
           "Print a message when a reflective method call is generated."),
         Definition(
@@ -235,9 +229,6 @@ object scalac extends Command {
         Definition(
           CmdOption("Xmain-class", Argument("path")),
           "Class for manifest's Main-Class entry (only useful with -d <jar>)."),
-        Definition(
-          CmdOption("Xmax-classfile-name", Argument("n")),
-          "Maximum filename length for generated classes."),
         Definition(
           CmdOptionBound("Xmigration:", Argument("version")),
           "Warn about constructs whose behavior may have changed since" & Argument("version") & "."),
@@ -248,11 +239,8 @@ object scalac extends Command {
           CmdOption("Xno-patmat-analysis"),
           "Don't perform exhaustivity/unreachability analysis. Also, ignore " & MItalic("@switch") & " annotation."),
         Definition(
-          CmdOption("Xno-uescape"),
-          "Disable handling of " & BSlash & "u unicode escapes"),
-        Definition(
-          CmdOption("Xnojline"),
-          "Do not use JLine for editing."),
+          CmdOption("Xjline"),
+          "The JLine keybindings to use: emacs/vi/off."),
         Definition(
           CmdOptionBound("Xplugin:", Argument("paths")),
           "Load a plugin from each classpath."),
@@ -269,16 +257,13 @@ object scalac extends Command {
           CmdOption("Xpluginsdir", Argument("path")),
           "Path to search for plugin archives."),
         Definition(
-          CmdOptionBound("Xprint:", Argument("phases")),
+          CmdOptionBound("Vprint:", Argument("phases")),
           "Print out program after " & Argument("phases") & " (see below)."),
         Definition(
-          CmdOptionBound("Xprint-icode", "[:" & Argument("phases") & "]"),
-          "Log internal icode to *.icode files after" & Argument("phases") & " (default: icode)."),
-        Definition(
-          CmdOption("Xprint-pos"),
+          CmdOption("Vprint-pos"),
           "Print tree positions, as offsets."),
         Definition(
-          CmdOption("Xprint-types"),
+          CmdOption("Vprint-types"),
           "Print tree types (debugging option)."),
         Definition(
           CmdOption("Xprompt"),
@@ -397,9 +382,6 @@ object scalac extends Command {
           MItalic("delambdafy"),
           "remove lambdas"),
         Definition(
-          MItalic("icode"),
-          "generate portable intermediate code"),
-        Definition(
           MItalic("inliner"),
           "optimization: do inlining"),
         Definition(
@@ -443,9 +425,9 @@ object scalac extends Command {
           "Specify the options to be passed to the " & MBold("java") &
           " command defined by " & MBold("JAVACMD") & ".",
 
-          "With Java 1.5 (or newer) one may for example configure the " &
-          "memory usage of the JVM as follows: " &
-          Mono("JAVA_OPTS=\"-Xmx512M -Xms16M -Xss16M\"")
+          "One might for example configure the " &
+          "memory usage of the JVM with: " &
+          Mono("JAVA_OPTS=\"-Xmx2G -Xss16M\"")
         ))))
 
   val examples = Section("EXAMPLES",

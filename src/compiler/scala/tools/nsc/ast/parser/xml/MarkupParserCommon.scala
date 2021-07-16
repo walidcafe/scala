@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.tools.nsc.ast.parser.xml
 
@@ -163,9 +167,6 @@ private[scala] trait MarkupParserCommon {
   def xSpace() =
     if (isSpace(ch)) { nextch(); xSpaceOpt() }
     else xHandleError(ch, "whitespace expected")
-
-  /** Apply a function and return the passed value */
-  def returning[T](x: T)(f: T => Unit): T = { f(x); x }
 
   /** Execute body with a variable saved and restored after execution */
   def saving[A, B](getter: A, setter: A => Unit)(body: => B): B = {

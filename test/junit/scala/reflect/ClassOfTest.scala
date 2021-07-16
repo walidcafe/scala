@@ -5,7 +5,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
-import scala.tools.testing.RunTesting
+import scala.tools.testkit.RunTesting
 
 object ClassOfTest {
   class VC(val x: Any) extends AnyVal
@@ -71,7 +71,7 @@ class ClassOfTest extends RunTesting {
   @Test
   def t9702(): Unit = {
     val code =
-      """import javax.annotation.Resource
+      """import scala.tools.testkit.Resource
         |import scala.reflect.ClassOfTest.VC
         |class C {
         |  type aList[K] = List[K]
@@ -97,7 +97,7 @@ class ClassOfTest extends RunTesting {
 
     val l = Class.forName("scala.collection.immutable.List")
     val i = Integer.TYPE
-    val ig = new Integer(1).getClass
+    val ig = Integer.valueOf(1).getClass
     val v = new ClassOfTest.VC(1).getClass
     val ai = Array(1).getClass
     val al = Array(List()).getClass

@@ -1,12 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect
 package internal
 
+import scala.annotation.tailrec
 import Variance._
 
 /** Variances form a lattice:
@@ -79,12 +87,27 @@ object Variance {
     def > (other: Int) = v.flags > other
   }
 
-  def fold(variances: List[Variance]): Variance = (
-    if (variances.isEmpty) Bivariant
-    else variances reduceLeft (_ & _)
-  )
   val Bivariant     = new Variance(2)
   val Covariant     = new Variance(1)
   val Contravariant = new Variance(-1)
   val Invariant     = new Variance(0)
+
+  @FunctionalInterface
+  trait Extractor[A]     { def apply(x: A): Variance }
+  trait Extractor2[A, B] { def apply(x: A, y: B): Variance }
+
+  def foldExtract[A](as: List[A])(f: Extractor[A]): Variance = {
+    @tailrec def loop(xs: List[A], acc: Variance): Variance =
+      if (acc.isInvariant || xs.isEmpty) acc
+      else loop(xs.tail, acc & f(xs.head))
+    loop(as, Bivariant)
+  }
+
+  def foldExtract2[A, B](as: List[A], bs: List[B])(f: Extractor2[A, B]): Variance = {
+    @tailrec def loop(xs: List[A], ys: List[B], acc: Variance): Variance =
+      if (acc.isInvariant || xs.isEmpty || ys.isEmpty) acc
+      else loop(xs.tail, ys.tail, acc & f(xs.head, ys.head))
+    loop(as, bs, Bivariant)
+  }
+
 }

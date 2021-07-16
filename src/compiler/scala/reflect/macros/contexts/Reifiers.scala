@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Gilles Dubochet
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.reflect.macros
@@ -14,14 +21,14 @@ trait Reifiers {
   import definitions._
 
   def reifyTree(universe: Tree, mirror: Tree, tree: Tree): Tree = {
-    assert(ExprClass != NoSymbol)
+    assert(ExprClass != NoSymbol, "Missing ExprClass")
     val result = scala.reflect.reify.`package`.reifyTree(self.universe)(callsiteTyper, universe, mirror, tree)
     logFreeVars(enclosingPosition, result)
     result
   }
 
   def reifyType(universe: Tree, mirror: Tree, tpe: Type, concrete: Boolean = false): Tree = {
-    assert(TypeTagsClass != NoSymbol)
+    assert(TypeTagsClass != NoSymbol, "Missing TypeTagsClass")
     val result = scala.reflect.reify.`package`.reifyType(self.universe)(callsiteTyper, universe, mirror, tpe, concrete)
     logFreeVars(enclosingPosition, result)
     result
@@ -34,7 +41,7 @@ trait Reifiers {
     scala.reflect.reify.`package`.reifyEnclosingRuntimeClass(universe)(callsiteTyper)
 
   def unreifyTree(tree: Tree): Tree = {
-    assert(ExprSplice != NoSymbol)
+    assert(ExprSplice != NoSymbol, "Missing ExprSplice")
     Select(tree, ExprSplice)
   }
 
@@ -69,9 +76,9 @@ trait Reifiers {
       }
 
     if (universe.settings.logFreeTerms || universe.settings.logFreeTypes)
-      reification match {
+      (reification: @unchecked) match {
         case ReifiedTree(_, _, symtab, _, _, _, _) => logFreeVars(symtab)
-        case ReifiedType(_, _, symtab, _, _, _) => logFreeVars(symtab)
+        case ReifiedType(_, _, symtab, _, _, _)    => logFreeVars(symtab)
       }
   }
 }

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -9,11 +16,10 @@ package typechecker
 import symtab.Flags._
 import scala.collection.mutable
 import scala.reflect.ClassTag
-import PartialFunction.{ cond => when }
+import PartialFunction.{cond => when}
 
 /**
  *  @author Lukas Rytz
- *  @version 1.0
  */
 trait NamesDefaults { self: Analyzer =>
 
@@ -88,22 +94,22 @@ trait NamesDefaults { self: Analyzer =>
    * first the function "fun" (which might be an application itself!) is transformed into a
    * block of the form
    *   {
-   *     val qual$1 = qualifier_of_fun
-   *     val x$1 = arg_1_of_fun
+   *     val qual\$1 = qualifier_of_fun
+   *     val x\$1 = arg_1_of_fun
    *     ...
-   *     val x$n = arg_n_of_fun
-   *     qual$1.fun[targs](x$1, ...)...(..., x$n)
+   *     val x\$n = arg_n_of_fun
+   *     qual\$1.fun[targs](x\$1, ...)...(..., x\$n)
    *   }
    * then for each argument in args, a value is created and entered into the block. finally
    * the application expression of the block is updated.
    *   {
-   *     val qual$1 = ..
+   *     val qual\$1 = ..
    *     ...
-   *     val x$n = ...
-   *  >  val qual$n+1 = arg(1)
+   *     val x\$n = ...
+   *  >  val qual\$n+1 = arg(1)
    *  >  ...
-   *  >  val qual$n+m = arg(m)
-   *  >  qual$1.fun[targs](x$1, ...)...(..., x$n)(x$n+1, ..., x$n+m)
+   *  >  val qual\$n+m = arg(m)
+   *  >  qual\$1.fun[targs](x\$1, ...)...(..., x\$n)(x\$n+1, ..., x\$n+m)
    *   }
    *
    * @param typer the typer calling this method; this method calls
@@ -111,8 +117,8 @@ trait NamesDefaults { self: Analyzer =>
    * @param mode the mode to use for calling typer.doTypedApply
    * @param pt the expected type for calling typer.doTypedApply
    *
-   * @param tree: the function application tree
-   * @argPos: a function mapping arguments from their current position to the
+   * @param tree the function application tree
+   * @param argPos a function mapping arguments from their current position to the
    *   position specified by the method type. example:
    *    def foo(a: Int, b: String)
    *    foo(b = "1", a = 2)
@@ -127,7 +133,6 @@ trait NamesDefaults { self: Analyzer =>
     import typer._
     import typer.infer._
     val context = typer.context
-    import context.unit
 
     /*
      * Transform a function into a block, and passing context.namedApplyBlockInfo to
@@ -183,7 +188,7 @@ trait NamesDefaults { self: Analyzer =>
         blockTyper.context.scope enter sym
         val vd = atPos(sym.pos)(ValDef(sym, qual) setType NoType)
         // it stays in Vegas: scala/bug#5720, scala/bug#5727
-        qual changeOwner (blockTyper.context.owner -> sym)
+        qual.changeOwner(blockTyper.context.owner, sym)
 
         val newQual = atPos(qual.pos.focus)(blockTyper.typedQualifier(Ident(sym.name)))
         val baseFunTransformed = atPos(baseFun.pos.makeTransparent) {
@@ -272,6 +277,8 @@ trait NamesDefaults { self: Analyzer =>
             blockWithoutQualifier(Some(qual.duplicate))
           else
             blockWithQualifier(qual, name)
+
+        case x => throw new MatchError(x)
       }
     }
 
@@ -295,18 +302,15 @@ trait NamesDefaults { self: Analyzer =>
         case _ =>
           val byName   = isByNameParamType(paramTpe)
           val repeated = isScalaRepeatedParamType(paramTpe)
-          val argTpe = (
-            if (repeated) arg match {
+          // TODO In 83c9c764b, we tried to a stable type here to fix scala/bug#7234. But the resulting TypeTree over a
+          //      singleton type without an original TypeTree fails to retypecheck after a resetAttrs (scala/bug#7516),
+          //      which is important for (at least) macros.
+          val argTpe =
+            arg match {
+              case _ if !repeated        => arg.tpe
               case WildcardStarArg(expr) => expr.tpe
-              case _                     => seqType(arg.tpe)
+              case _                     => seqType(arg.tpe.widen)      // avoid constant type
             }
-            else {
-              // TODO In 83c9c764b, we tried to a stable type here to fix scala/bug#7234. But the resulting TypeTree over a
-              //      singleton type without an original TypeTree fails to retypecheck after a resetAttrs (scala/bug#7516),
-              //      which is important for (at least) macros.
-              arg.tpe
-            }
-          )
           val s = context.owner.newValue(freshTermName(nme.NAMEDARG_PREFIX)(typer.fresh), arg.pos, newFlags = ARTIFACT) setInfo {
             val tp = if (byName) functionType(Nil, argTpe) else argTpe
             uncheckedBounds(tp)
@@ -323,10 +327,11 @@ trait NamesDefaults { self: Analyzer =>
               res
             } else {
               new ChangeOwnerTraverser(context.owner, sym) traverse arg // fixes #4502
-              if (repeated) arg match {
+              arg match {
+                case _ if !repeated        => arg
                 case WildcardStarArg(expr) => expr
-                case _                     => blockTyper typed gen.mkSeqApply(resetAttrs(arg))
-              } else arg
+                case _                     => blockTyper.typed(gen.mkSeqApply(resetAttrs(arg)))
+              }
             }
           Some(atPos(body.pos)(ValDef(sym, body).setType(NoType)))
       }
@@ -340,8 +345,8 @@ trait NamesDefaults { self: Analyzer =>
         val transformedFun = transformNamedApplication(typer, mode, pt)(fun, x => x)
         if (transformedFun.isErroneous) setError(tree)
         else {
-          val NamedApplyBlock(NamedApplyInfo(qual, targs, vargss, blockTyper)) = transformedFun
-          val Block(stats, funOnly) = transformedFun
+          val NamedApplyBlock(NamedApplyInfo(qual, targs, vargss, blockTyper)) = transformedFun: @unchecked
+          val Block(stats, funOnly) = transformedFun: @unchecked
 
           // type the application without names; put the arguments in definition-site order
           val typedApp = doTypedApply(tree, funOnly, reorderArgs(namelessArgs, argPos), mode, pt)
@@ -431,7 +436,7 @@ trait NamesDefaults { self: Analyzer =>
    * Example: given
    *   def foo(x: Int = 2, y: String = "def")
    *   foo(y = "lt")
-   * the argument list (y = "lt") is transformed to (y = "lt", x = foo$default$1())
+   * the argument list (y = "lt") is transformed to (y = "lt", x = foo\$default\$1())
    */
   def addDefaults(givenArgs: List[Tree], qual: Option[Tree], targs: List[Tree],
                   previousArgss: List[List[Tree]], params: List[Symbol],
@@ -521,10 +526,10 @@ trait NamesDefaults { self: Analyzer =>
     val namelessArgs = {
       var positionalAllowed = true
       def stripNamedArg(arg: NamedArg, argIndex: Int): Tree = {
-        val NamedArg(Ident(name), rhs) = arg
+        val NamedArg(Ident(name), rhs) = arg: @unchecked
         params indexWhere (p => matchesName(p, name, argIndex)) match {
           case -1 =>
-            val warnVariableInScope = !settings.isScala214 && context0.lookupSymbol(name, _.isVariable).isSuccess
+            val warnVariableInScope = !currentRun.isScala3 && context0.lookupSymbol(name, _.isVariable).isSuccess
             UnknownParameterNameNamesDefaultError(arg, name, warnVariableInScope)
           case paramPos if argPos contains paramPos =>
             val existingArgIndex = argPos.indexWhere(_ == paramPos)

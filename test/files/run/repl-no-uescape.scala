@@ -1,5 +1,4 @@
 import scala.tools.partest.ReplTest
-import scala.tools.nsc.Settings
 
 /*
 scala> object A
@@ -21,10 +20,6 @@ scala> 42
  + "\u001B[1m\u001B[34mres0\u001B[0m: \u001B[1m\u001B[32mInt\u001B[0m = " + scala.runtime.ScalaRunTime.replStringOf(res0, 1000)
  */
 object Test extends ReplTest {
-  override def transformSettings(settings: Settings): Settings = {
-    settings.nouescape.value = true
-    settings
-  }
   def code = """
 object A
   """

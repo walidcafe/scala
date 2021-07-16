@@ -13,7 +13,7 @@ object Test {
     for (i <- it) {
       // sum of the groups == sum of the original
       val thisSum = ((it grouped i) map (_.sum)).to(LazyList).sum
-      assert(thisSum == itSum, thisSum + " != " + itSum)
+      assert(thisSum == itSum, s"$thisSum != $itSum" )
     }
 
     // grouped
@@ -23,7 +23,7 @@ object Test {
 
     // testing by-name padding
     val padIt = it
-    assertThat(4, List(10, 1, 2)) { it grouped 3 withPadding padIt.next }
+    assertThat(4, List(10, 1, 2)) { it grouped 3 withPadding padIt.next() }
 
     // sliding
     assertThat(8, List(8, 9, 10)) { it sliding 3 }
@@ -40,9 +40,9 @@ object Test {
     // make sure it throws past the end
     val thrown = try {
       val it = List(1,2,3).sliding(2)
-      it.next
-      it.next
-      it.next
+      it.next()
+      it.next()
+      it.next()
       false
     }
     catch {

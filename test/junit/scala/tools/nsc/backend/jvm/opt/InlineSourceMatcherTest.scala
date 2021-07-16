@@ -8,8 +8,8 @@ import org.junit.runners.JUnit4
 import scala.tools.nsc.backend.jvm.BTypes.InternalName
 import scala.tools.nsc.backend.jvm.opt.InlineSourceMatcherTest._
 import scala.tools.nsc.backend.jvm.opt.InlinerHeuristics._
-import scala.tools.testing.BytecodeTesting
-import scala.tools.testing.BytecodeTesting._
+import scala.tools.testkit.BytecodeTesting
+import scala.tools.testkit.BytecodeTesting._
 
 @RunWith(classOf[JUnit4])
 class InlineSourceMatcherTest extends BytecodeTesting {
@@ -27,7 +27,7 @@ class InlineSourceMatcherTest extends BytecodeTesting {
     val es = m.entries
     assertEquals(es.length, expect.length)
 
-    for ((a, e) <- (es, expect).zipped) {
+    for ((a, e) <- es.lazyZip(expect)) {
       assertEquals(a.pattern.pattern, e.regex)
       assertEquals(a.negated, e.negated)
       assertEquals(a.terminal, e.terminal)

@@ -1,6 +1,6 @@
 
 
-import scala.language.{ higherKinds, postfixOps }
+import scala.language.postfixOps
 import scala.reflect.runtime.universe._
 
 object Test
@@ -39,6 +39,7 @@ object Test
         case CO     => showsCovariance && !showsContravariance && !showsInvariance
         case IN     => showsInvariance && !showsCovariance && !showsContravariance
         case CONTRA => showsContravariance && !showsCovariance && !showsInvariance
+        case x      => throw new MatchError(x)
       }
   }
 

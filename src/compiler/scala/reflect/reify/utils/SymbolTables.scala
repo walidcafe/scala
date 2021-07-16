@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package utils
 
@@ -24,12 +36,13 @@ trait SymbolTables {
         case Some(FreeDef(_, name, _, _, _)) => name
         case Some(SymDef(_, name, _, _)) => name
         case None => nme.EMPTY
+        case x    => throw new MatchError(x)
       }
 
     def symAliases(sym: Symbol): List[TermName] =
       symName(sym) match {
         case name if name.isEmpty => Nil
-        case _ => (aliases.distinct groupBy (_._1) mapValues (_ map (_._2)))(sym)
+        case _ => (aliases.distinct.groupMap(_._1)(_._2))(sym)
       }
 
     def symBinding(sym: Symbol): Tree =
@@ -37,6 +50,7 @@ trait SymbolTables {
         case Some(FreeDef(_, _, binding, _, _)) => binding
         case Some(SymDef(_, _, _, _)) => throw new UnsupportedOperationException(s"${symtab(sym)} is a symdef, hence it doesn't have a binding")
         case None => EmptyTree
+        case x    => throw new MatchError(x)
       }
 
     def symRef(sym: Symbol): Tree =
@@ -44,8 +58,10 @@ trait SymbolTables {
         case Some(FreeDef(_, name, binding, _, _)) => Ident(name) updateAttachment binding
         case Some(SymDef(_, name, _, _)) => Ident(name) updateAttachment ReifyBindingAttachment(Ident(sym))
         case None => EmptyTree
+        case x    => throw new MatchError(x)
       }
 
+    @deprecated("use add instead", since="2.13.3")
     def +(sym: Symbol, name: TermName, reification: Tree): SymbolTable = add(sym, name, reification)
     def +(symDef: Tree): SymbolTable = add(symDef)
     def ++(symDefs: IterableOnce[Tree]): SymbolTable = symDefs.iterator.foldLeft(this)((symtab, symDef) => symtab.add(symDef))
@@ -65,14 +81,15 @@ trait SymbolTables {
       assert(sym != NoSymbol, showRaw(symDef))
       val name = symDef match {
         case FreeDef(_, name, _, _, _) => name
-        case SymDef(_, name, _, _) => name
+        case SymDef(_, name, _, _)     => name
+        case x                         => throw new MatchError(x)
       }
       val newSymtab = if (!(symtab contains sym)) symtab + (sym -> symDef) else symtab
       val newAliases = aliases :+ (sym -> name)
       new SymbolTable(newSymtab, newAliases)
     }
 
-    private def add(sym: Symbol, name0: TermName, reification: Tree): SymbolTable = {
+    def add(sym: Symbol, name0: TermName, reification: Tree): SymbolTable = {
       def freshName(name0: TermName): TermName = {
         var name = name0.toString
         name = name.replace(".type", "$type")
@@ -95,7 +112,7 @@ trait SymbolTables {
       val newAliases = aliases filter (_._2 != name)
       newSymtab = newSymtab filter { case ((sym, _)) => newAliases exists (_._1 == sym) }
       newSymtab = newSymtab map { case ((sym, tree)) =>
-        val ValDef(mods, primaryName, tpt, rhs) = tree
+        val ValDef(mods, primaryName, tpt, rhs) = tree: @unchecked
         val tree1 =
           if (!(newAliases contains ((sym, primaryName)))) {
             val primaryName1 = newAliases.find(_._1 == sym).get._2

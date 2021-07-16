@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -17,7 +21,7 @@ import scala.annotation.implicitNotFound
  *
  * A more detailed guide to Futures and Promises, including discussion and examples
  * can be found at
- * [[http://docs.scala-lang.org/overviews/core/futures.html]].
+ * [[https://docs.scala-lang.org/overviews/core/futures.html]].
  *
  * == Common Imports ==
  *
@@ -71,8 +75,8 @@ import scala.annotation.implicitNotFound
  * import ExecutionContext.Implicits.global  // implicit execution context
  *
  * val firstZebra: Future[Int] = Future {
- *   val source = scala.io.Source.fromFile("/etc/dictionaries-common/words")
- *   source.toSeq.indexOfSlice("zebra")
+ *   val words = Files.readAllLines("/etc/dictionaries-common/words").asScala
+ *   words.indexOfSlice("zebra")
  * }
  * }}}
  *
@@ -117,7 +121,7 @@ package object concurrent {
    *  @throws InterruptedException in the case that a wait within the blocking `body` was interrupted
    */
   @throws(classOf[Exception])
-  def blocking[T](body: =>T): T = BlockContext.current.blockOn(body)(scala.concurrent.AwaitPermission)
+  final def blocking[T](body: => T): T = BlockContext.current.blockOn(body)(scala.concurrent.AwaitPermission)
 }
 
 package concurrent {
@@ -165,8 +169,10 @@ package concurrent {
      */
     @throws(classOf[TimeoutException])
     @throws(classOf[InterruptedException])
-    def ready[T](awaitable: Awaitable[T], atMost: Duration): awaitable.type =
-      blocking(awaitable.ready(atMost)(AwaitPermission))
+    final def ready[T](awaitable: Awaitable[T], atMost: Duration): awaitable.type = awaitable match {
+      case f: Future[T] if f.isCompleted => awaitable.ready(atMost)(AwaitPermission)
+      case _ => blocking(awaitable.ready(atMost)(AwaitPermission))
+    }
 
     /**
      * Await and return the result (of type `T`) of an `Awaitable`.
@@ -188,8 +194,11 @@ package concurrent {
      * @throws TimeoutException         if after waiting for the specified time `awaitable` is still not ready
      * @throws IllegalArgumentException if `atMost` is [[scala.concurrent.duration.Duration.Undefined Duration.Undefined]]
      */
-    @throws(classOf[Exception])
-    def result[T](awaitable: Awaitable[T], atMost: Duration): T =
-      blocking(awaitable.result(atMost)(AwaitPermission))
+    @throws(classOf[TimeoutException])
+    @throws(classOf[InterruptedException])
+    final def result[T](awaitable: Awaitable[T], atMost: Duration): T = awaitable match {
+      case f: Future[T] if f.isCompleted => f.result(atMost)(AwaitPermission)
+      case _ => blocking(awaitable.result(atMost)(AwaitPermission))
+    }
   }
 }

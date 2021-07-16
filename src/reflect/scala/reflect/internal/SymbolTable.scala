@@ -1,19 +1,29 @@
-/* NSC -- new scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect
 package internal
 
-import scala.annotation.elidable
+import java.net.URLClassLoader
+
+import scala.annotation.{elidable, nowarn, tailrec}
 import scala.collection.mutable
 import util._
 import java.util.concurrent.TimeUnit
 
-import scala.collection.mutable.ArrayBuffer
+import scala.reflect.internal.settings.MutableSettings
 import scala.reflect.internal.{TreeGen => InternalTreeGen}
+import scala.reflect.io.AbstractFile
 
 abstract class SymbolTable extends macros.Universe
                               with Collections
@@ -39,7 +49,6 @@ abstract class SymbolTable extends macros.Universe
                               with Positions
                               with TypeDebugging
                               with Importers
-                              with Required
                               with CapturedVariables
                               with StdAttachments
                               with StdCreators
@@ -65,21 +74,33 @@ abstract class SymbolTable extends macros.Universe
 
   def log(msg: => AnyRef): Unit
 
-  protected def elapsedMessage(msg: String, start: Long) =
-    msg + " in " + (TimeUnit.NANOSECONDS.toMillis(System.nanoTime()) - start) + "ms"
+  protected def elapsedMessage(msg: String, startNs: Long) =
+    msg + " in " + (TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNs)) + "ms"
 
-  def informProgress(msg: String)          = if (settings.verbose) inform("[" + msg + "]")
-  def informTime(msg: String, start: Long) = informProgress(elapsedMessage(msg, start))
+  def informProgress(msg: String)            = if (settings.verbose) inform("[" + msg + "]")
+  def informTime(msg: String, startNs: Long) = if (settings.verbose) informProgress(elapsedMessage(msg, startNs))
+  @inline final def informingProgress[T](msg: => String)(fn: => T) : T = {
+    val verbose: Boolean = settings.verbose
+    val start = if(verbose) System.nanoTime() else 0L
+    try fn finally if (verbose) informTime(msg, start)
+  }
 
   def shouldLogAtThisPhase = false
   def isPastTyper = false
-  def isDeveloper: Boolean = settings.debug
 
-  @deprecated("use devWarning if this is really a warning; otherwise use log", "2.11.0")
-  def debugwarn(msg: => String): Unit = devWarning(msg)
+  @inline final def isDeveloper: Boolean = settings.isDebug || settings.isDeveloper
+
+  def picklerPhase: Phase
+  def erasurePhase: Phase
+
+  def settings: MutableSettings
 
   /** Override with final implementation for inlining. */
-  def debuglog(msg:  => String): Unit = if (settings.debug) log(msg)
+  def debuglog(msg:  => String): Unit = if (settings.isDebug) log(msg)
+
+  /** dev-warns if dev-warning is enabled and `cond` is true; no-op otherwise */
+  @inline final def devWarningIf(cond: => Boolean)(msg: => String): Unit =
+    if (isDeveloper && cond) devWarning(msg)
   def devWarning(msg: => String): Unit = if (isDeveloper) Console.err.println(msg)
   def throwableAsString(t: Throwable): String = "" + t
   def throwableAsString(t: Throwable, maxFrames: Int): String = t.getStackTrace take maxFrames mkString "\n  at "
@@ -131,32 +152,19 @@ abstract class SymbolTable extends macros.Universe
     result
   }
 
-  // Getting in front of Predef's asserts to supplement with more info; see `supplementErrorMessage`.
-  // This has the happy side effect of masking the one argument forms of assert/require
-  // (but for now they're reproduced here, because there are a million uses internal and external to fix).
   @inline
-  final def assert(assertion: Boolean, message: => Any): Unit = {
-    // calling Predef.assert would send a freshly allocated closure wrapping the one received as argument.
+  final def assert(assertion: Boolean, message: => Any): Unit =
     if (!assertion) throwAssertionError(message)
-  }
 
-  // Let's consider re-deprecating this in the 2.13 series, to encourage informative messages.
-  //@deprecated("prefer to use the two-argument form", since = "2.12.5")
-  final def assert(assertion: Boolean): Unit = {
-    assert(assertion, "")
-  }
+  @deprecated("consider supplying an explanatory message", since = "2.12.5")
+  final def assert(assertion: Boolean): Unit = assert(assertion, "")
 
   @inline
-  final def require(requirement: Boolean, message: => Any): Unit = {
-    // calling Predef.require would send a freshly allocated closure wrapping the one received as argument.
+  final def require(requirement: Boolean, message: => Any): Unit =
     if (!requirement) throwRequirementError(message)
-  }
 
-  // Let's consider re-deprecating this in the 2.13 series, to encourage informative messages.
-  //@deprecated("prefer to use the two-argument form", since = "2.12.5")
-  final def require(requirement: Boolean): Unit = {
-    require(requirement, "")
-  }
+  @deprecated("consider supplying an explanatory message", since = "2.12.5")
+  final def require(requirement: Boolean): Unit = require(requirement, "")
 
   // extracted from `assert`/`require` to make them as small (and inlineable) as possible
   private[internal] def throwAssertionError(msg: Any): Nothing =
@@ -184,6 +192,7 @@ abstract class SymbolTable extends macros.Universe
   /** Dump each symbol to stdout after shutdown.
    */
   final val traceSymbolActivity = System.getProperty("scalac.debug.syms") != null
+  @nowarn("cat=deprecation&msg=early initializers")
   object traceSymbols extends {
     val global: SymbolTable.this.type = SymbolTable.this
   } with util.TraceSymbolActivity
@@ -215,7 +224,7 @@ abstract class SymbolTable extends macros.Universe
   type RunId = Int
   final val NoRunId = 0
 
-  private val phStack: collection.mutable.Stack[Phase] = new collection.mutable.Stack()
+  private[this] val phStack: collection.mutable.Stack[Phase] = new collection.mutable.Stack()
   private[this] var ph: Phase = NoPhase
   private[this] var per = NoPeriod
 
@@ -230,8 +239,6 @@ abstract class SymbolTable extends macros.Universe
   }
 
   final def phase_=(p: Phase): Unit = {
-    //System.out.println("setting phase to " + p)
-    assert((p ne null) && p != NoPhase, p)
     ph = p
     per = period(currentRunId, p.id)
   }
@@ -315,19 +322,20 @@ abstract class SymbolTable extends macros.Universe
   final def isValid(period: Period): Boolean =
     period != 0 && runId(period) == currentRunId && {
       val pid = phaseId(period)
-      if (phase.id > pid) infoTransformers.nextFrom(pid).pid >= phase.id
-      else infoTransformers.nextFrom(phase.id).pid >= pid
+      if (phase.id > pid) nextFrom(pid).pid >= phase.id
+      else nextFrom(phase.id).pid >= pid
     }
 
   final def isValidForBaseClasses(period: Period): Boolean = {
+    @tailrec
     def noChangeInBaseClasses(it: InfoTransformer, limit: Phase#Id): Boolean = (
       it.pid >= limit ||
       !it.changesBaseClasses && noChangeInBaseClasses(it.next, limit)
     )
     period != 0 && runId(period) == currentRunId && {
       val pid = phaseId(period)
-      if (phase.id > pid) noChangeInBaseClasses(infoTransformers.nextFrom(pid), phase.id)
-      else noChangeInBaseClasses(infoTransformers.nextFrom(phase.id), pid)
+      if (phase.id > pid) noChangeInBaseClasses(nextFrom(pid), phase.id)
+      else noChangeInBaseClasses(nextFrom(phase.id), pid)
     }
   }
 
@@ -348,7 +356,7 @@ abstract class SymbolTable extends macros.Universe
       }
     }
     // enter decls of parent classes
-    for (p <- container.parentSymbols) {
+    for (p <- container.parentSymbolsIterator) {
       if (p != definitions.ObjectClass) {
         openPackageModule(p, dest)
       }
@@ -371,8 +379,8 @@ abstract class SymbolTable extends macros.Universe
       }
       val newParams = method.newSyntheticValueParams(formals.init :+ definitions.javaRepeatedType(elemtp))
       MethodType(newParams, rtpe)
-    case PolyType(tparams, rtpe) =>
-      PolyType(tparams, arrayToRepeated(rtpe))
+    case PolyType(tparams, rtpe) => PolyType(tparams, arrayToRepeated(rtpe))
+    case x                       => throw new MatchError(x)
   }
 
   abstract class SymLoader extends LazyType {
@@ -380,7 +388,7 @@ abstract class SymbolTable extends macros.Universe
   }
 
   /** if there's a `package` member object in `pkgClass`, enter its members into it. */
-  def openPackageModule(pkgClass: Symbol): Unit = {
+  def openPackageModule(pkgClass: Symbol, force: Boolean = false): Unit = {
 
     val pkgModule = pkgClass.packageObject
     def fromSource = pkgModule.rawInfo match {
@@ -398,8 +406,8 @@ abstract class SymbolTable extends macros.Universe
     // Weak references so the garbage collector will take care of
     // letting us know when a cache is really out of commission.
     import java.lang.ref.WeakReference
-    private var caches = List[WeakReference[Clearable]]()
-    private var javaCaches = List[JavaClearable[_]]()
+    private[this] var caches = List[WeakReference[Clearable]]()
+    private[this] var javaCaches = List[JavaClearable[_]]()
 
     def recordCache[T <: Clearable](cache: T): T = {
       cache match {
@@ -409,6 +417,22 @@ abstract class SymbolTable extends macros.Universe
           caches ::= new WeakReference(cache)
       }
       cache
+    }
+
+    /** Closes the provided classloader at the conclusion of this Run */
+    final def recordClassloader(loader: ClassLoader): ClassLoader = {
+      def attemptClose(loader: ClassLoader): Unit = {
+        loader match {
+          case u: URLClassLoader => debuglog("Closing classloader " + u); u.close()
+          case _ =>
+        }
+      }
+      caches ::= new WeakReference((new Clearable {
+        def clear(): Unit = {
+          attemptClose(loader)
+        }
+      }))
+      loader
     }
 
     /**
@@ -426,10 +450,10 @@ abstract class SymbolTable extends macros.Universe
 
     def clearAll() = {
       debuglog("Clearing " + (caches.size + javaCaches.size) + " caches.")
-      caches foreach (ref => Option(ref.get).foreach(_.clear))
+      caches foreach (ref => Option(ref.get).foreach(_.clear()))
       caches = caches.filterNot(_.get == null)
 
-      javaCaches foreach (_.clear)
+      javaCaches foreach (_.clear())
       javaCaches = javaCaches.filter(_.isValid)
     }
 
@@ -472,9 +496,11 @@ abstract class SymbolTable extends macros.Universe
     val changesBaseClasses = true
     def transform(sym: Symbol, tpe: Type): Type = tpe
   }
+  var nextFrom: Array[InfoTransformer] = null
 
+  private final val MaxPhases = 256
   /** The phase which has given index as identifier. */
-  val phaseWithId: Array[Phase]
+  final val phaseWithId: Array[Phase] = Array.fill(MaxPhases)(NoPhase)
 
   /** Is this symbol table a part of a compiler universe?
    */
@@ -488,6 +514,9 @@ abstract class SymbolTable extends macros.Universe
    * Adds the `sm` String interpolator to a [[scala.StringContext]].
    */
   implicit val StringContextStripMarginOps: StringContext => StringContextStripMarginOps = util.StringContextStripMarginOps
+
+  protected[scala] def currentRunProfilerBeforeCompletion(root: Symbol, associatedFile: AbstractFile): Unit = ()
+  protected[scala] def currentRunProfilerAfterCompletion(root: Symbol, associatedFile: AbstractFile): Unit = ()
 }
 
 trait SymbolTableStats {

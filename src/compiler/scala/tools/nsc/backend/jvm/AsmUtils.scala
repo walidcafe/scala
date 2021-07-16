@@ -1,13 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2014 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc.backend.jvm
 
 import java.io.{PrintWriter, StringWriter}
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.tools.asm.tree._
 import scala.tools.asm.util._
 import scala.tools.asm.{Attribute, ClassReader, ClassWriter}
@@ -66,7 +73,7 @@ object AsmUtils {
   }
 
   def classFromBytes(bytes: Array[Byte]): ClassNode = {
-    val node = new ClassNode()
+    val node = new ClassNode1()
     new ClassReader(bytes).accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES)
 
     node

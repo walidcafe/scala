@@ -1,3 +1,5 @@
+// scalac: -deprecation
+//
 
 import scala.language.{ postfixOps }
 
@@ -38,6 +40,7 @@ object Test {
     Ticket346.run()
     Ticket37.run()
     Ticket44.run()
+    NullMatch.run()
   }
 
   def assertEquals(a: Any, b: Any): Unit = { assert(a == b) }
@@ -55,7 +58,7 @@ object Test {
   object SeqUnapply {
     case class SFB(i: Int, xs: List[Int])
     def run(): Unit = {
-      List(1, 2) match {
+      (List(1, 2): @unchecked) match {
         case List(1) => assert(false, "wrong case")
         case List(1, 2, xs@_*) => assert(xs.isEmpty, "not empty")
         case Nil => assert(false, "wrong case")
@@ -311,9 +314,9 @@ object Test {
 
   // unapply for LazyLists
   object TestLazyList {
-    def sum(stream: LazyList[Int]): Int =
-      stream match {
-        case LazyList.Empty => 0
+    def sum(lazyList: LazyList[Int]): Int =
+      lazyList match {
+        case ll if ll.isEmpty => 0
         case LazyList.cons(hd, tl) => hd + sum(tl)
       }
 
@@ -341,7 +344,7 @@ object Test {
       case n :: ls => flips((l take n reverse) ::: (l drop n)) + 1
     }
 
-    def run(): Unit = { assertEquals("both", (Var("x"), Var("y")), f) }
+    def run(): Unit = { assertEquals("both", (Var("x"), Var("y")), f()) }
   }
 
   object TestUnbox {
@@ -762,4 +765,76 @@ object Test {
 
   } // end Ticket346
 
+  // scala/bug#4364
+  object NullMatch {
+    object XArray {
+      def unapplySeq[A](x: Array[A]): Option[IndexedSeq[A]] =
+        if (x eq null) sys.error("Unexpected null!")
+        else Some(x.toIndexedSeq)
+    }
+
+    object YArray {
+      def unapply(xs: Array[Int]): Boolean =
+        if (xs eq null) sys.error("Unexpected null!")
+        else true
+    }
+
+    object Animal {
+      def unapply(x: AnyRef): Option[AnyRef] =
+        if (x.toString == "Animal") Some(x)
+        else None
+    }
+
+    def nullMatch[A](xs: Array[A]): Boolean = xs match {
+      case Array(xs @_*) => false
+      case _             => true
+    }
+
+    def nullMatch2[A](xs: Array[A]): Boolean = xs match {
+      case XArray(xs @_*) => false
+      case _              => true
+    }
+
+    def nullMatch3[A](xs: Array[A]): Boolean = xs match {
+      case XArray(xs @_*) if 1 == 1 => false
+      case _                        => true
+    }
+
+    def nullMatch4(xs: Array[Int]): Boolean = xs match {
+      case YArray() => false
+      case _        => true
+    }
+
+    def nullMatch5(x: AnyRef): Boolean = x match {
+      case Animal(x) => false
+      case _         => true
+    }
+
+    def t8787nullMatch() = {
+      val r = """\d+""".r
+      val s: String = null
+      val x = s match { case r() => 1 ; case _ => 2 }
+      2 == x
+    }
+
+    def t8787nullMatcher() = {
+      val r = """(\d+):(\d+)""".r
+      val s = "1:2 3:4 5:6"
+      val z = ((r findAllMatchIn s).toList :+ null) flatMap {
+        case r(x, y) => Some((x.toInt, y.toInt))
+        case _       => None
+      }
+      List((1,2),(3,4),(5,6)) == z
+    }
+
+    def run(): Unit = {
+      assert(nullMatch(null))
+      assert(nullMatch2(null))
+      assert(nullMatch3(null))
+      assert(nullMatch4(null))
+      assert(nullMatch5(null))
+      assert(t8787nullMatch())
+      assert(t8787nullMatcher())
+    }
+  }
 }

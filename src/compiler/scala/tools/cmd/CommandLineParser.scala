@@ -1,7 +1,15 @@
-/* NEST (New Scala Test)
- * Copyright 2007-2018 LAMP/EPFL
- * @author Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.cmd
 
 import scala.annotation.tailrec
@@ -41,6 +49,7 @@ object CommandLineParser {
       while (!done && !terminal) pos += 1
       !done
     }
+    @tailrec
     def skipToDelim(): Boolean =
       cur match {
         case q @ (DQ | SQ)        => { qpos += pos; bump(); skipToQuote(q) } && { qpos += pos; bump(); skipToDelim() }

@@ -2,8 +2,6 @@ package scala.tools.nsc.transform.patmat
 
 import org.junit.Assert._
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 
 import scala.collection.mutable
 import scala.reflect.internal.util.Position
@@ -75,7 +73,7 @@ object TestSolver extends Logic with Solving {
 
     def prepareNewAnalysis() = {}
 
-    def uncheckedWarning(pos: Position, msg: String) = sys.error(msg)
+    def uncheckedWarning(pos: Position, msg: String, site: global.Symbol): Unit = sys.error(msg)
 
     def reportWarning(msg: String) = sys.error(msg)
 
@@ -202,30 +200,21 @@ object TestSolver extends Logic with Solving {
 /**
  * Testing CNF conversion via Tseitin vs NNF & expansion.
  */
-@RunWith(classOf[JUnit4])
 class SolvingTest {
 
   import scala.tools.nsc.transform.patmat.TestSolver.TestSolver._
 
   object SymName {
-    def unapply(s: Sym): Option[String] = {
+    def unapply(s: Sym): Some[String] = {
       val Var(Tree(name)) = s.variable
       Some(name)
     }
   }
 
-  implicit val ModelOrd: Ordering[TestSolver.TestSolver.Model] = Ordering.by {
-    _.toSeq.sortWith {
-      case ((sym1, v1), (sym2, v2)) =>
-        val SymName(name1) = sym1
-        val SymName(name2) = sym2
-        if (name1 < name2)
-          true
-        else if (name1 > name2)
-          false
-        else
-          v1 < v2
-    }.to(Iterable)
+  implicit val ModelOrd: Ordering[TestSolver.TestSolver.Model] = {
+    import Ordering.Implicits._
+    val tupleOrd = Ordering.by[(Sym, Boolean), String]({ case (SymName(name), _) => name }).orElseBy(_._2)
+    Ordering.by { _.toSeq.sorted(tupleOrd) }
   }
 
   implicit val SolutionOrd: Ordering[TestSolver.TestSolver.Solution] =

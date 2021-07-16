@@ -1,3 +1,5 @@
+// scalac: -feature -Werror
+//
 class A
 class B[T](x: T)
 case class C(a: A, b: B[_])
@@ -13,6 +15,7 @@ object Test extends App {
 
   def f2(d: D) = d match {
     case D(a, b1, b2) => ()
+    case _            => ???
   }
 
   def f3(e: E) = e match {

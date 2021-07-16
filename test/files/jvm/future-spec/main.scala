@@ -1,19 +1,18 @@
 
-
-
 import scala.collection._
 import scala.concurrent._
 import scala.concurrent.duration.Duration
-import java.util.concurrent.{ TimeoutException, CountDownLatch, TimeUnit }
-
+import java.util.concurrent.{TimeoutException, CountDownLatch, TimeUnit}
 
 object Test {
 
-  def main(args: Array[String]): Unit = {
-    (new FutureTests).check()
-    (new PromiseTests).check()
-    (new TryTests).check()
-  }
+  val DefaultTimeout = Duration(5, TimeUnit.SECONDS)
+
+  def main(args: Array[String]): Unit =
+    List(
+      (new FutureTests),
+      (new PromiseTests),
+    ).foreach(_.check())
 
 }
 
@@ -33,7 +32,7 @@ trait Output {
 }
 
 
-trait MinimalScalaTest extends Output with Features {
+trait MinimalScalaTest extends Output with Features with Vigil {
 
   val throwables = mutable.ArrayBuffer[Throwable]()
 
@@ -43,12 +42,12 @@ trait MinimalScalaTest extends Output with Features {
 
   implicit def stringops(s: String) = new {
 
-    def should[U](snippets: =>U) = {
+    def should[U](snippets: => U) = {
       bufferPrintln(s + " should:")
       snippets
     }
 
-    def in[U](snippet: =>U) = {
+    def in[U](snippet: => U) = {
       try {
         bufferPrintln("- " + s)
         snippet
@@ -70,13 +69,13 @@ trait MinimalScalaTest extends Output with Features {
 
   }
 
-  def intercept[T <: Throwable: Manifest](body: =>Any): T = {
+  def intercept[T <: Throwable: Manifest](body: => Any): T = {
     try {
       body
       throw new Exception("Exception of type %s was not thrown".format(manifest[T]))
     } catch {
       case t: Throwable =>
-        if (manifest[T].runtimeClass != t.getClass) throw t
+        if (!manifest[T].runtimeClass.isAssignableFrom(t.getClass)) throw t
         else t.asInstanceOf[T]
     }
   }
@@ -84,9 +83,35 @@ trait MinimalScalaTest extends Output with Features {
   def checkType[T: Manifest, S](in: Future[T], refmanifest: Manifest[S]): Boolean = manifest[T] == refmanifest
 }
 
+trait Vigil {
+  def waitForIt(terminated: => Boolean): Unit = {
+    val limit = 5
+    var n = 1
+    var (dormancy, factor) = (250L, 4)
+    var period = 0L
+    var done = false
+    var ended = false
+    while (!done && n < limit) {
+      try {
+        ended = terminated
+        if (ended) {
+          done = true
+        } else {
+          Thread.sleep(dormancy)
+          period += dormancy
+        }
+      } catch {
+        case _: InterruptedException => done = true
+      }
+      n += 1
+      dormancy *= factor
+    }
+    assert(ended, s"Expired after dormancy period $period waiting for termination condition")
+  }
+}
 
 object TestLatch {
-  val DefaultTimeout = Duration(5, TimeUnit.SECONDS)
+  val DefaultTimeout = Test.DefaultTimeout
 
   def apply(count: Int = 1) = new TestLatch(count)
 }
@@ -107,10 +132,9 @@ class TestLatch(count: Int = 1) extends Awaitable[Unit] {
     this
   }
 
-  @throws(classOf[Exception])
+  @throws(classOf[TimeoutException])
   def result(atMost: Duration)(implicit permit: CanAwait): Unit = {
     ready(atMost)
   }
 
 }
-

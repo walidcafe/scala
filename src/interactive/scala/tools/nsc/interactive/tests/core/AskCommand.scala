@@ -1,11 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2009-2013 Typesafe/Scala Solutions and LAMP/EPFL
- * @author Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.nsc
 package interactive
 package tests.core
 
+import scala.annotation.unused
 import scala.tools.nsc.interactive.Response
 import scala.reflect.internal.util.Position
 import scala.reflect.internal.util.SourceFile
@@ -113,7 +122,7 @@ trait AskTypeAt extends AskCommand {
 trait AskLoadedTyped extends AskCommand {
   import compiler.Tree
 
-  protected def askLoadedTyped(source: SourceFile, keepLoaded: Boolean = false)(implicit reporter: Reporter): Response[Tree] = {
+  protected def askLoadedTyped(source: SourceFile, keepLoaded: Boolean = false)(implicit @unused reporter: Reporter): Response[Tree] = {
     ask {
       compiler.askLoadedTyped(source, keepLoaded, _)
     }

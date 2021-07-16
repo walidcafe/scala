@@ -1,14 +1,19 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package typechecker
 
-import scala.reflect.internal.util.StatisticsStatics
-
-/** The main attribution phase.
+/** Defines the sub-components for the namer, packageobjects, and typer phases.
  */
 trait Analyzer extends AnyRef
             with Contexts
@@ -40,15 +45,14 @@ trait Analyzer extends AnyRef
       override val checkable = false
       override def keepsTypeParams = false
 
-      def apply(unit: CompilationUnit): Unit = {
-        newNamer(rootContext(unit)).enterSym(unit.body)
-      }
+      def apply(unit: CompilationUnit): Unit = newNamer(rootContext(unit)).enterSym(unit.body)
     }
   }
 
   object packageObjects extends {
     val global: Analyzer.this.global.type = Analyzer.this.global
   } with SubComponent {
+    val deferredOpen = perRunCaches.newSet[Symbol]()
     val phaseName = "packageobjects"
     val runsAfter = List[String]()
     val runsRightAfter= Some("namer")
@@ -61,6 +65,9 @@ trait Analyzer extends AnyRef
         override def traverse(tree: Tree): Unit = tree match {
           case ModuleDef(_, _, _) =>
             if (tree.symbol.name == nme.PACKAGEkw) {
+              // we've actually got a source file
+              deferredOpen.remove(tree.symbol.owner)
+
               openPackageModule(tree.symbol, tree.symbol.owner)
             }
           case ClassDef(_, _, _, _) => () // make it fast
@@ -70,6 +77,7 @@ trait Analyzer extends AnyRef
 
       def apply(unit: CompilationUnit): Unit = {
         openPackageObjectsTraverser(unit.body)
+        deferredOpen.foreach(openPackageModule(_))
       }
     }
   }
@@ -81,37 +89,43 @@ trait Analyzer extends AnyRef
     val phaseName = "typer"
     val runsAfter = List[String]()
     val runsRightAfter = Some("packageobjects")
-    def newPhase(_prev: Phase): StdPhase = new StdPhase(_prev) {
+    def newPhase(prev: Phase): StdPhase = new TyperPhase(prev)
+    final class TyperPhase(prev: Phase) extends StdPhase(prev) {
       override def keepsTypeParams = false
+      override def shouldSkipThisPhaseForJava: Boolean = !(settings.YpickleJava || createJavadoc)
       resetTyper()
       // the log accumulates entries over time, even though it should not (Adriaan, Martin said so).
       // Lacking a better fix, we clear it here (before the phase is created, meaning for each
       // compiler run). This is good enough for the resident compiler, which was the most affected.
       undoLog.clear()
       override def run(): Unit = {
-        val start = if (StatisticsStatics.areSomeColdStatsEnabled) statistics.startTimer(statistics.typerNanos) else null
+        val start = if (settings.areStatisticsEnabled) statistics.startTimer(statistics.typerNanos) else null
         global.echoPhaseSummary(this)
-        for (unit <- currentRun.units) {
-          applyPhase(unit)
+        val units = currentRun.units
+        while (units.hasNext) {
+          applyPhase(units.next())
           undoLog.clear()
         }
         finishComputeParamAlias()
         // defensive measure in case the bookkeeping in deferred macro expansion is buggy
         clearDelayed()
-        if (StatisticsStatics.areSomeColdStatsEnabled) statistics.stopTimer(statistics.typerNanos, start)
+        if (settings.areStatisticsEnabled) statistics.stopTimer(statistics.typerNanos, start)
       }
       def apply(unit: CompilationUnit): Unit = {
         try {
           val typer = newTyper(rootContext(unit))
           unit.body = typer.typed(unit.body)
-          if (global.settings.Yrangepos && !global.reporter.hasErrors) global.validatePositions(unit.body)
-          for (workItem <- unit.toCheck) workItem()
-          if (settings.warnUnusedImport)
-            warnUnusedImports(unit)
-          if (settings.warnUnused.isSetByUser)
-            new checkUnused(typer).apply(unit)
+          // interactive typed may finish by throwing a `TyperResult`
+          if (!settings.Youtline) {
+            for (workItem <- unit.toCheck) workItem()
+            if (settings.warnUnusedImport)
+              warnUnusedImports(unit)
+            if (settings.warnUnused.isSetByUser)
+              new checkUnused(typer).apply(unit)
+          }
         }
         finally {
+          runReporting.reportSuspendedMessages(unit)
           unit.toCheck.clear()
         }
       }

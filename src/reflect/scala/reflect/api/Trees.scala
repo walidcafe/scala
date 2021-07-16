@@ -1,10 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala
 package reflect
 package api
+
+import scala.annotation.{nowarn, tailrec}
 
 /**
  * <span class="badge badge-red" style="float: right;">EXPERIMENTAL</span>
@@ -16,7 +26,7 @@ package api
  *
  * In Scala reflection, APIs that produce or use `Tree`s are:
  *
- *   - '''Annotations''' which use trees to represent their arguments, exposed in [[scala.reflect.api.Annotations#scalaArgs Annotation.scalaArgs]].
+ *   - '''Annotations''' which use trees to represent their arguments, exposed in [[scala.reflect.api.Annotations.AnnotationApi#scalaArgs Annotation.scalaArgs]].
  *   - '''[[scala.reflect.api.Universe#reify reify]]''', a special method on [[scala.reflect.api.Universe]] that takes an expression and returns an AST which represents the expression.
  *   - '''Macros and runtime compilation with toolboxes''' which both use trees as their program representation medium.
  *
@@ -42,7 +52,7 @@ package api
  *    print( showRaw( reify{5}.tree ) )` // prints Literal(Constant(5))
  *  }}}
  *
- *  For more information about `Tree`s, see the [[http://docs.scala-lang.org/overviews/reflection/symbols-trees-types.html Reflection Guide: Symbols, Trees, Types]].
+ *  For more information about `Tree`s, see the [[https://docs.scala-lang.org/overviews/reflection/symbols-trees-types.html Reflection Guide: Symbols, Trees, Types]].
  *
  *  @groupname Traversal Tree Traversal and Transformation
  *  @groupprio Traversal 1
@@ -387,7 +397,7 @@ trait Trees { self: Universe =>
     def apply(mods: Modifiers, name: TypeName, tparams: List[TypeDef], impl: Template): ClassDef
     def unapply(classDef: ClassDef): Option[(Modifiers, TypeName, List[TypeDef], Template)]
 
-    /** @see [[InternalApi.classDef]] */
+    /** @see [[Internals.InternalApi.classDef]] */
     @deprecated("use `internal.classDef` instead", "2.11.0")
     def apply(sym: Symbol, impl: Template)(implicit token: CompatToken): ClassDef = internal.classDef(sym, impl)
   }
@@ -436,7 +446,7 @@ trait Trees { self: Universe =>
     def apply(mods: Modifiers, name: TermName, impl: Template): ModuleDef
     def unapply(moduleDef: ModuleDef): Option[(Modifiers, TermName, Template)]
 
-    /** @see [[InternalApi.moduleDef]] */
+    /** @see [[Internals.InternalApi.moduleDef]] */
     @deprecated("use `internal.moduleDef` instead", "2.11.0")
     def apply(sym: Symbol, impl: Template)(implicit token: CompatToken): ModuleDef = internal.moduleDef(sym, impl)
   }
@@ -516,11 +526,11 @@ trait Trees { self: Universe =>
     def apply(mods: Modifiers, name: TermName, tpt: Tree, rhs: Tree): ValDef
     def unapply(valDef: ValDef): Option[(Modifiers, TermName, Tree, Tree)]
 
-    /** @see [[InternalApi.valDef]] */
+    /** @see [[Internals.InternalApi.valDef]] */
     @deprecated("use `internal.valDef` instead", "2.11.0")
     def apply(sym: Symbol, rhs: Tree)(implicit token: CompatToken): ValDef = internal.valDef(sym, rhs)
 
-    /** @see [[InternalApi.valDef]] */
+    /** @see [[Internals.InternalApi.valDef]] */
     @deprecated("use `internal.valDef` instead", "2.11.0")
     def apply(sym: Symbol)(implicit token: CompatToken): ValDef = internal.valDef(sym)
   }
@@ -567,23 +577,23 @@ trait Trees { self: Universe =>
     def apply(mods: Modifiers, name: TermName, tparams: List[TypeDef], vparamss: List[List[ValDef]], tpt: Tree, rhs: Tree): DefDef
     def unapply(defDef: DefDef): Option[(Modifiers, TermName, List[TypeDef], List[List[ValDef]], Tree, Tree)]
 
-    /** @see [[InternalApi.defDef]] */
+    /** @see [[Internals.InternalApi.defDef]] */
     @deprecated("use `internal.defDef` instead", "2.11.0")
     def apply(sym: Symbol, mods: Modifiers, vparamss: List[List[ValDef]], rhs: Tree)(implicit token: CompatToken): DefDef = internal.defDef(sym, mods, vparamss, rhs)
 
-    /** @see [[InternalApi.defDef]] */
+    /** @see [[Internals.InternalApi.defDef]] */
     @deprecated("use `internal.defDef` instead", "2.11.0")
     def apply(sym: Symbol, vparamss: List[List[ValDef]], rhs: Tree)(implicit token: CompatToken): DefDef = internal.defDef(sym, vparamss, rhs)
 
-    /** @see [[InternalApi.defDef]] */
+    /** @see [[Internals.InternalApi.defDef]] */
     @deprecated("use `internal.defDef` instead", "2.11.0")
     def apply(sym: Symbol, mods: Modifiers, rhs: Tree)(implicit token: CompatToken): DefDef = internal.defDef(sym, mods, rhs)
 
-    /** @see [[InternalApi.defDef]] */
+    /** @see [[Internals.InternalApi.defDef]] */
     @deprecated("use `internal.defDef` instead", "2.11.0")
     def apply(sym: Symbol, rhs: Tree)(implicit token: CompatToken): DefDef = internal.defDef(sym, rhs)
 
-    /** @see [[InternalApi.defDef]] */
+    /** @see [[Internals.InternalApi.defDef]] */
     @deprecated("use `internal.defDef` instead", "2.11.0")
     def apply(sym: Symbol, rhs: List[List[Symbol]] => Tree)(implicit token: CompatToken): DefDef = internal.defDef(sym, rhs)
   }
@@ -639,11 +649,11 @@ trait Trees { self: Universe =>
     def apply(mods: Modifiers, name: TypeName, tparams: List[TypeDef], rhs: Tree): TypeDef
     def unapply(typeDef: TypeDef): Option[(Modifiers, TypeName, List[TypeDef], Tree)]
 
-    /** @see [[InternalApi.typeDef]] */
+    /** @see [[Internals.InternalApi.typeDef]] */
     @deprecated("use `internal.typeDef` instead", "2.11.0")
     def apply(sym: Symbol, rhs: Tree)(implicit token: CompatToken): TypeDef = internal.typeDef(sym, rhs)
 
-    /** @see [[InternalApi.typeDef]] */
+    /** @see [[Internals.InternalApi.typeDef]] */
     @deprecated("use `internal.typeDef` instead", "2.11.0")
     def apply(sym: Symbol)(implicit token: CompatToken): TypeDef = internal.typeDef(sym)
   }
@@ -707,7 +717,7 @@ trait Trees { self: Universe =>
     def apply(name: TermName, params: List[Ident], rhs: Tree): LabelDef
     def unapply(labelDef: LabelDef): Option[(TermName, List[Ident], Tree)]
 
-    /** @see [[InternalApi.labelDef]] */
+    /** @see [[Internals.InternalApi.labelDef]] */
     @deprecated("use `internal.labelDef` instead", "2.11.0")
     def apply(sym: Symbol, params: List[Symbol], rhs: Tree)(implicit token: CompatToken): LabelDef = internal.labelDef(sym, params, rhs)
   }
@@ -750,7 +760,7 @@ trait Trees { self: Universe =>
    */
   val ImportSelector: ImportSelectorExtractor
 
-  /** An extractor class to create and pattern match with syntax `ImportSelector(name:, namePos, rename, renamePos)`.
+  /** An extractor class to create and pattern match with syntax `ImportSelector(name, namePos, rename, renamePos)`.
    *  This is not an AST node, it is used as a part of the `Import` node.
    *  @group Extractors
    */
@@ -780,6 +790,18 @@ trait Trees { self: Universe =>
      *  Is equal to -1 is the position is unknown.
      */
     def renamePos: Int
+
+    /** Does the selector mask or hide a name? `import x.{y => _}` */
+    def isMask: Boolean
+
+    /** Does the selector introduce a specific name? `import a.b, x.{y => z}` */
+    def isSpecific: Boolean
+
+    /** Does the selector introduce a specific name by rename? `x.{y => z}` */
+    def isRename: Boolean
+
+    /** Is the selector a wildcard import that introduces all available names? `import x._` */
+    def isWildcard: Boolean
   }
 
   /** Import clause
@@ -804,11 +826,11 @@ trait Trees { self: Universe =>
    *  Selectors are a list of ImportSelectors, which conceptually are pairs of names (from, to).
    *  The last (and maybe only name) may be a nme.WILDCARD. For instance:
    *
-   *    import qual.{x, y => z, _}
+   *    import qual.{w => _, x, y => z, _}
    *
    *  Would be represented as:
    *
-   *    Import(qual, List(("x", "x"), ("y", "z"), (WILDCARD, null)))
+   *    Import(qual, List(("w", WILDCARD), ("x", "x"), ("y", "z"), (WILDCARD, null)))
    *
    *  The symbol of an `Import` is an import symbol @see Symbol.newImport.
    *  It's used primarily as a marker to check that the import has been typechecked.
@@ -2165,7 +2187,7 @@ trait Trees { self: Universe =>
   /** 0-1 argument list new, based on a symbol.
    *  @group Factories
    */
-  @deprecated("use q\"new ${sym.toType}(..$args)\" instead", "2.10.1")
+  @deprecated("use q\"new $"+"{sym.toType}(..$"+"args)\" instead", "2.10.1")
   def New(sym: Symbol, args: Tree*): Tree
 
   /** A factory method for `Apply` nodes.
@@ -2472,7 +2494,7 @@ trait Trees { self: Universe =>
     def traverseModifiers(mods: Modifiers): Unit          = traverseAnnotations(mods.annotations)
 
     /** Traverses a single tree. */
-    def traverse(tree: Tree): Unit              = itraverse(this, tree)
+    def traverse(tree: Tree): Unit              = itraverse(this, tree): @nowarn("cat=deprecation")
     def traversePattern(pat: Tree): Unit        = traverse(pat)
     def traverseGuard(guard: Tree): Unit        = traverse(guard)
     def traverseTypeAscription(tpt: Tree): Unit = traverse(tpt)
@@ -2517,6 +2539,10 @@ trait Trees { self: Universe =>
    *  because pattern matching on abstract types we have here degrades performance.
    *  @group Traversal
    */
+  // FIXME: `Tree`/`TreeApi` does not contain a `traverse` method, so methods
+  //        calling this (and not its override) are unable to follow the deprecation
+  //        message. Once this is fixed, please fix callers of this method and remove
+  //        the `@nowarn` annotation from them
   @deprecated("Use Tree#traverse instead", "2.12.3")
   protected def itraverse(traverser: Traverser, tree: Tree): Unit = throw new MatchError(tree)
 
@@ -2524,6 +2550,10 @@ trait Trees { self: Universe =>
    *  Future-proofs against new node types.
    *  @group Traversal
    */
+  // FIXME: `Tree`/`TreeApi` does not contain a `traverse` method, so methods
+  //        calling this (and not its override) are unable to follow the deprecation
+  //        message. Once this is fixed, please fix callers of this method and remove
+  //        the `@nowarn` annotation from them
   @deprecated("Use Tree#traverse instead", "2.12.3")
   protected def xtraverse(traverser: Traverser, tree: Tree): Unit = throw new MatchError(tree)
 
@@ -2539,14 +2569,14 @@ trait Trees { self: Universe =>
 
     /** The enclosing method of the currently transformed tree. */
     protected def currentMethod = {
-      def enclosingMethod(sym: Symbol): Symbol =
+      @tailrec def enclosingMethod(sym: Symbol): Symbol =
         if (sym.isMethod || sym == NoSymbol) sym else enclosingMethod(sym.owner)
       enclosingMethod(currentOwner)
     }
 
     /** The enclosing class of the currently transformed tree. */
     protected def currentClass = {
-      def enclosingClass(sym: Symbol): Symbol =
+      @tailrec def enclosingClass(sym: Symbol): Symbol =
         if (sym.isClass || sym == NoSymbol) sym else enclosingClass(sym.owner)
       enclosingClass(currentOwner)
     }
@@ -2554,7 +2584,7 @@ trait Trees { self: Universe =>
 //    protected def currentPackage = currentOwner.enclosingTopLevelClass.owner
 
     /** Transforms a single tree. */
-    def transform(tree: Tree): Tree = itransform(this, tree)
+    def transform(tree: Tree): Tree = itransform(this, tree): @nowarn("cat=deprecation")
 
     /** Transforms a list of trees. */
     def transformTrees(trees: List[Tree]): List[Tree] =
@@ -2610,6 +2640,11 @@ trait Trees { self: Universe =>
    *  because pattern matching on abstract types we have here degrades performance.
    *  @group Traversal
    */
+  // FIXME: `Tree`/`TreeApi` does not contain a `transform` method, so methods
+  //        calling this (and not its override) are unable to follow the deprecation
+  //        message. Once this is fixed, please fix callers of this method and remove
+  //        the `@nowarn` annotation from them
+  @deprecated("Use Tree#transform instead", since = "2.13.4")
   protected def itransform(transformer: Transformer, tree: Tree): Tree = throw new MatchError(tree)
 
   /** Provides an extension hook for the transformation strategy.

@@ -1,15 +1,26 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc.util
 
+import collection.mutable, mutable.ListBuffer
+import java.lang.System.lineSeparator
+
 private[util] trait StackTracing extends Any {
 
-  /** Format a stack trace, returning the prefix consisting of frames that satisfy
-   *  a given predicate.
+  /** Format a stack trace, returning the prefix consisting of frames that satisfy a given predicate.
+   *
    *  The format is similar to the typical case described in the Javadoc
-   *  for [[java.lang.Throwable#printStackTrace]].
+   *  for [[java.lang.Throwable#printStackTrace()*]].
    *  If a stack trace is truncated, it will be followed by a line of the form
    *  `... 3 elided`, by analogy to the lines `... 3 more` which indicate
    *  shared stack trace segments.
@@ -17,50 +28,52 @@ private[util] trait StackTracing extends Any {
    *  @param p the predicate to select the prefix
    */
   def stackTracePrefixString(e: Throwable)(p: StackTraceElement => Boolean): String = {
-    import collection.mutable.{ ArrayBuffer, ListBuffer }
-    import java.lang.System.{lineSeparator => EOL}
 
     type TraceRelation = String
     val Self       = new TraceRelation("")
     val CausedBy   = new TraceRelation("Caused by: ")
     val Suppressed = new TraceRelation("Suppressed: ")
 
-    def clazz(e: Throwable): String   = e.getClass.getName
-    def because(e: Throwable): String = e.getCause match { case null => null ; case c => header(c) }
-    def msg(e: Throwable): String     = e.getMessage match { case null => because(e) ; case s => s }
-    def txt(e: Throwable): String     = msg(e) match { case null => "" ; case s => s": $s" }
-    def header(e: Throwable): String  = s"${clazz(e)}${txt(e)}"
+    def header(e: Throwable): String  = {
+      def because = e.getCause   match { case null => null    ; case c => header(c) }
+      def msg     = e.getMessage match { case null => because ; case s => s         }
+      def txt     = msg          match { case null => ""      ; case s => s": $s"   }
+      s"${e.getClass.getName}$txt"
+    }
 
-    val seen = new ArrayBuffer[Throwable](16)
+    val seen = mutable.Set.empty[Throwable]
     def unseen(t: Throwable) = {
-      def inSeen = seen exists (_ eq t)
-      val interesting = (t != null) && !inSeen
+      val interesting = t != null && !seen(t)
       if (interesting) seen += t
       interesting
     }
 
-    val sb = ListBuffer.empty[String]
+    val lines = ListBuffer.empty[String]
 
     // format the stack trace, skipping the shared trace
     def print(e: Throwable, r: TraceRelation, share: Array[StackTraceElement], indents: Int): Unit = if (unseen(e)) {
       val trace  = e.getStackTrace
       val frames = if (share.isEmpty) trace else {
-        val spare  = share.reverseIterator
-        val trimmed = trace.reverse dropWhile (spare.hasNext && spare.next == _)
+        val spare   = share.reverseIterator
+        val trimmed = trace.reverse dropWhile (spare.hasNext && spare.next() == _)
         trimmed.reverse
       }
-      val prefix = frames takeWhile p
+      val prefix = frames.takeWhile(p)
       val margin = "  " * indents
-      val indent = margin + "  "
-      sb += s"${margin}${r}${header(e)}"
-      prefix foreach (f => sb += s"${margin}  at $f")
-      if (frames.size < trace.size) sb += s"${margin}  ... ${trace.size - frames.size} more"
-      if (r == Self && prefix.size < frames.size) sb += s"${margin}  ... ${frames.size - prefix.size} elided"
+      lines += s"$margin$r${header(e)}"
+      prefix.foreach(frame => lines += s"$margin  at $frame")
+
+      val traceFramesLenDiff  = trace.length - frames.length
+      val framesPrefixLenDiff = frames.length - prefix.length
+      if (traceFramesLenDiff > 0) {
+        if (framesPrefixLenDiff > 0) lines += s"$margin  ... $framesPrefixLenDiff elided and $traceFramesLenDiff more"
+        else lines += s"$margin  ... $traceFramesLenDiff more"
+      } else if (framesPrefixLenDiff > 0) lines += s"$margin  ... $framesPrefixLenDiff elided"
+
       print(e.getCause, CausedBy, trace, indents)
-      e.getSuppressed foreach (t => print(t, Suppressed, frames, indents + 1))
+      e.getSuppressed.foreach(print(_, Suppressed, frames, indents + 1))
     }
     print(e, Self, share = Array.empty, indents = 0)
-
-    sb mkString EOL
+    lines.mkString(lineSeparator)
   }
 }

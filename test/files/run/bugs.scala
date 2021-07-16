@@ -1,3 +1,8 @@
+// scalac: -Werror -Xlint:deprecation
+//
+
+import annotation.unused
+
 //############################################################################
 // Bugs
 //############################################################################
@@ -32,7 +37,7 @@ object Bug120Test {
     println(str); res
   }
   def test(args: Array[String]): Unit = {
-    val c = new Bug120C(1)
+    @unused val c = new Bug120C(1)
     ()
   }
 }
@@ -200,12 +205,12 @@ object Bug199Test {
 // Bug 213
 
 trait Bug213Foo {
-  def testAll: Unit;
+  def testAll(): Unit;
   def testAllRef: String;
 }
 
 class Bug213Bar extends Bug213Foo {
-  def testAll = (().asInstanceOf[Nothing] : Nothing);
+  def testAll() = (().asInstanceOf[Nothing] : Nothing);
   def testAllRef = ("".asInstanceOf[Null] : Null);
 }
 
@@ -213,7 +218,7 @@ object Bug213Test {
   def test(args: Array[String]): Unit = {
     val foo: Bug213Foo = new Bug213Bar;
     try {
-      foo.testAll;
+      foo.testAll()
     } catch {
       case e: ClassCastException =>
         Console.println("Cannot cast unit to Nothing");
@@ -245,7 +250,7 @@ object Bug217Test {
 
 object Bug222Test {
   def test(args:Array[String]): Unit = {
-    val array: Array[String] = new Array(16);
+    @unused val array: Array[String] = new Array(16);
     ()
   }
 }
@@ -273,7 +278,7 @@ object Bug226Test {
 
   def test(args: Array[String]): Unit = {
     var xs = new Array[Int](1);
-    class X { xs };
+    @unused class X { xs };
     xs = id(xs);
     id(xs);
     ()
@@ -378,7 +383,7 @@ object Bug266Test {
 
 class Bug316MyIterator extends Iterator[Int] {
   def hasNext = false
-  def next = 42
+  def next() = 42
 }
 
 object Bug316Test {
@@ -392,29 +397,6 @@ object Bug316Test {
 object Bug328Test {
   def test0(f: Function1[Int,String]): Unit = {}
   def test(args: Array[String]): Unit = test0(args);
-}
-
-//############################################################################
-// Bug 396
-
-trait Bug396A {
-  class I {
-    def run = Console.println("A");
-  }
-}
-trait Bug396B extends Bug396A {
-  class I extends super.I {
-    override def run = { super.run; Console.println("B"); }
-  }
-}
-trait Bug396C extends Bug396A {
-  trait I extends super.I {
-    override def run = { super.run; Console.println("C"); }
-  }
-}
-object Bug396Test extends Bug396B with Bug396C {
-  class I2 extends super[Bug396B].I with super[Bug396C].I;
-  def test(args: Array[String]): Unit = (new I2).run
 }
 
 //############################################################################
@@ -446,11 +428,11 @@ object Test  {
     } catch {
       case exception: Throwable =>
         Console.print("Exception in thread \"" + Thread.currentThread + "\" " + exception);
-        Console.println;
+        Console.println();
         errors += 1
     }
     Console.println(">>> bug " + bug)
-    Console.println
+    Console.println()
   }
 
   def main(args: Array[String]): Unit = {
@@ -476,12 +458,11 @@ object Test  {
     test(266, Bug266Test.test(args));
     test(316, Bug316Test.test(args));
     test(328, Bug328Test.test(args));
-    test(396, Bug396Test.test(args));
     test(399, Bug399Test.test(args));
 
     if (errors > 0) {
-      Console.println;
-      Console.println(errors + " error" + (if (errors > 1) "s" else ""));
+      Console.println();
+      Console.println(s"$errors error" + (if (errors > 1) "s" else ""));
     }
   }
 }

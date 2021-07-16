@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package internal
@@ -283,7 +295,7 @@ trait ReificationSupport { self: SymbolTable =>
         else {
           val (rawEdefs, rest) = tbody.span(treeInfo.isEarlyDef)
           val (gvdefs, etdefs) = rawEdefs.partition(treeInfo.isEarlyValDef)
-          val (fieldDefs, UnCtor(ctorMods, ctorVparamss, lvdefs) :: body) = rest.splitAt(indexOfCtor(rest))
+          val (fieldDefs, UnCtor(ctorMods, ctorVparamss, lvdefs) :: body) = rest.splitAt(indexOfCtor(rest)): @unchecked
           val evdefs = gvdefs.zip(lvdefs).map {
             // TODO: in traits, early val defs are defdefs
             case (gvdef @ ValDef(_, _, tpt: TypeTree, _), ValDef(_, _, _, rhs)) =>
@@ -302,7 +314,7 @@ trait ReificationSupport { self: SymbolTable =>
               case other => other
             }
             // undo flag modifications by merging flag info from constructor args and fieldDefs
-            val modsMap = fieldDefs.map { case ValDef(mods, name, _, _) => name -> mods }.toMap
+            val modsMap = fieldDefs.map { case ValDef(mods, name, _, _) => name -> mods case x => throw new MatchError(x) }.toMap
             def ctorArgsCorrespondToFields = vparamssRestoredImplicits.flatten.forall { vd => modsMap.contains(vd.name) }
             if (!ctorArgsCorrespondToFields) None
             else {
@@ -324,8 +336,8 @@ trait ReificationSupport { self: SymbolTable =>
         require(vd.rhs.isEmpty, "self types must have empty right hand side")
         copyValDef(vd)(mods = (vd.mods | PRIVATE) & (~DEFERRED))
       case _ =>
-        throw new IllegalArgumentException(s"$tree is not a valid representation of self type, " +
-                                           """consider reformatting into q"val $self: $T" shape""")
+        throw new IllegalArgumentException(
+          s"""$tree is not a valid representation of self type, consider reformatting into q"val $$self: $$T" shape""")
     }
 
     object SyntacticClassDef extends SyntacticClassDefExtractor {
@@ -433,7 +445,7 @@ trait ReificationSupport { self: SymbolTable =>
 
       def unapply(tree: Tree): Option[List[Tree]] = tree match {
         case Literal(Constant(())) =>
-          Some(Nil)
+          SomeOfNil
         case Apply(MaybeTypeTreeOriginal(SyntacticTypeApplied(MaybeSelectApply(TupleCompanionRef(sym)), targs)), args)
           if sym == TupleClass(args.length).companionModule
           && (targs.isEmpty || targs.length == args.length) =>
@@ -453,7 +465,7 @@ trait ReificationSupport { self: SymbolTable =>
 
       def unapply(tree: Tree): Option[List[Tree]] = tree match {
         case MaybeTypeTreeOriginal(UnitClassRef(_)) =>
-          Some(Nil)
+          SomeOfNil
         case MaybeTypeTreeOriginal(AppliedTypeTree(TupleClassRef(sym), args))
           if sym == TupleClass(args.length) =>
           Some(args)
@@ -507,7 +519,7 @@ trait ReificationSupport { self: SymbolTable =>
       def unapply(tree: Tree): Option[List[Tree]] = tree match {
         case bl @ self.Block(stats, SyntheticUnit()) => Some(treeInfo.untypecheckedBlockBody(bl))
         case bl @ self.Block(stats, expr)            => Some(treeInfo.untypecheckedBlockBody(bl) :+ expr)
-        case SyntheticUnit()                         => Some(Nil)
+        case SyntheticUnit()                         => SomeOfNil
         case _ if tree.isTerm && tree.nonEmpty       => Some(tree :: Nil)
         case _                                       => None
       }
@@ -515,7 +527,7 @@ trait ReificationSupport { self: SymbolTable =>
 
     object SyntacticFunction extends SyntacticFunctionExtractor {
       def apply(params: List[Tree], body: Tree): Function = {
-        val params0 :: Nil = mkParam(params :: Nil, PARAM)
+        val params0 :: Nil = mkParam(params :: Nil, PARAM): @unchecked
         require(params0.forall { _.rhs.isEmpty }, "anonymous functions don't support parameters with default values")
         Function(params0, body)
       }
@@ -549,7 +561,7 @@ trait ReificationSupport { self: SymbolTable =>
           if (name != nme.CONSTRUCTOR) rhs
           else rhs match {
             case Block(_, _) => rhs
-            case _ => Block(List(rhs), gen.mkSyntheticUnit)
+            case _ => Block(List(rhs), gen.mkSyntheticUnit())
           }
         }
         DefDef(mods, name, tparams0, vparamss0, tpt, rhs0)
@@ -957,11 +969,8 @@ trait ReificationSupport { self: SymbolTable =>
     object SyntacticImport extends SyntacticImportExtractor {
       // construct/deconstruct {_} import selector
       private object WildcardSelector {
-        def apply(offset: Int): ImportSelector = ImportSelector(nme.WILDCARD, offset, null, -1)
-        def unapply(sel: ImportSelector): Option[Int] = sel match {
-          case ImportSelector(nme.WILDCARD, offset, null, -1) => Some(offset)
-          case _                                              => None
-        }
+        def apply(offset: Int): ImportSelector = ImportSelector.wildAt(offset)
+        def unapply(sel: ImportSelector): Option[Int] = if (sel.isWildcard) Some(sel.namePos) else None
       }
 
       // construct/deconstruct {foo} import selector
@@ -979,24 +988,20 @@ trait ReificationSupport { self: SymbolTable =>
       private object RenameSelector {
         def apply(name1: TermName, offset1: Int, name2: TermName, offset2: Int): ImportSelector =
           ImportSelector(name1, offset1, name2, offset2)
-        def unapply(sel: ImportSelector): Option[(TermName, Int, TermName, Int)] = sel match {
-          case ImportSelector(_, _, null | nme.WILDCARD, _) =>
-            None
-          case ImportSelector(name1, offset1, name2, offset2) if name1 != name2 =>
+        def unapply(sel: ImportSelector): Option[(TermName, Int, TermName, Int)] =
+          if (sel.isRename) {
+            val ImportSelector(name1, offset1, name2, offset2) = sel
             Some((name1.toTermName, offset1, name2.toTermName, offset2))
-          case _ =>
-            None
-        }
+          } else None
       }
 
       // construct/deconstruct {foo => _} import selector
       private object UnimportSelector {
         def apply(name: TermName, offset: Int): ImportSelector =
           ImportSelector(name, offset, nme.WILDCARD, -1)
-        def unapply(sel: ImportSelector): Option[(TermName, Int)] = sel match {
-          case ImportSelector(name, offset, nme.WILDCARD, _) => Some((name.toTermName, offset))
-          case _                                             => None
-        }
+        def unapply(sel: ImportSelector): Option[(TermName, Int)] =
+          if (sel.isMask) Some((sel.name.toTermName, sel.namePos))
+          else None
       }
 
       // represent {_} import selector as pq"_"
@@ -1077,6 +1082,7 @@ trait ReificationSupport { self: SymbolTable =>
           case NameSelector(name, offset)                     => NameSelectorRepr(name, derivedPos(imp, offset))
           case RenameSelector(name1, offset1, name2, offset2) => RenameSelectorRepr(name1, derivedPos(imp, offset1), name2, derivedPos(imp, offset2))
           case UnimportSelector(name, offset)                 => UnimportSelectorRepr(name, derivedPos(imp, offset))
+          case x                                              => throw new MatchError(x)
         }
         Some((imp.expr, selectors))
       }

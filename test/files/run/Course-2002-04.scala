@@ -17,7 +17,7 @@ object M0 {
     }
   }
 
-  def test = {
+  def test() = {
     val isort: List[Int] => List[Int] = quicksort[Int]((x,y) => x < y);
     val list0 = List(6,3,1,8,7,1,2,5,8,4,3,4,8);
     val list1 = quicksort[Int]((x,y) => x < y)(list0);
@@ -34,7 +34,7 @@ object M0 {
     Console.println("list4 = " + list4);
     Console.println("list5 = " + list5);
     Console.println("list6 = " + list6);
-    Console.println;
+    Console.println()
   }
 }
 
@@ -92,7 +92,7 @@ object M1 {
     array2list(array);
   }
 
-  def test = {
+  def test() = {
     val list0 = List();
     val list1 = List(0);
     val list2 = List(0,1);
@@ -116,7 +116,7 @@ object M1 {
     Console.println("list8: " + list8 + " -> " + isort(list8));
     Console.println("list9: " + list9 + " -> " + isort(list9));
     Console.println("listA: " + listA + " -> " + isort(listA));
-    Console.println;
+    Console.println()
   }
 
 }
@@ -132,14 +132,14 @@ object M2 {
       horner(x, coefs.tail) * x + coefs.head
   }
 
-  def test = {
+  def test() = {
     val poly = List(9.0,5.0,7.0,5.0);
     Console.println("f(x) = 5x^3+7x^2+5x+9");
     Console.println("f(0) = " + horner(0, poly));
     Console.println("f(1) = " + horner(1, poly));
     Console.println("f(2) = " + horner(2, poly));
     Console.println("f(3) = " + horner(3, poly));
-    Console.println;
+    Console.println()
   }
 }
 
@@ -172,49 +172,47 @@ object M3 {
     m1.map(row => matrixTimesVector(columns, row))
   }
 
-  def test = {
+  def test() = {
     val v1 = List(2.0,3.0,4.0);
     val v2 = List(6.0,7.0,8.0);
     def id = List(List(1.0,0.0,0.0),List(0.0,1.0,0.0),List(0.0,0.0,1.0));
     def m1 = List(List(2.0,0.0,0.0),List(0.0,2.0,0.0),List(0.0,0.0,2.0));
     def m2 = List(List(1.0,2.0,3.0),List(4.0,5.0,6.0),List(7.0,8.0,9.0));
 
-    def v = List(2.0,3.0,4.0);
-
     Console.println("v1        = " + v1);
     Console.println("v2        = " + v2);
-    Console.println;
+    Console.println()
 
     Console.println("id        = " + id);
     Console.println("m1        = " + m1);
     Console.println("m2        = " + m2);
-    Console.println;
+    Console.println()
 
     Console.println("v1 * v1   = " + dotproduct(v1,v1));
     Console.println("v1 * v2   = " + dotproduct(v1,v2));
     Console.println("v2 * v1   = " + dotproduct(v2,v1));
     Console.println("v1 * v2   = " + dotproduct(v1,v2));
-    Console.println;
+    Console.println()
 
     Console.println("id * v1   = " + matrixTimesVector(id,v1));
     Console.println("m1 * v1   = " + matrixTimesVector(m1,v1));
     Console.println("m2 * v1   = " + matrixTimesVector(m2,v1));
-    Console.println;
+    Console.println()
 
     Console.println("trn(id)   = " + transpose(id));
     Console.println("trn(m1)   = " + transpose(m1));
     Console.println("trn(m2)   = " + transpose(m2));
-    Console.println;
+    Console.println()
 
     Console.println("List(v1) * id = " + matrixTimesMatrix(List(v1),id));
     Console.println("List(v1) * m1 = " + matrixTimesMatrix(List(v1),m1));
     Console.println("List(v1) * m2 = " + matrixTimesMatrix(List(v1),m2));
-    Console.println;
+    Console.println()
 
     Console.println("id * List(v1) = " + matrixTimesMatrix(id,List(v1)));
     Console.println("m1 * List(v1) = " + matrixTimesMatrix(m1,List(v1)));
     Console.println("m2 * List(v1) = " + matrixTimesMatrix(m2,List(v1)));
-    Console.println;
+    Console.println()
 
     Console.println("id * id   = " + matrixTimesMatrix(id,id));
     Console.println("id * m1   = " + matrixTimesMatrix(id,m1));
@@ -225,7 +223,7 @@ object M3 {
     Console.println("m1 * m2   = " + matrixTimesMatrix(m1,m2));
     Console.println("m2 * m1   = " + matrixTimesMatrix(m2,m1));
     Console.println("m2 * m2   = " + matrixTimesMatrix(m2,m2));
-    Console.println;
+    Console.println()
   }
 }
 
@@ -233,10 +231,10 @@ object M3 {
 
 object Test {
   def main(args: Array[String]): Unit = {
-    M0.test;
-    M1.test;
-    M2.test;
-    M3.test;
+    M0.test()
+    M1.test()
+    M2.test()
+    M3.test()
     ()
   }
 }

@@ -5,11 +5,12 @@ import scala.language.postfixOps
 
 import org.junit.Assert._
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
+
+import scala.collection.Seq
+import scala.collection.immutable.{List, Vector}
 
 /** Tests Tuple?Zipped */
-@RunWith(classOf[JUnit4])
+@deprecated("Tests deprecated API", since="2.13")
 class ZippedTest {
   @Test
   def crossZipped(): Unit = {
@@ -64,5 +65,23 @@ class ZippedTest {
     val s = Stream.continually(b.inc)
     // zipped.toString must allow s to short-circuit evaluation
     assertTrue((s, s).zipped.toString contains s.toString)
+  }
+
+  @Test
+  def testTuple2Invert(): Unit = {
+    // prolix actuals test inferred type
+    assertEquals(Seq((1, "a"), (2, "b")), { val r = (List(1, 2),   List("a", "b")).invert; r: List[(Int, String)] })
+    assertEquals(Seq((1, "a"), (2, "b")), { val r = (List(1, 2),    Seq("a", "b")).invert; r: List[(Int, String)] })
+    assertEquals(Seq((1, "a")          ), { val r = ( Seq(1, 2), Vector("a"     )).invert; r:  Seq[(Int, String)] })
+    assertEquals(Seq((1, "a")          ), { val r = ( Seq(1   ), Vector("a", "b")).invert; r:  Seq[(Int, String)] })
+  }
+
+  @Test
+  def testTuple3Invert(): Unit = {
+    // prolix actuals test inferred type
+    assertEquals(Seq((1, "a", 4d), (2, "b", 5d)), { val r = (  List(1, 2),     List("a", "b"),  Seq(4d, 5d)).invert; r:   List[(Int, String, Double)] })
+    assertEquals(Seq((1, "a", 4d)              ), { val r = (   Seq(1   ),   Vector("a", "b"), List(4d, 5d)).invert; r:    Seq[(Int, String, Double)] })
+    assertEquals(Seq((1, "b", 4d)              ), { val r = (Vector(1, 2),      Seq(     "b"), List(4d, 5d)).invert; r: Vector[(Int, String, Double)] })
+    assertEquals(Seq((1, "a", 5d)              ), { val r = (Vector(1, 2),      Seq("a"     ), List(    5d)).invert; r: Vector[(Int, String, Double)] })
   }
 }

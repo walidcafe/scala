@@ -1,3 +1,5 @@
+// scalac: -Xfatal-warnings
+//
 trait K
 trait L
 
@@ -12,5 +14,6 @@ object Test extends App {
   scrut match {
     case O.A => ???
     case O.B => // spurious unreachable
+    case x   => throw new MatchError(x)
   }
 }

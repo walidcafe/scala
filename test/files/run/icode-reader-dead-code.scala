@@ -4,10 +4,10 @@ import scala.tools.asm.{ClassWriter, Opcodes, ClassReader}
 import scala.tools.asm.tree.{InsnNode, ClassNode}
 import scala.tools.nsc.backend.jvm.AsmUtils
 import scala.tools.partest.DirectTest
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 /**
- * Test that the ICodeReader does not crash if the bytecode of a method has unreachable code.
+ * Test that ClassReader does not crash if the bytecode of a method has unreachable code.
  */
 object Test extends DirectTest {
   def code: String = ???
@@ -30,13 +30,13 @@ object Test extends DirectTest {
         |}
       """.stripMargin
 
-    compileString(newCompiler(s"-usejavacp", "-cp", testOutput.path))(aCode)
+    compileString(newCompiler("-cp", testOutput.path))(aCode)
 
     addDeadCode()
 
     // If inlining fails, the compiler will issue an inliner warning that is not present in the
     // check file
-    compileString(newCompiler("-usejavacp", "-cp", testOutput.path, "-opt:l:inline", "-opt-inline-from:**"))(bCode)
+    compileString(newCompiler("-cp", testOutput.path, "-opt:l:inline", "-opt-inline-from:**"))(bCode)
   }
 
   def readClass(file: String) = {
@@ -60,7 +60,7 @@ object Test extends DirectTest {
   def addDeadCode(): Unit = {
     val file = (testOutput / "p" / "A.class").path
     val cnode = readClass(file)
-    val method = cnode.methods.asScala.find(_.name == "f").head
+    val method = cnode.methods.asScala.find(_.name == "f").get
 
     AsmUtils.traceMethod(method)
 

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -9,7 +16,7 @@ package internal
 package util
 
 /** @inheritdoc */
-class Position extends scala.reflect.api.Position with InternalPositionImpl with DeprecatedPosition {
+class Position extends macros.EmptyAttachments with api.Position with InternalPositionImpl with DeprecatedPosition {
   type Pos = Position
   def pos: Position = this
   def withPos(newPos: Position): macros.Attachments { type Pos = Position.this.Pos } = newPos
@@ -27,7 +34,7 @@ class Position extends scala.reflect.api.Position with InternalPositionImpl with
 }
 
 object Position {
-  val tabInc = 8
+  final val tabInc = 8
 
   private def validate[T <: Position](pos: T): T = {
     if (pos.isRange)
@@ -145,7 +152,7 @@ private[util] trait InternalPositionImpl {
    *    |^  means union, taking the point of the rhs
    *    ^|  means union, taking the point of the lhs
    */
-  def |(that: Position, poses: Position*): Position = poses.foldLeft(this | that)(_ | _)
+  //def |(that: Position, poses: Position*): Position = poses.foldLeft(this | that)(_ | _)
   def |(that: Position): Position                   = this union that
   def ^(point: Int): Position                       = this withPoint point
   def |^(that: Position): Position                  = (this | that) ^ that.point
@@ -167,10 +174,29 @@ private[util] trait InternalPositionImpl {
   // necessary condition to establish that there is overlap.
   def overlaps(pos: Position): Boolean         = bothRanges(pos) && start < pos.end && pos.start < end
 
-  def line: Int           = if (hasSource) source.offsetToLine(point) + 1 else 0
-  def column: Int         = if (hasSource) calculateColumn() else 0
-  def lineContent: String = if (hasSource) source.lineToString(line - 1) else ""
-  def lineCaret: String   = if (hasSource) " " * (column - 1) + "^" else ""
+  private def line0       = source.offsetToLine(point)
+  private def lineOffset  = source.lineToOffset(line0)
+  def line: Int           = if (hasSource) line0 + 1 else 0
+  def column: Int         = if (!hasSource) 0 else {
+    var idx = lineOffset
+    var col = 0
+    while (idx != point) {
+      col += (if (source.content(idx) == '\t') Position.tabInc - col % Position.tabInc else 1)
+      idx += 1
+    }
+    col + 1
+  }
+  def lineContent: String = if (hasSource) source.lineToString(line0) else ""
+  def lineCaret: String   = if (!hasSource) "" else {
+    val buf = new StringBuilder
+    var idx = lineOffset
+    while (idx < point) {
+      buf.append(if (source.content(idx) == '\t') '\t' else ' ')
+      idx += 1
+    }
+    buf.append('^')
+    buf.toString
+  }
   @deprecated("use `lineCaret`", since="2.11.0")
   def lineCarat: String   = lineCaret
 
@@ -184,16 +210,11 @@ private[util] trait InternalPositionImpl {
         sb.toString
       } else s
     }
-    def errorAt(p: Pos) = {
-      def where     = p.line
-      def content   = escaped(p.lineContent)
-      def indicator = p.lineCaret
-      f"$where: $msg%n$content%n$indicator"
-    }
+    import java.lang.System.{lineSeparator => NL}
     finalPosition match {
       case FakePos(fmsg) => s"$fmsg $msg"
       case NoPosition    => msg
-      case pos           => errorAt(pos)
+      case pos           => s"${pos.line}: ${msg}${NL}${escaped(pos.lineContent)}${NL}${pos.lineCaret}"
     }
   }
   def showDebug: String = toString
@@ -211,16 +232,6 @@ private[util] trait InternalPositionImpl {
   private def asOffset(point: Int): Position = Position.offset(source, point)
   private def copyRange(source: SourceFile = source, start: Int = start, point: Int = point, end: Int = end): Position =
     Position.range(source, start, point, end)
-
-  private def calculateColumn(): Int = {
-    var idx = source.lineToOffset(source.offsetToLine(point))
-    var col = 0
-    while (idx != point) {
-      col += (if (source.content(idx) == '\t') Position.tabInc - col % Position.tabInc else 1)
-      idx += 1
-    }
-    col + 1
-  }
   private def hasSource                      = source ne NoSourceFile
   private def bothRanges(that: Position)     = isRange && that.isRange
   private def bothDefined(that: Position)    = isDefined && that.isDefined

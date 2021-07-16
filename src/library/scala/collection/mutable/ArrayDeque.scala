@@ -1,23 +1,31 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package collection
 package mutable
 
-import java.io.{ObjectInputStream, ObjectOutputStream}
-
+import scala.annotation.nowarn
+import scala.collection.Stepper.EfficientSplit
+import scala.collection.generic.DefaultSerializable
 import scala.reflect.ClassTag
-import scala.collection.{Iterator, StrictOptimizedSeqOps}
-import java.lang.Math
-import java.util.NoSuchElementException
 
-/** An implementation of a double-ended queue that internally uses a resizable circular buffer
+/** An implementation of a double-ended queue that internally uses a resizable circular buffer.
+  *
   *  Append, prepend, removeFirst, removeLast and random-access (indexed-lookup and indexed-replacement)
   *  take amortized constant time. In general, removals and insertions at i-th index are O(min(i, n-i))
   *  and thus insertions and removals from end/beginning are fast.
   *
   *  @note Subclasses ''must'' override the `ofArray` protected method to return a more specific type.
-  *
-  *  @author  Pathikrit Bhowmick
-  *  @since   2.13
   *
   *  @tparam A  the type of this ArrayDeque's elements.
   *
@@ -29,14 +37,17 @@ import java.util.NoSuchElementException
   *  @define willNotTerminateInf
   */
 class ArrayDeque[A] protected (
-    private[ArrayDeque] var array: Array[AnyRef],
+    protected var array: Array[AnyRef],
     private[ArrayDeque] var start: Int,
     private[ArrayDeque] var end: Int
 ) extends AbstractBuffer[A]
-    with IndexedSeq[A]
+    with IndexedBuffer[A]
     with IndexedSeqOps[A, ArrayDeque, ArrayDeque[A]]
-    with IndexedOptimizedBuffer[A]
-    with StrictOptimizedSeqOps[A, ArrayDeque, ArrayDeque[A]] {
+    with StrictOptimizedSeqOps[A, ArrayDeque, ArrayDeque[A]]
+    with IterableFactoryDefaults[A, ArrayDeque]
+    with ArrayDequeOps[A, ArrayDeque, ArrayDeque[A]]
+    with Cloneable[ArrayDeque[A]]
+    with DefaultSerializable {
 
   reset(array, start, end)
 
@@ -51,22 +62,27 @@ class ArrayDeque[A] protected (
 
   def this(initialSize: Int = ArrayDeque.DefaultInitialSize) = this(ArrayDeque.alloc(initialSize), start = 0, end = 0)
 
-  def apply(idx: Int) = {
+  override def knownSize: Int = super[IndexedSeqOps].knownSize
+
+  // No-Op override to allow for more efficient stepper in a minor release.
+  override def stepper[S <: Stepper[_]](implicit shape: StepperShape[A, S]): S with EfficientSplit = super.stepper(shape)
+
+  def apply(idx: Int): A = {
     requireBounds(idx)
     _get(idx)
   }
 
-  def update(idx: Int, elem: A) = {
+  def update(idx: Int, elem: A): Unit = {
     requireBounds(idx)
     _set(idx, elem)
   }
 
-  def addOne(elem: A) = {
+  def addOne(elem: A): this.type = {
     ensureSize(length + 1)
     appendAssumingCapacity(elem)
   }
 
-  def prepend(elem: A) = {
+  def prepend(elem: A): this.type = {
     ensureSize(length + 1)
     prependAssumingCapacity(elem)
   }
@@ -87,13 +103,13 @@ class ArrayDeque[A] protected (
     val it = elems.iterator
     if (it.nonEmpty) {
       val n = length
-      // The following code resizes the current collection atmost once and traverses elems atmost twice
+      // The following code resizes the current collection at most once and traverses elems at most twice
       elems.knownSize match {
         // Size is too expensive to compute AND we can traverse it only once - can't do much but retry with an IndexedSeq
         case srcLength if srcLength < 0 => prependAll(it.to(IndexedSeq: Factory[A, IndexedSeq[A]] /* type ascription needed by Dotty */))
 
         // We know for sure we need to resize to hold everything, might as well resize and memcopy upfront
-        case srcLength if srcLength > 0 && isResizeNecessary(srcLength + n) =>
+        case srcLength if mustGrow(srcLength + n) =>
           val finalLength = srcLength + n
           val array2 = ArrayDeque.alloc(finalLength)
           it.copyToArray(array2.asInstanceOf[Array[A]])
@@ -102,10 +118,9 @@ class ArrayDeque[A] protected (
 
         // Just fill up from (start - srcLength) to (start - 1) and move back start
         case srcLength =>
-          ensureSize(srcLength + n)
           // Optimized version of `elems.zipWithIndex.foreach((elem, i) => _set(i - srcLength, elem))`
           var i = 0
-          while(it.hasNext) {
+          while(i < srcLength) {
             _set(i - srcLength, it.next())
             i += 1
           }
@@ -134,11 +149,12 @@ class ArrayDeque[A] protected (
       addOne(elem)
     } else {
       val finalLength = n + 1
-      if (isResizeNecessary(finalLength)) {
+      if (mustGrow(finalLength)) {
         val array2 = ArrayDeque.alloc(finalLength)
         copySliceToArray(srcStart = 0, dest = array2, destStart = 0, maxItems = idx)
         array2(idx) = elem.asInstanceOf[AnyRef]
         copySliceToArray(srcStart = idx, dest = array2, destStart = idx + 1, maxItems = n)
+        reset(array = array2, start = 0, end = finalLength)
       } else if (n <= idx * 2) {
         var i = n - 1
         while(i >= idx) {
@@ -165,7 +181,7 @@ class ArrayDeque[A] protected (
     val n = length
     if (idx == 0) {
       prependAll(elems)
-    } else if (idx == n - 1) {
+    } else if (idx == n) {
       addAll(elems)
     } else {
       // Get both an iterator and the length of the source (by copying the source to an IndexedSeq if needed)
@@ -180,7 +196,7 @@ class ArrayDeque[A] protected (
       if (it.nonEmpty) {
         val finalLength = srcLength + n
         // Either we resize right away or move prefix left or suffix right
-        if (isResizeNecessary(finalLength)) {
+        if (mustGrow(finalLength)) {
           val array2 = ArrayDeque.alloc(finalLength)
           copySliceToArray(srcStart = 0, dest = array2, destStart = 0, maxItems = idx)
           it.copyToArray(array2.asInstanceOf[Array[A]], idx)
@@ -222,22 +238,30 @@ class ArrayDeque[A] protected (
       val suffixStart = idx + removals
       // If we know we can resize after removing, do it right away using arrayCopy
       // Else, choose the shorter: either move the prefix (0 until idx) right OR the suffix (idx+removals until n) left
-      if (isResizeNecessary(finalLength)) {
+      if (shouldShrink(finalLength)) {
         val array2 = ArrayDeque.alloc(finalLength)
         copySliceToArray(srcStart = 0, dest = array2, destStart = 0, maxItems = idx)
         copySliceToArray(srcStart = suffixStart, dest = array2, destStart = idx, maxItems = n)
         reset(array = array2, start = 0, end = finalLength)
       } else if (2*idx <= finalLength) { // Cheaper to move the prefix right
-        var i = suffixStart
-        while(i >= 0) {
+        var i = suffixStart - 1
+        while(i >= removals) {
+          _set(i, _get(i - removals))
           i -= 1
-          _set(i, if (i >= removals) _get(i - removals) else null.asInstanceOf[A])
+        }
+        while(i >= 0) {
+          _set(i, null.asInstanceOf[A])
+          i -= 1
         }
         start = start_+(removals)
       } else {  // Cheaper to move the suffix left
         var i = idx
+        while(i < finalLength) {
+          _set(i, _get(i + removals))
+          i += 1
+        }
         while(i < n) {
-          _set(i, if (i < finalLength) _get(i + removals) else null.asInstanceOf[A])
+          _set(i, null.asInstanceOf[A])
           i += 1
         }
         end = end_-(removals)
@@ -253,7 +277,7 @@ class ArrayDeque[A] protected (
     elem
   }
 
-  def subtractOne(elem: A): this.type = {
+  override def subtractOne(elem: A): this.type = {
     val idx = indexOf(elem)
     if (idx >= 0) remove(idx, 1) //TODO: SeqOps should be fluent API
     this
@@ -367,24 +391,50 @@ class ArrayDeque[A] protected (
     elems.result()
   }
 
-  override def reverse: IterableCC[A] = {
-    val n = length
-    val arr = ArrayDeque.alloc(n)
-    var i = 0
-    while(i < n) {
-      arr(i) = this(n - i - 1).asInstanceOf[AnyRef]
-      i += 1
-    }
-    ofArray(arr, n)
+  /** Returns the first element which satisfies the given predicate after or at some start index
+    * and removes this element from the collections
+    *
+    *  @param p   the predicate used for choosing the first element
+    *  @param from the start index
+    *  @return the first element of the queue for which p yields true
+    */
+  def removeFirst(p: A => Boolean, from: Int = 0): Option[A] = {
+    val i = indexWhere(p, from)
+    if (i < 0) None else Some(remove(i))
   }
 
-  @inline def ensureSize(hint: Int) = if (hint > length && isResizeNecessary(hint)) resize(hint + 1)
+  /** Returns all elements in this collection which satisfy the given predicate
+    * and removes those elements from this collections.
+    *
+    *  @param p   the predicate used for choosing elements
+    *  @return    a sequence of all elements in the queue for which
+    *             p yields true.
+    */
+  def removeAll(p: A => Boolean): scala.collection.immutable.Seq[A] = {
+    val res = scala.collection.immutable.Seq.newBuilder[A]
+    var i, j = 0
+    while (i < size) {
+      if (p(this(i))) {
+        res += this(i)
+      } else {
+        if (i != j) {
+          this(j) = this(i)
+        }
+        j += 1
+      }
+      i += 1
+    }
+    if (i != j) takeInPlace(j)
+    res.result()
+  }
+
+  @inline def ensureSize(hint: Int) = if (hint > length && mustGrow(hint)) resize(hint)
 
   def length = end_-(start)
 
   override def isEmpty = start == end
 
-  override def clone(): ArrayDeque[A] = new ArrayDeque(array.clone(), start = start, end = end)
+  protected override def klone(): ArrayDeque[A] = new ArrayDeque(array.clone(), start = start, end = end)
 
   override def iterableFactory: SeqFactory[ArrayDeque] = ArrayDeque
 
@@ -399,7 +449,7 @@ class ArrayDeque[A] protected (
   }
 
   /**
-    * clears this buffer and shrinks to @param size
+    * Clears this buffer and shrinks to @param size
     *
     * @param size
     * @return
@@ -409,37 +459,125 @@ class ArrayDeque[A] protected (
     this
   }
 
-  override def slice(from: Int, until: Int): IterableCC[A] = {
-    val n = length
-    val left = Math.max(0, Math.min(n, from))
-    val right = Math.max(0, Math.min(n, until))
-    val len = right - left
-    if (len <= 0) {
-      iterableFactory.empty[A]
-    } else if (len >= n) {
-      clone()
-    } else {
-      val array2 = copySliceToArray(srcStart = left, dest = ArrayDeque.alloc(len), destStart = 0, maxItems = len)
-      ofArray(array2, len)
-    }
-  }
-
   protected def ofArray(array: Array[AnyRef], end: Int): ArrayDeque[A] =
     new ArrayDeque[A](array, start = 0, end)
 
-  override def sliding(window: Int, step: Int): Iterator[IterableCC[A]] = {
-    require(window > 0 && step > 0, s"window=$window and step=$step, but both must be positive")
-    val lag = if (window > step) window - step else 0
-    Iterator.range(start = 0, end = length - lag, step = step).map(i => slice(i, i + window))
+  override def copyToArray[B >: A](dest: Array[B], destStart: Int, len: Int): Int = {
+    val copied = IterableOnce.elemsToCopyToArray(length, dest.length, destStart, len)
+    if (copied > 0) {
+      copySliceToArray(srcStart = 0, dest = dest, destStart = destStart, maxItems = len)
+    }
+    copied
   }
-
-  override def grouped(n: Int): Iterator[IterableCC[A]] = sliding(n, n)
-
-  override def copyToArray[B >: A](dest: Array[B], destStart: Int, len: Int): dest.type =
-    copySliceToArray(srcStart = 0, dest = dest, destStart = destStart, maxItems = len)
 
   override def toArray[B >: A: ClassTag]: Array[B] =
     copySliceToArray(srcStart = 0, dest = new Array[B](length), destStart = 0, maxItems = length)
+
+  /**
+    * Trims the capacity of this ArrayDeque's instance to be the current size
+    */
+  def trimToSize(): Unit = resize(length)
+
+  // Utils for common modular arithmetic:
+  @inline protected def start_+(idx: Int) = (start + idx) & (array.length - 1)
+  @inline private[this] def start_-(idx: Int) = (start - idx) & (array.length - 1)
+  @inline private[this] def end_+(idx: Int) = (end + idx) & (array.length - 1)
+  @inline private[this] def end_-(idx: Int) = (end - idx) & (array.length - 1)
+
+  // Note: here be overflow dragons! This is used for int overflow
+  // assumptions in resize(). Use caution changing.
+  @inline private[this] def mustGrow(len: Int) = {
+    len >= array.length
+  }
+
+  // Assumes that 0 <= len < array.length!
+  @inline private[this] def shouldShrink(len: Int) = {
+    // To avoid allocation churn, only shrink when array is large
+    // and less than 2/5 filled.
+    array.length > ArrayDeque.StableSize && array.length - len - (len >> 1) > len
+  }
+
+  // Assumes that 0 <= len < array.length!
+  @inline private[this] def canShrink(len: Int) = {
+    array.length > ArrayDeque.DefaultInitialSize && array.length - len > len
+  }
+
+  @inline private[this] def _get(idx: Int): A = array(start_+(idx)).asInstanceOf[A]
+
+  @inline private[this] def _set(idx: Int, elem: A) = array(start_+(idx)) = elem.asInstanceOf[AnyRef]
+
+  // Assumes that 0 <= len.
+  private[this] def resize(len: Int) = if (mustGrow(len) || canShrink(len)) {
+    val n = length
+    val array2 = copySliceToArray(srcStart = 0, dest = ArrayDeque.alloc(len), destStart = 0, maxItems = n)
+    reset(array = array2, start = 0, end = n)
+  }
+
+  @nowarn("""cat=deprecation&origin=scala\.collection\.Iterable\.stringPrefix""")
+  override protected[this] def stringPrefix = "ArrayDeque"
+}
+
+/**
+  * $factoryInfo
+  * @define coll array deque
+  * @define Coll `ArrayDeque`
+  */
+@SerialVersionUID(3L)
+object ArrayDeque extends StrictOptimizedSeqFactory[ArrayDeque] {
+
+  def from[B](coll: collection.IterableOnce[B]): ArrayDeque[B] = {
+    val s = coll.knownSize
+    if (s >= 0) {
+      val array = alloc(s)
+      IterableOnce.copyElemsToArray(coll, array.asInstanceOf[Array[Any]])
+      new ArrayDeque[B](array, start = 0, end = s)
+    } else new ArrayDeque[B]() ++= coll
+  }
+
+  def newBuilder[A]: Builder[A, ArrayDeque[A]] =
+    new GrowableBuilder[A, ArrayDeque[A]](empty) {
+      override def sizeHint(size: Int): Unit = {
+        elems.ensureSize(size)
+      }
+    }
+
+  def empty[A]: ArrayDeque[A] = new ArrayDeque[A]()
+
+  final val DefaultInitialSize = 16
+
+  /**
+    * We try to not repeatedly resize arrays smaller than this
+    */
+  private[ArrayDeque] final val StableSize = 128
+
+  /**
+    * Allocates an array whose size is next power of 2 > `len`
+    * Largest possible len is 1<<30 - 1
+    *
+    * @param len
+    * @return
+    */
+  private[mutable] def alloc(len: Int) = {
+    require(len >= 0, s"Non-negative array size required")
+    val size = (1 << 31) >>> java.lang.Integer.numberOfLeadingZeros(len) << 1
+    require(size >= 0, s"ArrayDeque too big - cannot allocate ArrayDeque of length $len")
+    new Array[AnyRef](Math.max(size, DefaultInitialSize))
+  }
+}
+
+trait ArrayDequeOps[A, +CC[_], +C <: AnyRef] extends StrictOptimizedSeqOps[A, CC, C] {
+  protected def array: Array[AnyRef]
+
+  final override def clone(): C = klone()
+
+  protected def klone(): C
+
+  protected def ofArray(array: Array[AnyRef], end: Int): C
+
+  protected def start_+(idx: Int): Int
+
+  @inline protected final def requireBounds(idx: Int, until: Int = length): Unit =
+    if (idx < 0 || idx >= until) throw new IndexOutOfBoundsException(s"$idx is out of bounds (min 0, max ${until-1})")
 
   /**
     * This is a more general version of copyToArray - this also accepts a srcStart unlike copyToArray
@@ -465,90 +603,42 @@ class ArrayDeque[A] protected (
     dest
   }
 
-  /**
-    * Trims the capacity of this ArrayDeque's instance to be the current size
-    */
-  def trimToSize(): Unit = resize(length - 1)
-
-  // Utils for common modular arithmetic:
-  @inline private[this] def start_+(idx: Int) = (start + idx) & (array.length - 1)
-  @inline private[this] def start_-(idx: Int) = (start - idx) & (array.length - 1)
-  @inline private[this] def end_+(idx: Int) = (end + idx) & (array.length - 1)
-  @inline private[this] def end_-(idx: Int) = (end - idx) & (array.length - 1)
-
-  @inline private[this] def isResizeNecessary(len: Int) = {
-    // Either resize if we need more cells OR we need to downsize BUT not a good idea to repeatedly resize small arrays
-    len >= (array.length - 1) || (2*len < array.length && array.length >= ArrayDeque.StableSize)
-  }
-
-  @inline private[this] def _get(idx: Int): A = array(start_+(idx)).asInstanceOf[A]
-
-  @inline private[this] def _set(idx: Int, elem: A) = array(start_+(idx)) = elem.asInstanceOf[AnyRef]
-
-  private[this] def resize(len: Int) = if (isResizeNecessary(len)) {
+  override def reverse: C = {
     val n = length
-    val array2 = copySliceToArray(srcStart = 0, dest = ArrayDeque.alloc(len), destStart = 0, maxItems = n)
-    reset(array = array2, start = 0, end = n)
-  }
-
-  @inline private[this] def requireBounds(idx: Int, until: Int = length) =
-    if (idx < 0 || idx >= until) throw new IndexOutOfBoundsException(idx.toString)
-}
-
-/**
-  * $factoryInfo
-  * @define coll array deque
-  * @define Coll `ArrayDeque`
-  */
-@SerialVersionUID(3L)
-object ArrayDeque extends StrictOptimizedSeqFactory[ArrayDeque] {
-
-  def from[B](coll: collection.IterableOnce[B]): ArrayDeque[B] = {
-    val s = coll.knownSize
-    if (s >= 0) {
-      val array = alloc(s)
-      val it = coll.iterator
-      var i = 0
-      while (it.hasNext) {
-        array(i) = it.next().asInstanceOf[AnyRef]
-        i += 1
-      }
-      new ArrayDeque[B](array, start = 0, end = s)
-    } else empty[B] ++= coll
-  }
-
-  def newBuilder[A]: Builder[A, ArrayDeque[A]] =
-    new GrowableBuilder[A, ArrayDeque[A]](empty) {
-      override def sizeHint(size: Int): Unit = {
-        elems.ensureSize(size)
-      }
+    val arr = ArrayDeque.alloc(n)
+    var i = 0
+    while(i < n) {
+      arr(i) = this(n - i - 1).asInstanceOf[AnyRef]
+      i += 1
     }
-
-  def empty[A]: ArrayDeque[A] = new ArrayDeque[A]()
-
-  final val DefaultInitialSize = 16
-
-  /**
-    * We try to not repeatedly resize arrays smaller than this
-    */
-  private[ArrayDeque] final val StableSize = 256
-
-  /**
-    * Allocates an array whose size is next power of 2 > $len
-    * Largest possible len is 1<<30 - 1
-    *
-    * @param len
-    * @return
-    */
-  private[mutable] def alloc(len: Int) = {
-    require(len >= 0, s"Non-negative array size required")
-    val size = (1 << 31) >>> java.lang.Integer.numberOfLeadingZeros(len) << 1
-    require(size >= 0, s"ArrayDeque too big - cannot allocate ArrayDeque of length $len")
-    new Array[AnyRef](Math.max(size, DefaultInitialSize))
+    ofArray(arr, n)
   }
 
-  // scalac generates a `readReplace` method to discard the deserialized state (see https://github.com/scala/bug/issues/10412).
-  // This prevents it from serializing it in the first place:
-  private[this] def writeObject(out: ObjectOutputStream): Unit = ()
-  private[this] def readObject(in: ObjectInputStream): Unit = ()
+  override def slice(from: Int, until: Int): C = {
+    val n = length
+    val left = Math.max(0, Math.min(n, from))
+    val right = Math.max(0, Math.min(n, until))
+    val len = right - left
+    if (len <= 0) {
+      empty
+    } else if (len >= n) {
+      klone()
+    } else {
+      val array2 = copySliceToArray(srcStart = left, dest = ArrayDeque.alloc(len), destStart = 0, maxItems = len)
+      ofArray(array2, len)
+    }
+  }
+
+  override def sliding(window: Int, step: Int): Iterator[C] = {
+    require(window > 0 && step > 0, s"window=$window and step=$step, but both must be positive")
+    length match {
+      case 0 => Iterator.empty
+      case n if n <= window => Iterator.single(slice(0, length))
+      case n =>
+        val lag = if (window > step) window - step else 0
+        Iterator.range(start = 0, end = n - lag, step = step).map(i => slice(i, i + window))
+    }
+  }
+
+  override def grouped(n: Int): Iterator[C] = sliding(n, n)
 }

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -10,6 +17,8 @@ package transform
 package patmat
 
 import scala.tools.nsc.typechecker.Contexts
+import scala.reflect.internal.util
+import scala.tools.nsc.Reporting.WarningCategory
 
 /** An 'extractor' can be a case class or an unapply or unapplySeq method.
   *
@@ -112,26 +121,28 @@ trait PatternExpansion {
         else tps.map(_.substSym(List(unapplySelector), List(extractedBinder)))
 
       val withoutStar = productTypes ::: List.fill(elementArity)(elementType)
-      replaceUnapplySelector(if (isStar) withoutStar :+ sequenceType else withoutStar)
+      replaceUnapplySelector(if (isStar) withoutStar :+ seqType(elementType) else withoutStar)
     }
-
-    def lengthCompareSym = sequenceType member nme.lengthCompare
 
     // rest is private
     private val isUnapply        = fun.symbol.name == nme.unapply
     private val isUnapplySeq     = fun.symbol.name == nme.unapplySeq
-    private def isBooleanUnapply = isUnapply && unapplyResultType() =:= BooleanTpe
+    private def isBooleanUnapply = isUnapply && unapplyResultType().typeSymbol == definitions.BooleanClass
     private def isRepeatedCaseClass = caseCtorParamTypes.exists(tpes => tpes.nonEmpty && isScalaRepeatedParamType(tpes.last))
 
     private def caseCtorParamTypes: Option[List[Type]] =
       if (isUnapply || isUnapplySeq) None else Some(fun.tpe.paramTypes)
 
-    // bug#6130 can't really say what the result type is without referring to the binder we're extracting,
-    // as an unapply's result type could depend on its argument, e.g. crazy stuff like `def unapply(x: T): Option[(x.T, x.U)]`
-    // NOTE: we skip a potential implicit method type here -- could this be another avenue of craziness where the result type depends on the input?
-    private def unapplyResultType(extractedBinder: Symbol = unapplySelector): Type =
-      if (extractedBinder == NoSymbol) fun.tpe.finalResultType
-      else fun.tpe.resultType(List(SingleType(NoPrefix, extractedBinder))).finalResultType
+    // scala/bug#6130 scala/bug#11162 unapply's result type may refer to the binder we're extracting,
+    // as well as implicit args. Example: `def unapply(x: T)(implicit ops: Foo): Option[(x.T, ops.U)]`.
+    // Existentially abstract over any unknown values to approximate the type.
+    private def unapplyResultType(extractedBinder: Symbol = unapplySelector): Type = {
+        val appliedToExtractedBinder =
+          if (extractedBinder != NoSymbol) fun.tpe.resultType(List(SingleType(NoPrefix, extractedBinder)))
+          else fun.tpe
+
+        packSymbols(appliedToExtractedBinder.paramss.flatten, appliedToExtractedBinder.finalResultType)
+      }
 
     private def resultOfGetInMonad(arg: Symbol = unapplySelector) =
       elementTypeFromGet(unapplyResultType(arg))
@@ -152,12 +163,12 @@ trait PatternExpansion {
       val res = resultOfGetInMonad()
       // Can't only check for _1 thanks to pos/t796.
       if (res.hasNonPrivateMember(nme._1) && res.hasNonPrivateMember(nme._2))
-        Some(Stream.from(1).map(n => res.nonPrivateMember(newTermName("_" + n))).
+        Some(LazyList.from(1).map(n => res.nonPrivateMember(newTermName("_" + n))).
              takeWhile(m => m.isMethod && m.paramLists.isEmpty).toList.map(m => res.memberType(m).resultType))
       else None
     }
 
-    private def booleanUnapply = if (isBooleanUnapply) Some(Nil) else None
+    private def booleanUnapply = if (isBooleanUnapply) util.SomeOfNil else None
 
     // In terms of the (equivalent -- if we're dealing with an unapply) case class, what are the constructor's parameter types?
     private val equivConstrParamTypes =
@@ -174,7 +185,6 @@ trait PatternExpansion {
       // scala/bug#9029 A pattern with arity-1 that doesn't match the arity of
       // the Product-like result of the `get` method, will match that result in its entirety.
       //
-      // ```
       // warning: there was one deprecation warning; re-run with -deprecation for details
       // scala> object Extractor { def unapply(a: Any): Option[(Int, String)] = Some((1, "2")) }
       // defined object Extractor
@@ -183,30 +193,25 @@ trait PatternExpansion {
       //
       // scala> "" match { case Extractor(xy : (Int, String)) => }
       // warning: there was one deprecation warning; re-run with -deprecation for details
-      // ```
       else if (totalArity == 1 && equivConstrParamTypes.tail.nonEmpty) {
         warnPatternTupling()
         (if (tupleValuedUnapply) tupleType(equivConstrParamTypes) else resultOfGetInMonad()) :: Nil
       }
       else equivConstrParamTypes
 
-    private def notRepeated = (NoType, NoType, NoType)
-    private val (elementType, sequenceType, repeatedType) =
+    private def notRepeated = (NoType, NoType)
+    private val (elementType, repeatedType) =
       // case class C() is deprecated, but still need to defend against equivConstrParamTypes.isEmpty
       if (isUnapply || equivConstrParamTypes.isEmpty) notRepeated
       else {
         val lastParamTp = equivConstrParamTypes.last
         if (isUnapplySeq) {
-          val elementTp =
-            elementTypeFromHead(lastParamTp) orElse
-            elementTypeFromApply(lastParamTp) orElse
-            definitions.elementType(ArrayClass, lastParamTp)
-
-          (elementTp, lastParamTp, scalaRepeatedType(elementTp))
+          val elementTp = elementTypeFromApply(lastParamTp)
+          (elementTp, scalaRepeatedType(elementTp))
         } else {
           definitions.elementType(RepeatedParamClass, lastParamTp) match {
             case NoType => notRepeated
-            case elementTp => (elementTp, seqType(elementTp), lastParamTp)
+            case elementTp => (elementTp, lastParamTp)
           }
         }
       }
@@ -214,8 +219,8 @@ trait PatternExpansion {
     // errors & warnings
 
     private def err(msg: String) = context.error(fun.pos,msg)
-    private def warn(msg: String) = context.warning(fun.pos,msg)
-    private def depr(msg: String, since: String) = currentRun.reporting.deprecationWarning(fun.pos, fun.symbol.owner, msg, since)
+    private def warn(msg: String, cat: WarningCategory) = context.warning(fun.pos,msg, cat)
+    private def depr(msg: String, since: String) = runReporting.deprecationWarning(fun.pos, origin = fun.symbol.owner, site = context.owner.asInstanceOf[global.Symbol], msg, since)
 
     private def warnPatternTupling() =
       if (effectivePatternArity(args) == 1 && tupleValuedUnapply) {
@@ -224,11 +229,11 @@ trait PatternExpansion {
           else s" to hold ${equivConstrParamTypes.mkString("(", ", ", ")")}"
         val sym = fun.symbol.owner
         val arr = equivConstrParamTypes.length
-        depr(s"${sym} expects $arr patterns$acceptMessage but crushing into $arr-tuple to fit single pattern (scala/bug#6675)", "2.11.0")
+        depr(s"deprecated adaptation: ${sym} expects $arr patterns$acceptMessage but crushing into $arr-tuple to fit single pattern (scala/bug#6675)", "2.11.0")
       }
 
     private def arityError(mismatch: String) = {
-      val isErroneous = (productTypes contains NoType) && !(isSeq && (sequenceType ne NoType))
+      val isErroneous = (productTypes contains NoType) && !(isSeq && (elementType ne NoType))
 
       val offeringString = if (isErroneous) "<error>" else productTypes match {
         case tps if isSeq => (tps.map(_.toString) :+ s"${elementType}*").mkString("(", ", ", ")")
@@ -243,12 +248,16 @@ trait PatternExpansion {
 
     // emit error/warning on mismatch
     if (isStar && !isSeq) err("Star pattern must correspond with varargs or unapplySeq")
-    else if (equivConstrParamTypes == List(NoType)) err(s"The result type of an ${fun.symbol.name} method must contain a member `get` to be used as an extractor pattern, no such member exists in ${unapplyResultType()}")
+    else if (equivConstrParamTypes == List(NoType) && unapplyResultType().isNothing)
+      err(s"${fun.symbol.owner} can't be used as an extractor: The result type of an ${fun.symbol.name} method may not be Nothing")
+    else if (equivConstrParamTypes == List(NoType))
+      err(s"The result type of an ${fun.symbol.name} method must contain a member `get` to be used as an extractor pattern, no such member exists in ${unapplyResultType()}")
     else if (elementArity < 0) arityError("not enough")
     else if (elementArity > 0 && !isSeq) arityError("too many")
     else if (settings.warnStarsAlign && isSeq && productArity > 0 && elementArity > 0) warn(
       if (isStar) "Sequence wildcard (_*) does not align with repeated case parameter or extracted sequence; the result may be unexpected."
-      else "A repeated case parameter or extracted sequence is not matched by a sequence wildcard (_*), and may fail at runtime.")
+      else "A repeated case parameter or extracted sequence is not matched by a sequence wildcard (_*), and may fail at runtime.",
+      WarningCategory.LintStarsAlign)
 
   }
 }

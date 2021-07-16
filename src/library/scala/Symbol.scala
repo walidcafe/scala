@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -16,14 +20,11 @@ package scala
  *  For instance, the Scala term `'mysym` will
  *  invoke the constructor of the `Symbol` class in the following way:
  *  `Symbol("mysym")`.
- *
- *  @author  Martin Odersky, Iulian Dragos
- *  @since   1.7
  */
 final class Symbol private (val name: String) extends Serializable {
   /** Converts this symbol to a string.
    */
-  override def toString(): String = "'" + name
+  override def toString(): String = "Symbol(" + name + ")"
 
   @throws(classOf[java.io.ObjectStreamException])
   private def readResolve(): Any = Symbol.apply(name)

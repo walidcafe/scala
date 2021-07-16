@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 
@@ -11,7 +23,7 @@ package object runtime {
    * To use Scala runtime reflection, simply use or import `scala.reflect.runtime.universe._`
    *
    * See [[scala.reflect.api.Universe]] or the
-   * [[http://docs.scala-lang.org/overviews/reflection/environment-universes-mirrors.html Reflection Guide: Universes]]
+   * [[https://docs.scala-lang.org/overviews/reflection/environment-universes-mirrors.html Reflection Guide: Universes]]
    * for more details.
    */
   lazy val universe: api.JavaUniverse = new runtime.JavaUniverse

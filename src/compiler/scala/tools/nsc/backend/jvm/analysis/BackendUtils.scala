@@ -1,32 +1,40 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package backend.jvm
 package analysis
 
-import java.lang.invoke.LambdaMetafactory
-
-import scala.annotation.{switch, tailrec}
-import scala.collection.mutable
-import scala.collection.JavaConverters._
 import java.util.concurrent.ConcurrentHashMap
 
+import scala.annotation.{ switch, tailrec }
+import scala.collection.immutable.BitSet
+import scala.collection.immutable.ArraySeq.unsafeWrapArray
+import scala.collection.mutable
+import scala.jdk.CollectionConverters._
+import scala.reflect.internal.util.Position
 import scala.tools.asm
 import scala.tools.asm.Opcodes._
 import scala.tools.asm.tree._
-import scala.tools.asm.tree.analysis._
-import scala.tools.asm.{Handle, Label, LabelAccess, Type}
+import scala.tools.asm.{ Handle, Opcodes, Type }
 import scala.tools.nsc.backend.jvm.BTypes._
 import scala.tools.nsc.backend.jvm.GenBCode._
 import scala.tools.nsc.backend.jvm.analysis.BackendUtils._
 import scala.tools.nsc.backend.jvm.opt.BytecodeUtils._
-import scala.util.control.{NoStackTrace, NonFatal}
+import scala.util.control.{ NoStackTrace, NonFatal }
 
 /**
  * This component hosts tools and utilities used in the backend that require access to a `BTypes`
  * instance.
- *
- * One example is the AsmAnalyzer class, which runs `computeMaxLocalsMaxStack` on the methodNode to
- * be analyzed. This method in turn lives inside the BTypes assembly because it queries the per-run
- * cache `maxLocalsMaxStackComputed` defined in there.
  *
  * TODO: move out of `analysis` package?
  */
@@ -35,20 +43,18 @@ abstract class BackendUtils extends PerRunInit {
 
   import postProcessor.{bTypes, bTypesFromClassfile, callGraph}
   import bTypes._
-  import callGraph.ClosureInstantiation
   import coreBTypes._
   import frontendAccess.{compilerSettings, recordPerRunJavaMapCache}
 
   /**
    * Classes with indyLambda closure instantiations where the SAM type is serializable (e.g. Scala's
-   * FunctionN) need a `$deserializeLambda$` method. This map contains classes for which such a
+   * FunctionN) need a `\$deserializeLambda\$` method. This map contains classes for which such a
    * method has been generated. It is used during ordinary code generation, as well as during
    * inlining: when inlining an indyLambda instruction into a class, we need to make sure the class
    * has the method.
    */
-  private val indyLambdaImplMethods: ConcurrentHashMap[InternalName, mutable.LinkedHashSet[asm.Handle]] = recordPerRunJavaMapCache{
-    new ConcurrentHashMap[InternalName, mutable.LinkedHashSet[asm.Handle]]
-  }
+  private val indyLambdaImplMethods: ConcurrentHashMap[InternalName, mutable.Map[MethodNode, mutable.Map[InvokeDynamicInsnNode, asm.Handle]]] =
+    recordPerRunJavaMapCache(new ConcurrentHashMap)
 
   // unused objects created by these constructors are eliminated by pushPop
   private[this] lazy val sideEffectFreeConstructors: LazyVar[Set[(String, String)]] = perRunLazy(this) {
@@ -56,16 +62,27 @@ abstract class BackendUtils extends PerRunInit {
     primitiveBoxConstructors.map(ownerDesc).toSet ++
       srRefConstructors.map(ownerDesc) ++
       tupleClassConstructors.map(ownerDesc) ++ Set(
-      (ObjectRef.internalName, MethodBType(Nil, UNIT).descriptor),
-      (StringRef.internalName, MethodBType(Nil, UNIT).descriptor),
-      (StringRef.internalName, MethodBType(List(StringRef), UNIT).descriptor),
-      (StringRef.internalName, MethodBType(List(ArrayBType(CHAR)), UNIT).descriptor))
+      (ObjectRef.internalName, MethodBType(BType.emptyArray, UNIT).descriptor),
+      (StringRef.internalName, MethodBType(BType.emptyArray, UNIT).descriptor),
+      (StringRef.internalName, MethodBType(Array(StringRef), UNIT).descriptor),
+      (StringRef.internalName, MethodBType(Array(ArrayBType(CHAR)), UNIT).descriptor))
   }
 
   private[this] lazy val classesOfSideEffectFreeConstructors: LazyVar[Set[String]] = perRunLazy(this)(sideEffectFreeConstructors.get.map(_._1))
 
   lazy val classfileVersion: LazyVar[Int] = perRunLazy(this)(compilerSettings.target match {
-    case "jvm-1.8" => asm.Opcodes.V1_8
+    case "8"  => asm.Opcodes.V1_8
+    case "9"  => asm.Opcodes.V9
+    case "10" => asm.Opcodes.V10
+    case "11" => asm.Opcodes.V11
+    case "12" => asm.Opcodes.V12
+    case "13" => asm.Opcodes.V13
+    case "14" => asm.Opcodes.V14
+    case "15" => asm.Opcodes.V15
+    case "16" => asm.Opcodes.V16
+    case "17" => asm.Opcodes.V17
+    case "18" => asm.Opcodes.V18
+    // to be continued...
   })
 
 
@@ -77,44 +94,6 @@ abstract class BackendUtils extends PerRunInit {
     asm.ClassWriter.COMPUTE_MAXS |
       (if (emitStackMapFrame.get) asm.ClassWriter.COMPUTE_FRAMES else 0)
   )
-
-  /**
-   * A wrapper to make ASM's Analyzer a bit easier to use.
-   */
-  class AsmAnalyzer[V <: Value](methodNode: MethodNode, classInternalName: InternalName, val analyzer: Analyzer[V] = new Analyzer(new BasicInterpreter)) {
-    computeMaxLocalsMaxStack(methodNode)
-    try {
-      analyzer.analyze(classInternalName, methodNode)
-    } catch {
-      case ae: AnalyzerException =>
-        throw new AnalyzerException(null, "While processing " + classInternalName + "." + methodNode.name, ae)
-    }
-    def frameAt(instruction: AbstractInsnNode): Frame[V] = analyzer.frameAt(instruction, methodNode)
-  }
-
-  /**
-   * See the doc comment on package object `analysis` for a discussion on performance.
-   */
-  object AsmAnalyzer {
-    // jvm limit is 65535 for both number of instructions and number of locals
-
-    private def size(method: MethodNode) = method.instructions.size.toLong * method.maxLocals * method.maxLocals
-
-    // with the limits below, analysis should not take more than one second
-
-    private val nullnessSizeLimit    = 5000l * 600l  * 600l    // 5000 insns, 600 locals
-    private val basicValueSizeLimit  = 9000l * 1000l * 1000l
-    private val sourceValueSizeLimit = 8000l * 950l  * 950l
-
-    def sizeOKForAliasing(method: MethodNode): Boolean = size(method) < nullnessSizeLimit
-    def sizeOKForNullness(method: MethodNode): Boolean = size(method) < nullnessSizeLimit
-    def sizeOKForBasicValue(method: MethodNode): Boolean = size(method) < basicValueSizeLimit
-    def sizeOKForSourceValue(method: MethodNode): Boolean = size(method) < sourceValueSizeLimit
-  }
-
-  class ProdConsAnalyzer(val methodNode: MethodNode, classInternalName: InternalName) extends AsmAnalyzer(methodNode, classInternalName, new Analyzer(new InitialProducerSourceInterpreter)) with ProdConsAnalyzerImpl
-
-  class NonLubbingTypeFlowAnalyzer(val methodNode: MethodNode, classInternalName: InternalName) extends AsmAnalyzer(methodNode, classInternalName, new Analyzer(new NonLubbingTypeFlowInterpreter))
 
   /*
    * Add:
@@ -147,8 +126,7 @@ abstract class BackendUtils extends PerRunInit {
     // stack map frames and invokes the `getCommonSuperClass` method. This method expects all
     // ClassBTypes mentioned in the source code to exist in the map.
 
-    val nilLookupDesc = MethodBType(Nil, jliMethodHandlesLookupRef).descriptor
-    val serlamObjDesc = MethodBType(jliSerializedLambdaRef :: Nil, ObjectRef).descriptor
+    val serlamObjDesc = MethodBType(Array(jliSerializedLambdaRef), ObjectRef).descriptor
     val implMethodsArray = implMethods.toArray
 
     val mv = cw.visitMethod(ACC_PRIVATE + ACC_STATIC + ACC_SYNTHETIC, "$deserializeLambda$", serlamObjDesc, null, null)
@@ -171,51 +149,57 @@ abstract class BackendUtils extends PerRunInit {
     }
     for ((label, i) <- initialLabels.iterator.zipWithIndex) {
       mv.visitLabel(label)
-      emitLambdaDeserializeIndy(groups(i))
+      emitLambdaDeserializeIndy(unsafeWrapArray(groups(i)))
       mv.visitInsn(ARETURN)
     }
     mv.visitLabel(terminalLabel)
-    emitLambdaDeserializeIndy(groups(numGroups - 1))
+    emitLambdaDeserializeIndy(unsafeWrapArray(groups(numGroups - 1)))
     mv.visitInsn(ARETURN)
   }
 
   /**
    * Clone the instructions in `methodNode` into a new [[InsnList]], mapping labels according to
-   * the `labelMap`. Returns the new instruction list and a map from old to new instructions, and
-   * a list of lambda implementation methods references by invokedynamic[LambdaMetafactory] for a
-   * serializable SAM types.
+   * the `labelMap`.
+   *
+   * For invocation instructions, set the callGraph.callsitePositions to the `callsitePos`.
+   *
+   * Returns
+   *   - the new instruction list
+   *   - a map from old to new instructions
+   *   - a bit set containing local variable indices that are stored into
    */
-  def cloneInstructions(methodNode: MethodNode, labelMap: Map[LabelNode, LabelNode], keepLineNumbers: Boolean): (InsnList, Map[AbstractInsnNode, AbstractInsnNode], List[Handle]) = {
+  def cloneInstructions(methodNode: MethodNode, labelMap: Map[LabelNode, LabelNode], callsitePos: Position, keepLineNumbers: Boolean): (InsnList, Map[AbstractInsnNode, AbstractInsnNode], mutable.BitSet) = {
     val javaLabelMap = labelMap.asJava
     val result = new InsnList
     var map = Map.empty[AbstractInsnNode, AbstractInsnNode]
-    var inlinedTargetHandles = mutable.ListBuffer[Handle]()
+    val writtenLocals = mutable.BitSet.empty
     for (ins <- methodNode.instructions.iterator.asScala) {
-      ins match {
-        case callGraph.LambdaMetaFactoryCall(indy, _, _, _) => indy.bsmArgs match {
-          case Array(_, targetHandle: Handle, _, flags: Integer, xs@_*) if (flags.intValue & LambdaMetafactory.FLAG_SERIALIZABLE) != 0 =>
-            inlinedTargetHandles += targetHandle
-          case _ =>
-        }
-        case _ =>
-      }
-      if (keepLineNumbers || !ins.isInstanceOf[LineNumberNode]) {
+      if (keepLineNumbers || ins.getType != AbstractInsnNode.LINE) {
         val cloned = ins.clone(javaLabelMap)
+        if (ins.getType == AbstractInsnNode.METHOD_INSN) {
+          val mi = ins.asInstanceOf[MethodInsnNode]
+          val clonedMi = cloned.asInstanceOf[MethodInsnNode]
+          callGraph.callsitePositions(clonedMi) = callsitePos
+          if (callGraph.inlineAnnotatedCallsites(mi))
+            callGraph.inlineAnnotatedCallsites += clonedMi
+          if (callGraph.noInlineAnnotatedCallsites(mi))
+            callGraph.noInlineAnnotatedCallsites += clonedMi
+          if (callGraph.staticallyResolvedInvokespecial(mi))
+            callGraph.staticallyResolvedInvokespecial += clonedMi
+        } else if (isStore(ins)) {
+          val vi = ins.asInstanceOf[VarInsnNode]
+          writtenLocals += vi.`var`
+        }
         result add cloned
         map += ((ins, cloned))
       }
     }
-    (result, map, inlinedTargetHandles.toList)
+    (result, map, writtenLocals)
   }
 
   def getBoxedUnit: FieldInsnNode = new FieldInsnNode(GETSTATIC, srBoxedUnitRef.internalName, "UNIT", srBoxedUnitRef.descriptor)
 
-  private val anonfunAdaptedName = """.*\$anonfun\$.*\$\d+\$adapted""".r
-  def hasAdaptedImplMethod(closureInit: ClosureInstantiation): Boolean = {
-    anonfunAdaptedName.pattern.matcher(closureInit.lambdaMetaFactoryCall.implMethod.getName).matches
-  }
-
-  private def primitiveAsmTypeToBType(primitiveType: Type): PrimitiveBType = (primitiveType.getSort: @switch) match {
+  def primitiveAsmTypeToBType(primitiveType: Type): PrimitiveBType = (primitiveType.getSort: @switch) match {
     case Type.BOOLEAN => BOOL
     case Type.BYTE    => BYTE
     case Type.CHAR    => CHAR
@@ -283,22 +267,31 @@ abstract class BackendUtils extends PerRunInit {
 
   def runtimeRefClassBoxedType(refClass: InternalName): Type = Type.getArgumentTypes(srRefCreateMethods(refClass).methodType.descriptor)(0)
 
-  def isSideEffectFreeCall(insn: MethodInsnNode): Boolean = {
-    isScalaBox(insn) || isScalaUnbox(insn) ||
-      isJavaBox(insn) || // not java unbox, it may NPE
-      isSideEffectFreeConstructorCall(insn)
+  def isSideEffectFreeCall(mi: MethodInsnNode): Boolean = {
+    isScalaBox(mi) ||  // not Scala unbox, it may CCE
+      isJavaBox(mi) || // not Java unbox, it may NPE
+      isSideEffectFreeConstructorCall(mi) ||
+      isClassTagApply(mi)
   }
 
+  // methods that are known to return a non-null result
   def isNonNullMethodInvocation(mi: MethodInsnNode): Boolean = {
-    isJavaBox(mi) || isScalaBox(mi) || isPredefAutoBox(mi) || isRefCreate(mi) || isRefZero(mi)
+    isJavaBox(mi) || isScalaBox(mi) || isPredefAutoBox(mi) || isRefCreate(mi) || isRefZero(mi) || isClassTagApply(mi)
   }
 
-  def isModuleLoad(insn: AbstractInsnNode, moduleName: InternalName): Boolean = insn match {
-    case fi: FieldInsnNode => fi.getOpcode == GETSTATIC && fi.owner == moduleName && fi.name == "MODULE$" && fi.desc == ("L" + moduleName + ";")
-    case _ => false
-  }
+  lazy val modulesAllowSkipInitialization: Set[InternalName] =
+    if (!compilerSettings.optAllowSkipCoreModuleInit) Set.empty
+    else Set(
+      "scala/Predef$",
+      "scala/runtime/ScalaRunTime$",
+      "scala/reflect/ClassTag$",
+      "scala/reflect/ManifestFactory$",
+      "scala/Array$",
+      "scala/collection/ArrayOps$",
+      "scala/collection/StringOps$",
+    ) ++ primitiveTypes.keysIterator
 
-  def isPredefLoad(insn: AbstractInsnNode) = isModuleLoad(insn, PredefRef.internalName)
+  def isPredefLoad(insn: AbstractInsnNode): Boolean = isModuleLoad(insn, _ == PredefRef.internalName)
 
   def isPrimitiveBoxConstructor(insn: MethodInsnNode): Boolean = calleeInMap(insn, primitiveBoxConstructors)
   def isRuntimeRefConstructor(insn: MethodInsnNode): Boolean = calleeInMap(insn, srRefConstructors)
@@ -309,30 +302,115 @@ abstract class BackendUtils extends PerRunInit {
     insn.name == INSTANCE_CONSTRUCTOR_NAME && sideEffectFreeConstructors.get((insn.owner, insn.desc))
   }
 
-  def isNewForSideEffectFreeConstructor(insn: AbstractInsnNode) = {
+  def isNewForSideEffectFreeConstructor(insn: AbstractInsnNode): Boolean = {
     insn.getOpcode == NEW && {
       val ti = insn.asInstanceOf[TypeInsnNode]
       classesOfSideEffectFreeConstructors.get.contains(ti.desc)
     }
   }
 
-  def isBoxedUnit(insn: AbstractInsnNode) = {
+  def isBoxedUnit(insn: AbstractInsnNode): Boolean = {
     insn.getOpcode == GETSTATIC && {
       val fi = insn.asInstanceOf[FieldInsnNode]
       fi.owner == srBoxedUnitRef.internalName && fi.name == "UNIT" && fi.desc == srBoxedUnitRef.descriptor
     }
   }
 
-  private class Collector extends NestedClassesCollector[ClassBType] {
+  def isTraitSuperAccessor(method: MethodNode, owner: ClassBType): Boolean = {
+    owner.isInterface.get &&
+      isSyntheticMethod(method) &&
+      method.name.endsWith("$") &&
+      isStaticMethod(method) &&
+      findSingleCall(method, mi => mi.itf && mi.getOpcode == INVOKESPECIAL && mi.name + "$" == method.name).nonEmpty
+  }
+
+  def isMixinForwarder(method: MethodNode, owner: ClassBType): Boolean = {
+    !owner.isInterface.get &&
+      // isSyntheticMethod(method) && // mixin forwarders are not synthetic it seems
+      !isStaticMethod(method) &&
+      findSingleCall(method, mi => mi.itf && mi.getOpcode == INVOKESTATIC && mi.name == method.name + "$").nonEmpty
+  }
+
+  def isTraitSuperAccessorOrMixinForwarder(method: MethodNode, owner: ClassBType): Boolean = {
+    isTraitSuperAccessor(method, owner) || isMixinForwarder(method, owner)
+  }
+
+  private val nonForwarderInstructionTypes: BitSet = {
+    import AbstractInsnNode._
+    BitSet(FIELD_INSN, INVOKE_DYNAMIC_INSN, JUMP_INSN, IINC_INSN, TABLESWITCH_INSN, LOOKUPSWITCH_INSN)
+  }
+
+  /**
+   * Identify forwarders, aliases, anonfun\$adapted methods, bridges, trivial methods (x + y), etc
+   * Returns
+   *   -1 : no match
+   *    1 : trivial (no method calls), but not field getters
+   *    2 : factory
+   *    3 : forwarder with boxing adaptation
+   *    4 : generic forwarder / alias
+   *
+   * TODO: should delay some checks to `canInline` (during inlining)
+   * problem is: here we don't have access to the callee / accessed field, so we can't check accessibility
+   *   - INVOKESPECIAL is not the only way to call private methods, INVOKESTATIC is also possible
+   *   - the body of the callee can change between here (we're in inliner heuristics) and the point
+   *     when we actually inline it (code may have been inlined into the callee)
+   *   - methods accessing a public field could be inlined. on the other hand, methods accessing a private
+   *     static field should not be inlined.
+   */
+  def looksLikeForwarderOrFactoryOrTrivial(method: MethodNode, owner: InternalName, allowPrivateCalls: Boolean): Int = {
+    val paramTypes = Type.getArgumentTypes(method.desc)
+    val numPrimitives = paramTypes.count(_.getSort < Type.ARRAY) + (if (Type.getReturnType(method.desc).getSort < Type.ARRAY) 1 else 0)
+
+    val maxSize =
+      3 +                      // forwardee call, return
+        paramTypes.length +    // param load
+        numPrimitives * 2 +    // box / unbox call, for example Predef.int2Integer
+        paramTypes.length + 2  // some slack: +1 for each parameter, receiver, return value. allow things like casts.
+
+    if (method.instructions.iterator.asScala.count(_.getOpcode > 0) > maxSize) return -1
+
+    var numBoxConv = 0
+    var numCallsOrNew = 0
+    var callMi: MethodInsnNode = null
+    val it = method.instructions.iterator
+    while (it.hasNext && numCallsOrNew < 2) {
+      val i = it.next()
+      val t = i.getType
+      if (t == AbstractInsnNode.METHOD_INSN) {
+        val mi = i.asInstanceOf[MethodInsnNode]
+        if (!allowPrivateCalls && i.getOpcode == INVOKESPECIAL && mi.name != GenBCode.INSTANCE_CONSTRUCTOR_NAME) {
+          numCallsOrNew = 2 // stop here: don't inline forwarders with a private or super call
+        } else {
+          if (isScalaBox(mi) || isScalaUnbox(mi) || isPredefAutoBox(mi) || isPredefAutoUnbox(mi) || isJavaBox(mi) || isJavaUnbox(mi))
+            numBoxConv += 1
+          else {
+            numCallsOrNew += 1
+            callMi = mi
+          }
+        }
+      } else if (nonForwarderInstructionTypes(t)) {
+        if (i.getOpcode == GETSTATIC) {
+          if (!allowPrivateCalls && owner == i.asInstanceOf[FieldInsnNode].owner)
+            numCallsOrNew = 2 // stop here: not forwarder or trivial
+        } else {
+          numCallsOrNew = 2 // stop here: not forwarder or trivial
+        }
+      }
+    }
+    if (numCallsOrNew > 1 || numBoxConv > paramTypes.length + 1) -1
+    else if (numCallsOrNew == 0) if (numBoxConv == 0) 1 else 3
+    else if (callMi.name == GenBCode.INSTANCE_CONSTRUCTOR_NAME) 2
+    else if (numBoxConv > 0) 3
+    else 4
+  }
+
+  private class Collector extends NestedClassesCollector[ClassBType](nestedOnly = true) {
     def declaredNestedClasses(internalName: InternalName): List[ClassBType] =
       bTypesFromClassfile.classBTypeFromParsedClassfile(internalName).info.get.nestedClasses.force
 
     def getClassIfNested(internalName: InternalName): Option[ClassBType] = {
-      if (internalName.indexOf('$') < 0) None
-      else {
-        val c = bTypesFromClassfile.classBTypeFromParsedClassfile(internalName)
-        if (c.isNestedClass.get) Some(c) else None
-      }
+      val c = bTypesFromClassfile.classBTypeFromParsedClassfile(internalName)
+      if (c.isNestedClass.get) Some(c) else None
     }
 
     def raiseError(msg: String, sig: String, e: Option[Throwable]): Unit = {
@@ -341,11 +419,12 @@ abstract class BackendUtils extends PerRunInit {
   }
   /**
    * Visit the class node and collect all referenced nested classes.
+   * @return (declaredInnerClasses, referredInnerClasses)
    */
-  def collectNestedClasses(classNode: ClassNode): List[ClassBType] = {
+  def collectNestedClasses(classNode: ClassNode): (List[ClassBType], List[ClassBType]) = {
     val c = new Collector
     c.visit(classNode)
-    c.innerClasses.toList
+    (c.declaredInnerClasses.toList, c.referredInnerClasses.toList)
   }
 
   /*
@@ -360,58 +439,206 @@ abstract class BackendUtils extends PerRunInit {
    *
    * can-multi-thread
    */
-  final def addInnerClasses(jclass: asm.ClassVisitor, refedInnerClasses: List[ClassBType]): Unit = {
-    val allNestedClasses = refedInnerClasses.flatMap(_.enclosingNestedClassesChain.get).distinct
-
+  final def addInnerClasses(jclass: asm.tree.ClassNode, declaredInnerClasses: List[ClassBType], refedInnerClasses: List[ClassBType]): Unit = {
     // sorting ensures nested classes are listed after their enclosing class thus satisfying the Eclipse Java compiler
-    for (nestedClass <- allNestedClasses.sortBy(_.internalName.toString)) {
+    val allNestedClasses = new mutable.TreeSet[ClassBType]()(Ordering.by(_.internalName))
+    allNestedClasses ++= declaredInnerClasses
+    refedInnerClasses.foreach(_.enclosingNestedClassesChain.get.foreach(allNestedClasses += _))
+
+    for (nestedClass <- allNestedClasses) {
       // Extract the innerClassEntry - we know it exists, enclosingNestedClassesChain only returns nested classes.
-      val Some(e) = nestedClass.innerClassAttributeEntry.get
+      val Some(e) = nestedClass.innerClassAttributeEntry.get: @unchecked
       jclass.visitInnerClass(e.name, e.outerName, e.innerName, e.flags)
     }
   }
 
-  def onIndyLambdaImplMethodIfPresent(hostClass: InternalName) (action : mutable.LinkedHashSet[asm.Handle] => Unit): Unit =
+  def onIndyLambdaImplMethodIfPresent[T](hostClass: InternalName)(action: mutable.Map[MethodNode, mutable.Map[InvokeDynamicInsnNode, asm.Handle]] => T): Option[T] =
     indyLambdaImplMethods.get(hostClass) match {
-      case null =>
-      case xs => xs.synchronized(action(xs))
+      case null => None
+      case methods => Some(methods.synchronized(action(methods)))
     }
 
-  def onIndyLambdaImplMethod[T](hostClass: InternalName) (action: mutable.LinkedHashSet[asm.Handle] => T): T ={
-    val methods = indyLambdaImplMethods.computeIfAbsent(hostClass, (_) => mutable.LinkedHashSet[asm.Handle]())
-
-    methods.synchronized (action(methods))
+  def onIndyLambdaImplMethod[T](hostClass: InternalName)(action: mutable.Map[MethodNode, mutable.Map[InvokeDynamicInsnNode, asm.Handle]] => T): T = {
+    val methods = indyLambdaImplMethods.computeIfAbsent(hostClass, _ => mutable.Map.empty)
+    methods.synchronized(action(methods))
   }
 
-      /**
-   * add methods
-   * @return the added methods. Note the order is undefined
+  def addIndyLambdaImplMethod(hostClass: InternalName, method: MethodNode, indy: InvokeDynamicInsnNode, handle: asm.Handle): Unit = {
+    onIndyLambdaImplMethod(hostClass)(_.getOrElseUpdate(method, mutable.Map.empty)(indy) = handle)
+  }
+
+  def removeIndyLambdaImplMethod(hostClass: InternalName, method: MethodNode, indy: InvokeDynamicInsnNode): Unit = {
+    onIndyLambdaImplMethodIfPresent(hostClass)(_.get(method).foreach(_.remove(indy)))
+  }
+
+  /**
+   * The methods used as lambda bodies for IndyLambda instructions within `hostClass`. Note that
+   * the methods are not necessarily defined within the `hostClass` (when an IndyLambda is inlined
+   * into a different class).
    */
-  def addIndyLambdaImplMethod(hostClass: InternalName, handle: Seq[asm.Handle]): Seq[asm.Handle] = {
-    if (handle.isEmpty) Nil else onIndyLambdaImplMethod(hostClass) {
-      case set =>
-        if (set.isEmpty) {
-          set ++= handle
-          handle
-        } else {
-          var added = List.empty[asm.Handle]
-          handle foreach { h => if (set.add(h)) added ::= h }
-          added
+  def indyLambdaBodyMethods(hostClass: InternalName): mutable.SortedSet[Handle] = {
+    val res = mutable.TreeSet.empty[Handle](handleOrdering)
+    onIndyLambdaImplMethodIfPresent(hostClass)(methods => res addAll methods.valuesIterator.flatMap(_.valuesIterator))
+    res
+  }
+
+  /**
+   * The methods used as lambda bodies for IndyLambda instructions within `method` of `hostClass`.
+   */
+  def indyLambdaBodyMethods(hostClass: InternalName, method: MethodNode): Map[InvokeDynamicInsnNode, Handle] = {
+    onIndyLambdaImplMethodIfPresent(hostClass)(ms => ms.getOrElse(method, Nil).toMap).getOrElse(Map.empty)
+  }
+
+  // not in `backendReporting` since there we don't have access to the `Callsite` class
+  def optimizerWarningSiteString(cs: callGraph.Callsite): String =
+    frontendAccess.backendReporting.siteString(cs.callsiteClass.internalName, cs.callsiteMethod.name)
+}
+
+object BackendUtils {
+  /**
+   * A pseudo-flag, added MethodNodes whose maxLocals / maxStack are computed. This allows invoking
+   * `computeMaxLocalsMaxStack` whenever running an analyzer but performing the actual computation
+   * only when necessary.
+   *
+   * The largest JVM flag (as of JDK 8) is ACC_MANDATED (0x8000), however the asm framework uses
+   * the same trick and defines some pseudo flags
+   *   - ACC_DEPRECATED = 0x20000
+   *   - ACC_SYNTHETIC_ATTRIBUTE = 0x40000
+   *   - ACC_CONSTRUCTOR = 0x80000
+   *
+   * I haven't seen the value picked here in use anywhere. We make sure to remove the flag when
+   * it's no longer needed.
+   */
+  private val ACC_MAXS_COMPUTED = 0x1000000
+  def isMaxsComputed(method: MethodNode) = (method.access & ACC_MAXS_COMPUTED) != 0
+  def setMaxsComputed(method: MethodNode) = method.access |= ACC_MAXS_COMPUTED
+  def clearMaxsComputed(method: MethodNode) = method.access &= ~ACC_MAXS_COMPUTED
+
+  /**
+   * A pseudo-flag indicating if a MethodNode's unreachable code has been eliminated.
+   *
+   * The ASM Analyzer class does not compute any frame information for unreachable instructions.
+   * Transformations that use an analyzer (including inlining) therefore require unreachable code
+   * to be eliminated.
+   *
+   * This flag allows running dead code elimination whenever an analyzer is used. If the method
+   * is already optimized, DCE can return early.
+   */
+  private val ACC_DCE_DONE = 0x2000000
+  def isDceDone(method: MethodNode) = (method.access & ACC_DCE_DONE) != 0
+  def setDceDone(method: MethodNode) = method.access |= ACC_DCE_DONE
+  def clearDceDone(method: MethodNode) = method.access &= ~ACC_DCE_DONE
+
+  private val LABEL_REACHABLE_STATUS = 0x1000000
+  private def isLabelFlagSet(l: LabelNode1, f: Int): Boolean = (l.flags & f) != 0
+
+  private def setLabelFlag(l: LabelNode1, f: Int): Unit = {
+    l.flags |= f
+  }
+
+  private def clearLabelFlag(l: LabelNode1, f: Int): Unit = {
+    l.flags &= ~f
+  }
+  def isLabelReachable(label: LabelNode) = isLabelFlagSet(label.asInstanceOf[LabelNode1], LABEL_REACHABLE_STATUS)
+  def setLabelReachable(label: LabelNode) = setLabelFlag(label.asInstanceOf[LabelNode1], LABEL_REACHABLE_STATUS)
+  def clearLabelReachable(label: LabelNode) = clearLabelFlag(label.asInstanceOf[LabelNode1], LABEL_REACHABLE_STATUS)
+
+  final case class LambdaMetaFactoryCall(indy: InvokeDynamicInsnNode, samMethodType: Type, implMethod: Handle, instantiatedMethodType: Type)
+
+  object LambdaMetaFactoryCall {
+    val lambdaMetaFactoryMetafactoryHandle = new Handle(
+      Opcodes.H_INVOKESTATIC,
+      "java/lang/invoke/LambdaMetafactory",
+      "metafactory",
+      "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",
+      /* itf = */ false)
+
+    val lambdaMetaFactoryAltMetafactoryHandle = new Handle(
+      Opcodes.H_INVOKESTATIC,
+      "java/lang/invoke/LambdaMetafactory",
+      "altMetafactory",
+      "(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;[Ljava/lang/Object;)Ljava/lang/invoke/CallSite;",
+      /* itf = */ false)
+
+    def unapply(insn: AbstractInsnNode): Option[(InvokeDynamicInsnNode, Type, Handle, Type, Array[Type])] = insn match {
+      case indy: InvokeDynamicInsnNode if indy.bsm == lambdaMetaFactoryMetafactoryHandle || indy.bsm == lambdaMetaFactoryAltMetafactoryHandle =>
+        indy.bsmArgs match {
+          case Array(samMethodType: Type, implMethod: Handle, instantiatedMethodType: Type, _@_*) =>
+            // LambdaMetaFactory performs a number of automatic adaptations when invoking the lambda
+            // implementation method (casting, boxing, unboxing, and primitive widening, see Javadoc).
+            //
+            // The closure optimizer supports only one of those adaptations: it will cast arguments
+            // to the correct type when re-writing a closure call to the body method. Example:
+            //
+            //   val fun: String => String = l => l
+            //   val l = List("")
+            //   fun(l.head)
+            //
+            // The samMethodType of Function1 is `(Object)Object`, while the instantiatedMethodType
+            // is `(String)String`. The return type of `List.head` is `Object`.
+            //
+            // The implMethod has the signature `C$anonfun(String)String`.
+            //
+            // At the closure callsite, we have an `INVOKEINTERFACE Function1.apply (Object)Object`,
+            // so the object returned by `List.head` can be directly passed into the call (no cast).
+            //
+            // The closure object will cast the object to String before passing it to the implMethod.
+            //
+            // When re-writing the closure callsite to the implMethod, we have to insert a cast.
+            //
+            // The check below ensures that
+            //   (1) the implMethod type has the expected signature (captured types plus argument types
+            //       from instantiatedMethodType)
+            //   (2) the receiver of the implMethod matches the first captured type, if any, otherwise
+            //       the first parameter type of instantiatedMethodType
+            //   (3) all parameters that are not the same in samMethodType and instantiatedMethodType
+            //       are reference types, so that we can insert casts to perform the same adaptation
+            //       that the closure object would.
+
+            val isStatic                   = implMethod.getTag == Opcodes.H_INVOKESTATIC
+            val indyParamTypes             = Type.getArgumentTypes(indy.desc)
+            val instantiatedMethodArgTypes = instantiatedMethodType.getArgumentTypes
+
+            val (receiverType, expectedImplMethodType) =
+              if (isStatic) {
+                val paramTypes = indyParamTypes ++ instantiatedMethodArgTypes
+                (None, Type.getMethodType(instantiatedMethodType.getReturnType, paramTypes: _*))
+              } else if (implMethod.getTag == H_NEWINVOKESPECIAL) {
+                (Some(instantiatedMethodType.getReturnType), Type.getMethodType(Type.VOID_TYPE, instantiatedMethodArgTypes: _*))
+              } else {
+                if (indyParamTypes.nonEmpty) {
+                  val paramTypes = indyParamTypes.tail ++ instantiatedMethodArgTypes
+                  (Some(indyParamTypes(0)), Type.getMethodType(instantiatedMethodType.getReturnType, paramTypes: _*))
+                } else {
+                  val paramTypes = instantiatedMethodArgTypes.tail
+                  (Some(instantiatedMethodArgTypes(0)), Type.getMethodType(instantiatedMethodType.getReturnType, paramTypes: _*))
+                }
+              }
+
+            val isIndyLambda = (
+              Type.getType(implMethod.getDesc) == expectedImplMethodType                 // (1)
+                && receiverType.forall(rt => implMethod.getOwner == rt.getInternalName)  // (2)
+                && samMethodType.getArgumentTypes.corresponds(instantiatedMethodArgTypes)((samArgType, instArgType) =>
+                samArgType == instArgType || isReference(samArgType) && isReference(instArgType)) // (3)
+              )
+
+            if (isIndyLambda) Some((indy, samMethodType, implMethod, instantiatedMethodType, indyParamTypes))
+            else None
+
+          case _ => None
         }
+      case _ => None
     }
   }
 
-  def addIndyLambdaImplMethod(hostClass: InternalName, handle: asm.Handle): Boolean = {
-    onIndyLambdaImplMethod(hostClass) {
-      _ add handle
-    }
+  def maxLocals(method: MethodNode): Int = {
+    computeMaxLocalsMaxStack(method)
+    method.maxLocals
   }
 
-  def removeIndyLambdaImplMethod(hostClass: InternalName, handle: Seq[asm.Handle]): Unit = {
-    if (handle.nonEmpty)
-      onIndyLambdaImplMethodIfPresent(hostClass) {
-        _ --= handle
-      }
+  def maxStack(method: MethodNode): Int = {
+    computeMaxLocalsMaxStack(method)
+    method.maxStack
   }
 
   /**
@@ -459,8 +686,6 @@ abstract class BackendUtils extends PerRunInit {
         r
       }
 
-      val subroutineRetTargets = new mutable.Stack[AbstractInsnNode]
-
       // for each instruction in the queue, contains the stack height at this instruction.
       // once an instruction has been treated, contains -1 to prevent re-enqueuing
       val stackHeights = new Array[Int](size)
@@ -482,6 +707,19 @@ abstract class BackendUtils extends PerRunInit {
         enqInsn(tcb.handler, 1)
         if (maxStack == 0) maxStack = 1
       }
+
+      /* Subroutines are jumps, historically used for `finally` (https://www.artima.com/underthehood/finally.html)
+       *   - JSR pushes the return address (next instruction) on the stack and jumps to a label
+       *   - The subroutine typically saves the address to a local variable (ASTORE x)
+       *   - The subroutine typically jumps back to the return address using `RET x`, where `x` is the local variable
+       *
+       * However, the JVM spec does not require subroutines to `RET x` to their caller, they could return back to an
+       * outer subroutine caller (nested subroutines), or `RETURN`, or use a static jump. Static analysis of subroutines
+       * is therefore complex (https://www21.in.tum.de/~kleing/papers/KleinW-TPHOLS03.pdf).
+       *
+       * The asm.Analyzer however makes the assumption that subroutines only occur in the shape emitted by early
+       * javac, i.e., `RET` always returns to the next enclosing caller. So we do that as well.
+       */
 
       enq(0)
       while (top != -1) {
@@ -511,14 +749,14 @@ abstract class BackendUtils extends PerRunInit {
 
           insn match {
             case j: JumpInsnNode =>
-              if (j.getOpcode == JSR) {
+              val opc = j.getOpcode
+              if (opc == JSR) {
                 val jsrTargetHeight = heightAfter + 1
                 if (jsrTargetHeight > maxStack) maxStack = jsrTargetHeight
-                subroutineRetTargets.push(j.getNext)
                 enqInsn(j.label, jsrTargetHeight)
+                enqInsnIndex(insnIndex + 1, heightAfter) // see subroutine shape assumption above
               } else {
                 enqInsn(j.label, heightAfter)
-                val opc = j.getOpcode
                 if (opc != GOTO) enqInsnIndex(insnIndex + 1, heightAfter) // jump is conditional, so the successor is also a possible control flow target
               }
 
@@ -537,11 +775,10 @@ abstract class BackendUtils extends PerRunInit {
               enqInsn(t.dflt, heightAfter)
 
             case r: VarInsnNode if r.getOpcode == RET =>
-              enqInsn(subroutineRetTargets.pop(), heightAfter)
+              // the target is already enqueued, see subroutine shape assumption above
 
             case _ =>
-              val opc = insn.getOpcode
-              if (opc != ATHROW && !isReturn(insn))
+              if (insn.getOpcode != ATHROW && !isReturn(insn))
                 enqInsnIndex(insnIndex + 1, heightAfter)
           }
         }
@@ -553,50 +790,17 @@ abstract class BackendUtils extends PerRunInit {
       setMaxsComputed(method)
     }
   }
-}
 
-object BackendUtils {
-  /**
-   * A pseudo-flag, added MethodNodes whose maxLocals / maxStack are computed. This allows invoking
-   * `computeMaxLocalsMaxStack` whenever running an analyzer but performing the actual computation
-   * only when necessary.
-   *
-   * The largest JVM flag (as of JDK 8) is ACC_MANDATED (0x8000), however the asm framework uses
-   * the same trick and defines some pseudo flags
-   *   - ACC_DEPRECATED = 0x20000
-   *   - ACC_SYNTHETIC_ATTRIBUTE = 0x40000
-   *   - ACC_CONSTRUCTOR = 0x80000
-   *
-   * I haven't seen the value picked here in use anywhere. We make sure to remove the flag when
-   * it's no longer needed.
-   */
-  private val ACC_MAXS_COMPUTED = 0x1000000
-  def isMaxsComputed(method: MethodNode) = (method.access & ACC_MAXS_COMPUTED) != 0
-  def setMaxsComputed(method: MethodNode) = method.access |= ACC_MAXS_COMPUTED
-  def clearMaxsComputed(method: MethodNode) = method.access &= ~ACC_MAXS_COMPUTED
+  abstract class NestedClassesCollector[T](nestedOnly: Boolean) extends GenericSignatureVisitor(nestedOnly) {
 
-  /**
-   * A pseudo-flag indicating if a MethodNode's unreachable code has been eliminated.
-   *
-   * The ASM Analyzer class does not compute any frame information for unreachable instructions.
-   * Transformations that use an analyzer (including inlining) therefore require unreachable code
-   * to be eliminated.
-   *
-   * This flag allows running dead code elimination whenever an analyzer is used. If the method
-   * is already optimized, DCE can return early.
-   */
-  private val ACC_DCE_DONE = 0x2000000
-  def isDceDone(method: MethodNode) = (method.access & ACC_DCE_DONE) != 0
-  def setDceDone(method: MethodNode) = method.access |= ACC_DCE_DONE
-  def clearDceDone(method: MethodNode) = method.access &= ~ACC_DCE_DONE
+    val declaredInnerClasses = mutable.Set.empty[T]
+    val referredInnerClasses = mutable.Set.empty[T]
 
-  private val LABEL_REACHABLE_STATUS = 0x1000000
-  def isLabelReachable(label: LabelNode) = LabelAccess.isLabelFlagSet(label.getLabel, LABEL_REACHABLE_STATUS)
-  def setLabelReachable(label: LabelNode) = LabelAccess.setLabelFlag(label.getLabel, LABEL_REACHABLE_STATUS)
-  def clearLabelReachable(label: LabelNode) = LabelAccess.clearLabelFlag(label.getLabel, LABEL_REACHABLE_STATUS)
-
-  abstract class NestedClassesCollector[T] extends GenericSignatureVisitor {
-    val innerClasses = mutable.Set.empty[T]
+    def innerClasses: collection.Set[T] = declaredInnerClasses ++ referredInnerClasses
+    def clear(): Unit = {
+      declaredInnerClasses.clear()
+      referredInnerClasses.clear()
+    }
 
     def declaredNestedClasses(internalName: InternalName): List[T]
 
@@ -604,7 +808,7 @@ object BackendUtils {
 
     def visit(classNode: ClassNode): Unit = {
       visitInternalName(classNode.name)
-      innerClasses ++= declaredNestedClasses(classNode.name)
+      declaredInnerClasses ++= declaredNestedClasses(classNode.name)
 
       visitInternalName(classNode.superName)
       classNode.interfaces.asScala foreach visitInternalName
@@ -656,9 +860,15 @@ object BackendUtils {
       }
     }
 
-    def visitInternalName(internalName: InternalName): Unit = if (internalName != null) {
-      for (c <- getClassIfNested(internalName))
-        innerClasses += c
+    private def containsChar(s: String, offset: Int, length: Int, char: Char): Boolean = {
+      val ix = s.indexOf(char, offset)
+      !(ix == -1 || ix >= offset + length)
+    }
+
+    def visitInternalName(internalName: String, offset: Int, length: Int): Unit = if (internalName != null && containsChar(internalName, offset, length, '$')) {
+      for (c <- getClassIfNested(internalName.substring(offset, length)))
+        if (!declaredInnerClasses.contains(c))
+          referredInnerClasses += c
     }
 
     // either an internal/Name or [[Linternal/Name; -- there are certain references in classfiles
@@ -667,7 +877,7 @@ object BackendUtils {
     def visitInternalNameOrArrayReference(ref: String): Unit = if (ref != null) {
       val bracket = ref.lastIndexOf('[')
       if (bracket == -1) visitInternalName(ref)
-      else if (ref.charAt(bracket + 1) == 'L') visitInternalName(ref.substring(bracket + 2, ref.length - 1))
+      else if (ref.charAt(bracket + 1) == 'L') visitInternalName(ref, bracket + 2, ref.length - 1)
     }
 
     // we are only interested in the class references in the descriptor, so we can skip over
@@ -678,15 +888,17 @@ object BackendUtils {
         while (i < desc.length) {
           if (desc.charAt(i) == 'L') {
             val start = i + 1 // skip the L
-            while (desc.charAt(i) != ';') i += 1
-            visitInternalName(desc.substring(start, i))
+            var seenDollar = false
+            while ({val ch = desc.charAt(i); seenDollar ||= (ch == '$'); ch != ';'}) i += 1
+            if (seenDollar)
+              visitInternalName(desc, start, i)
           }
           // skips over '[', ')', primitives
           i += 1
         }
 
       case 'L' =>
-        visitInternalName(desc.substring(1, desc.length - 1))
+        visitInternalName(desc, 1, desc.length - 1)
 
       case '[' =>
         visitInternalNameOrArrayReference(desc)
@@ -717,29 +929,28 @@ object BackendUtils {
     }
   }
 
-  abstract class GenericSignatureVisitor {
-    def visitInternalName(internalName: InternalName): Unit
+  abstract class GenericSignatureVisitor(nestedOnly: Boolean) {
+    final def visitInternalName(internalName: String): Unit = visitInternalName(internalName, 0, if (internalName eq null) 0 else internalName.length)
+    def visitInternalName(internalName: String, offset: Int, length: Int): Unit
 
     def raiseError(msg: String, sig: String, e: Option[Throwable] = None): Unit
 
     def visitClassSignature(sig: String): Unit = if (sig != null) {
-      val p = new Parser(sig)
+      val p = new Parser(sig, nestedOnly)
       p.safely { p.classSignature() }
     }
 
     def visitMethodSignature(sig: String): Unit = if (sig != null) {
-      val p = new Parser(sig)
+      val p = new Parser(sig, nestedOnly)
       p.safely { p.methodSignature() }
     }
 
     def visitFieldSignature(sig: String): Unit = if (sig != null) {
-      val p = new Parser(sig)
+      val p = new Parser(sig, nestedOnly)
       p.safely { p.fieldSignature() }
     }
 
-    private final class Parser(sig: String) {
-      // For performance, `Char => Boolean` is not specialized
-      private trait CharBooleanFunction { def apply(c: Char): Boolean }
+    private final class Parser(sig: String, nestedOnly: Boolean) {
 
       private var index = 0
       private val end = sig.length
@@ -810,10 +1021,20 @@ object BackendUtils {
 
       @tailrec private def referenceTypeSignature(): Unit = getCurrentAndSkip() match {
         case 'L' =>
-          val names = new java.lang.StringBuilder(32)
+          var names: java.lang.StringBuilder = null
 
-          appendUntil(names, isClassNameEnd)
-          visitInternalName(names.toString)
+          val start = index
+          var seenDollar = false
+          while (!isClassNameEnd(current)) {
+            seenDollar ||= current == '$'
+            index += 1
+          }
+          if ((current == '.' || seenDollar) || !nestedOnly) {
+            // OPT: avoid allocations when only a top-level class is encountered
+            names = new java.lang.StringBuilder(32)
+            names.append(sig, start, index)
+            visitInternalName(names.toString)
+          }
           typeArguments()
 
           while (current == '.') {
@@ -876,4 +1097,118 @@ object BackendUtils {
       }
     }
   }
+
+  object handleOrdering extends Ordering[Handle] {
+    override def compare(x: Handle, y: Handle): Int = {
+      if (x eq y) return 0
+
+      val t = Ordering.Int.compare(x.getTag, y.getTag)
+      if (t != 0) return t
+
+      val i = Ordering.Boolean.compare(x.isInterface, y.isInterface)
+      if (x.isInterface != y.isInterface) return i
+
+      val o = x.getOwner compareTo y.getOwner
+      if (o != 0) return o
+
+      val n = x.getName compareTo y.getName
+      if (n != 0) return n
+
+      x.getDesc compareTo y.getDesc
+    }
+  }
+
+  def isArrayGetLength(mi: MethodInsnNode): Boolean = mi.owner == "java/lang/reflect/Array" && mi.name == "getLength" && mi.desc == "(Ljava/lang/Object;)I"
+
+  // If argument i of the method is null-checked, the bit `i+1` of the result is 1
+  def argumentsNullCheckedByCallee(mi: MethodInsnNode): Long = {
+    if (isArrayGetLength(mi)) 1
+    else 0
+  }
+
+  def classTagNewArrayArg(mi: MethodInsnNode, prodCons: ProdConsAnalyzer): InternalName = {
+    if (mi.name == "newArray" && mi.owner == "scala/reflect/ClassTag" && mi.desc == "(I)Ljava/lang/Object;") {
+      val prods = prodCons.initialProducersForValueAt(mi, prodCons.frameAt(mi).stackTop - 1)
+      if (prods.size == 1) prods.head match {
+        case ctApply: MethodInsnNode =>
+          if (ctApply.name == "apply" && ctApply.owner == "scala/reflect/ClassTag$" && ctApply.desc == "(Ljava/lang/Class;)Lscala/reflect/ClassTag;") {
+            val clsProd = prodCons.initialProducersForValueAt(ctApply, prodCons.frameAt(ctApply).stackTop)
+            if (clsProd.size == 1) clsProd.head match {
+              case ldc: LdcInsnNode =>
+                ldc.cst match {
+                  case tp: Type if tp.getSort == Type.OBJECT || tp.getSort == Type.ARRAY =>
+                    return tp.getInternalName
+                  case _ =>
+                }
+              case _ =>
+            }
+          }
+        case _ =>
+      }
+    }
+    null
+  }
+
+  // Check for an Array.getLength(x) call where x is statically known to be of array type
+  def isArrayGetLengthOnStaticallyKnownArray(mi: MethodInsnNode, typeAnalyzer: NonLubbingTypeFlowAnalyzer): Boolean = {
+    isArrayGetLength(mi) && {
+      val f = typeAnalyzer.frameAt(mi)
+      f.getValue(f.stackTop).getType.getSort == Type.ARRAY
+    }
+  }
+
+  def getClassOnStaticallyKnownPrimitiveArray(mi: MethodInsnNode, typeAnalyzer: NonLubbingTypeFlowAnalyzer): Type = {
+    if (mi.name == "getClass" && mi.owner == "java/lang/Object" && mi.desc == "()Ljava/lang/Class;") {
+      val f = typeAnalyzer.frameAt(mi)
+      val tp = f.getValue(f.stackTop).getType
+      if (tp.getSort == Type.ARRAY) {
+        if (tp.getElementType.getSort != Type.OBJECT)
+          return tp
+      }
+    }
+    null
+  }
+
+  lazy val primitiveTypes: Map[String, Type] = Map(
+    ("Unit", Type.VOID_TYPE),
+    ("Boolean", Type.BOOLEAN_TYPE),
+    ("Char", Type.CHAR_TYPE),
+    ("Byte", Type.BYTE_TYPE),
+    ("Short", Type.SHORT_TYPE),
+    ("Int", Type.INT_TYPE),
+    ("Float", Type.FLOAT_TYPE),
+    ("Long", Type.LONG_TYPE),
+    ("Double", Type.DOUBLE_TYPE))
+
+  private val primitiveManifestApplies: Map[String, String] = primitiveTypes map {
+    case (k, _) => (k, s"()Lscala/reflect/ManifestFactory$$${k}Manifest;")
+  }
+
+  def isClassTagApply(mi: MethodInsnNode): Boolean = {
+    mi.owner == "scala/reflect/ClassTag$" && {
+      mi.name == "apply" && mi.desc == "(Ljava/lang/Class;)Lscala/reflect/ClassTag;" ||
+        primitiveManifestApplies.get(mi.name).contains(mi.desc)
+    }
+  }
+
+  def isModuleLoad(insn: AbstractInsnNode, nameMatches: InternalName => Boolean): Boolean = insn match {
+    case fi: FieldInsnNode =>
+      fi.getOpcode == GETSTATIC &&
+        nameMatches(fi.owner) &&
+        fi.name == "MODULE$" &&
+        fi.desc.length == fi.owner.length + 2 &&
+        fi.desc.regionMatches(1, fi.owner, 0, fi.owner.length)
+    case _ => false
+  }
+
+  def isRuntimeArrayLoadOrUpdate(insn: AbstractInsnNode): Boolean = insn.getOpcode == Opcodes.INVOKEVIRTUAL && {
+    val mi = insn.asInstanceOf[MethodInsnNode]
+    mi.owner == "scala/runtime/ScalaRunTime$" && {
+      mi.name == "array_apply" && mi.desc == "(Ljava/lang/Object;I)Ljava/lang/Object;" ||
+        mi.name == "array_update" && mi.desc == "(Ljava/lang/Object;ILjava/lang/Object;)V"
+    }
+  }
 }
+
+// For performance (`Char => Boolean` is not specialized)
+private trait CharBooleanFunction { def apply(c: Char): Boolean }

@@ -1,9 +1,14 @@
-/*     ___ ____ ___   __   ___   ___
-**    / _// __// _ | / /  / _ | / _ \  Scala classfile decoder
-**  __\ \/ /__/ __ |/ /__/ __ |/ ___/  (c) 2003-2013, LAMP/EPFL
-** /____/\___/_/ |_/____/_/ |_/_/      http://scala-lang.org/
-**
-*/
+/*
+ * Scala classfile decoder (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 // $Id$
 
@@ -49,8 +54,8 @@ object Decode {
     import classFile._
 
     classFile annotation SCALA_SIG_ANNOTATION map { case Annotation(_, els) =>
-      val bytesElem = els find (x => constant(x.elementNameIndex) == BYTES_VALUE) orNull
-      val _bytes    = bytesElem.elementValue match { case ConstValueIndex(x) => constantWrapped(x) }
+      val bytesElem = els.find(x => constant(x.elementNameIndex) == BYTES_VALUE).orNull
+      val _bytes    = bytesElem.elementValue match { case ConstValueIndex(x) => constantWrapped(x) case x => throw new MatchError(x) }
       val bytes     = _bytes.asInstanceOf[StringBytesPair].bytes
       val length    = ByteCodecs.decode(bytes)
 

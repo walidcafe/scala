@@ -2,80 +2,16 @@ package scala.collection
 
 import org.junit.Assert._
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 
-object TraversableLikeTest {
-  abstract class FakeIndexedSeq[A] extends IndexedSeq[A] {
-    def apply(i: Int): A = ???
-    def length: Int = 0
-  }
-}
-
-@RunWith(classOf[JUnit4])
 class TraversableLikeTest {
-  import TraversableLikeTest._
-
-  // For test_SI9019; out here because as of test writing, putting this in a method would crash compiler
-  class Baz[@specialized(Int) A]() extends IndexedSeq[A] {
-    def apply(i: Int) = ???
-    def length: Int = 0
-  }
-
   @Test
-  def test_SI9019: Unit = {
-    object Foo {
-      def mkBar = () => {
-        class Bar extends FakeIndexedSeq[Int]
-        new Bar
-      }
-
-      def mkFalsePositiveToSyntheticTest = () => {
-        /* A class whose name tarts with an ASCII lowercase letter.
-         * It will be a false positive to the synthetic-part test.
-         */
-        class falsePositive extends FakeIndexedSeq[Int]
-        new falsePositive
-      }
-
-      def mkFrench = () => {
-        // For non-French speakers, this means "strange class name"
-        class ÉtrangeNomDeClasse extends FakeIndexedSeq[Int]
-        new ÉtrangeNomDeClasse
-      }
-
-      def mkFrenchLowercase = () => {
-        class étrangeNomDeClasseMinuscules extends FakeIndexedSeq[Int]
-        new étrangeNomDeClasseMinuscules
-      }
-    }
-
-    val bar = Foo.mkBar()
-    assertEquals("Bar", bar.collectionClassName)  // Previously would have been outermost class, TraversableLikeTest
-
-    val baz = new Baz[Int]()
-    assertEquals("TraversableLikeTest.Baz", baz.collectionClassName)  // Make sure we don't see specialization $mcI$sp stuff
-
-    // The false positive unfortunately produces an empty collectionClassName
-    val falsePositive = Foo.mkFalsePositiveToSyntheticTest()
-    assertEquals("", falsePositive.collectionClassName)
-
-    val french = Foo.mkFrench()
-    assertEquals("ÉtrangeNomDeClasse", french.collectionClassName)
-
-    val frenchLowercase = Foo.mkFrenchLowercase()
-    assertEquals("étrangeNomDeClasseMinuscules", frenchLowercase.collectionClassName)
-  }
-
-  @Test
-  def test_SI10631 {
+  def `SI10631 calling seqview.map.last evaluates head twice`(): Unit = {
     val baselist = List(1, 2)
     var checklist = List.empty[Int]
     val lst = baselist.view.map { x =>
       checklist = x :: checklist
       x
     }
-
     assertEquals(2, lst.last)
     assertEquals(baselist.reverse, checklist)
   }

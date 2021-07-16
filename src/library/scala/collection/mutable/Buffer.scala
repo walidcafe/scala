@@ -1,5 +1,19 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc.
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.collection
 package mutable
+
+import scala.annotation.nowarn
 
 
 /** A `Buffer` is a growable and shrinkable `Seq`. */
@@ -7,9 +21,12 @@ trait Buffer[A]
   extends Seq[A]
     with SeqOps[A, Buffer, Buffer[A]]
     with Growable[A]
-    with Shrinkable[A] {
+    with Shrinkable[A]
+    with IterableFactoryDefaults[A, Buffer] {
 
   override def iterableFactory: SeqFactory[Buffer] = Buffer
+
+  override def knownSize: Int = super[Seq].knownSize
 
   //TODO Prepend is a logical choice for a readable name of `+=:` but it conflicts with the renaming of `append` to `add`
   /** Prepends a single element at the front of this $coll.
@@ -19,13 +36,31 @@ trait Buffer[A]
     */
   def prepend(elem: A): this.type
 
-  @deprecated("Use .addOne or += instead of .append", "2.13.0")
+  /** Appends the given elements to this buffer.
+    *
+    *  @param elem  the element to append.
+    */
   @`inline` final def append(elem: A): this.type = addOne(elem)
+
+  @deprecated("Use appendAll instead", "2.13.0")
+  @`inline` final def append(elems: A*): this.type = addAll(elems)
+
+  /** Appends the elements contained in a iterable object to this buffer.
+    *  @param xs  the iterable object containing the elements to append.
+    */
+  @`inline` final def appendAll(xs: IterableOnce[A]): this.type = addAll(xs)
+
 
   /** Alias for `prepend` */
   @`inline` final def +=: (elem: A): this.type = prepend(elem)
 
   def prependAll(elems: IterableOnce[A]): this.type = { insertAll(0, elems); this }
+
+  @deprecated("Use prependAll instead", "2.13.0")
+  @`inline` final def prepend(elems: A*): this.type = prependAll(elems)
+
+  /** Alias for `prependAll` */
+  @inline final def ++=:(elems: IterableOnce[A]): this.type = prependAll(elems)
 
   /** Inserts a new element at a given index into this buffer.
     *
@@ -68,25 +103,36 @@ trait Buffer[A]
   @throws[IndexOutOfBoundsException]
   @throws[IllegalArgumentException]
   def remove(idx: Int, count: Int): Unit
+  
+  /** Removes a single element from this buffer, at its first occurrence.
+    *  If the buffer does not contain that element, it is unchanged.
+    *
+    *  @param x  the element to remove.
+    *  @return   the buffer itself
+    */
+  def subtractOne (x: A): this.type = {
+    val i = indexOf(x)
+    if (i != -1) remove(i)
+    this
+  }
 
   /** Removes the first ''n'' elements of this buffer.
     *
     *  @param n  the number of elements to remove from the beginning
     *            of this buffer.
     */
-  def trimStart(n: Int): Unit = remove(0, normalized(n))
+  @deprecated("use dropInPlace instead", since = "2.13.4")
+  def trimStart(n: Int): Unit = dropInPlace(n)
 
   /** Removes the last ''n'' elements of this buffer.
     *
     *  @param n  the number of elements to remove from the end
     *            of this buffer.
     */
-  def trimEnd(n: Int): Unit = {
-    val norm = normalized(n)
-    remove(length - norm, norm)
-  }
+  @deprecated("use dropRightInPlace instead", since = "2.13.4")
+  def trimEnd(n: Int): Unit = dropRightInPlace(n)
 
-  def patchInPlace(from: Int, patch: scala.collection.Seq[A], replaced: Int): this.type
+  def patchInPlace(from: Int, patch: scala.collection.IterableOnce[A], replaced: Int): this.type
 
   // +=, ++=, clear inherited from Growable
   // Per remark of @ichoran, we should preferably not have these:
@@ -122,9 +168,17 @@ trait Buffer[A]
     while (length < len) +=(elem)
     this
   }
+
+  @nowarn("""cat=deprecation&origin=scala\.collection\.Iterable\.stringPrefix""")
+  override protected[this] def stringPrefix = "Buffer"
 }
 
-trait IndexedOptimizedBuffer[A] extends IndexedOptimizedSeq[A] with Buffer[A] {
+trait IndexedBuffer[A] extends IndexedSeq[A]
+  with IndexedSeqOps[A, IndexedBuffer, IndexedBuffer[A]]
+  with Buffer[A]
+  with IterableFactoryDefaults[A, IndexedBuffer] {
+
+  override def iterableFactory: SeqFactory[IndexedBuffer] = IndexedBuffer
 
   def flatMapInPlace(f: A => IterableOnce[A]): this.type = {
     // There's scope for a better implementation which copies elements in place.
@@ -153,17 +207,17 @@ trait IndexedOptimizedBuffer[A] extends IndexedOptimizedSeq[A] with Buffer[A] {
     if (i == j) this else takeInPlace(j)
   }
 
-  def patchInPlace(from: Int, patch: scala.collection.Seq[A], replaced: Int): this.type = {
+  def patchInPlace(from: Int, patch: scala.collection.IterableOnce[A], replaced: Int): this.type = {
     val replaced0 = math.min(math.max(replaced, 0), length)
     val i = math.min(math.max(from, 0), length)
     var j = 0
-    val n = math.min(patch.length, replaced0)
-    while (j < n && i + j < length) {
-      update(i + j, patch(j))
+    val iter = patch.iterator
+    while (iter.hasNext && j < replaced0 && i + j < length) {
+      update(i + j, iter.next())
       j += 1
     }
-    if (j < patch.length) insertAll(i + j, patch.iterator.drop(j))
-    else if (j < replaced0) remove(i + j, replaced0 - j)
+    if (iter.hasNext) insertAll(i + j, iter)
+    else if (j < replaced0) remove(i + j, math.min(replaced0 - j, length - i - j))
     this
   }
 }
@@ -171,6 +225,8 @@ trait IndexedOptimizedBuffer[A] extends IndexedOptimizedSeq[A] with Buffer[A] {
 @SerialVersionUID(3L)
 object Buffer extends SeqFactory.Delegate[Buffer](ArrayBuffer)
 
-/** Explicit instantiation of the `Buffer` trait to reduce class file size in subclasses. */
 @SerialVersionUID(3L)
+object IndexedBuffer extends SeqFactory.Delegate[IndexedBuffer](ArrayBuffer)
+
+/** Explicit instantiation of the `Buffer` trait to reduce class file size in subclasses. */
 abstract class AbstractBuffer[A] extends AbstractSeq[A] with Buffer[A]

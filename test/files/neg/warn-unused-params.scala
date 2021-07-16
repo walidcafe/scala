@@ -1,3 +1,5 @@
+// scalac: -Wunused:params -Werror
+//
 
 trait InterFace {
   /** Call something. */
@@ -11,7 +13,7 @@ trait BadAPI extends InterFace {
     println(c)
     a
   }
-  @deprecated ("no warn in deprecated API", since="yesterday")
+  @deprecated("no warn in deprecated API", since="yesterday")
   def g(a: Int,
         b: String,               // no warn
         c: Double): Int = {
@@ -71,3 +73,30 @@ class Main {
 trait Unimplementation {
   def f(u: Int): Int = ???        // no warn for param in unimplementation
 }
+
+trait DumbStuff {
+  def f(implicit dummy: DummyImplicit) = 42
+  def g(dummy: DummyImplicit) = 42
+}
+trait Proofs {
+  def f[A, B](implicit ev: A =:= B) = 42
+  def g[A, B](implicit ev: A <:< B) = 42
+  def f2[A, B](ev: A =:= B) = 42
+  def g2[A, B](ev: A <:< B) = 42
+}
+
+trait Anonymous {
+  def f = (i: Int) => 42      // warn
+
+  def f1 = (_: Int) => 42     // no warn underscore parameter (a fresh name)
+
+  def f2: Int => Int = _ + 1  // no warn placeholder syntax (a fresh name and synthetic parameter)
+
+  def g = for (i <- List(1)) yield 42    // warn map.(i => 42)
+}
+trait Context[A]
+trait Implicits {
+  def f[A](implicit ctx: Context[A]) = 42
+  def g[A: Context] = 42
+}
+class Bound[A: Context]
