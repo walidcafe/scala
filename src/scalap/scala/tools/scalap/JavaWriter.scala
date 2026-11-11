@@ -1,10 +1,14 @@
-/*     ___ ____ ___   __   ___   ___
-**    / _// __// _ | / /  / _ | / _ \    Scala classfile decoder
-**  __\ \/ /__/ __ |/ /__/ __ |/ ___/    (c) 2003-2013, LAMP/EPFL
-** /____/\___/_/ |_/____/_/ |_/_/        http://scala-lang.org/
-**
-*/
-
+/*
+ * Scala classfile decoder (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.tools.scalap
 
@@ -116,7 +120,7 @@ class JavaWriter(classfile: Classfile, writer: Writer) extends CodeWriter(writer
   def isConstr(name: String) = (name == "<init>")
 
   def printField(flags: Int, name: Int, tpe: Int, attribs: List[cf.Attribute]): Unit = {
-    print(flagsToStr(false, flags))
+    print(flagsToStr(clazz = false, flags))
     if ((flags & 0x0010) != 0)
       print("val " + NameTransformer.decode(getName(name)))
     else
@@ -126,7 +130,7 @@ class JavaWriter(classfile: Classfile, writer: Writer) extends CodeWriter(writer
 
   def printMethod(flags: Int, name: Int, tpe: Int, attribs: List[cf.Attribute]): Unit = {
     if (getName(name) == "<init>")
-    print(flagsToStr(false, flags))
+    print(flagsToStr(clazz = false, flags))
     if (getName(name) == "<init>") {
       print("def this" + getType(tpe) + ";").newline
     }
@@ -167,17 +171,17 @@ class JavaWriter(classfile: Classfile, writer: Writer) extends CodeWriter(writer
     val pck = getPackage(cf.classname)
     if (pck.length() > 0)
       println("package " + pck + ";")
-    print(flagsToStr(true, cf.flags))
+    print(flagsToStr(clazz = true, cf.flags))
     cf.attribs find {
       case cf.Attribute(name, _) => getName(name) == "JacoMeta"
     } match {
       case None =>
-        printClassHeader;
+        printClassHeader();
       case Some(cf.Attribute(_, data)) =>
         val mp = new MetaParser(getName(
           ((data(0) & 0xff) << 8) + (data(1) & 0xff)).trim())
         mp.parse match {
-          case None => printClassHeader;
+          case None => printClassHeader();
           case Some(str) =>
             if (isInterface(cf.flags))
               print("trait " + getSimpleClassName(cf.classname) + str)

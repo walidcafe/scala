@@ -1,14 +1,19 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author Manohar Jonnalagedda
- * @author Gilles Dubochet
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package doc
 package model
 
-import scala.collection._
 import base.comment._
 import diagram._
 
@@ -96,8 +101,8 @@ trait TemplateEntity extends Entity {
   /** Whether documentation is available for this template. */
   def isDocTemplate: Boolean
 
-  /** Whether this template is a case class. */
-  def isCaseClass: Boolean
+  /** Whether this template is a case class or a case object. */
+  def isCase: Boolean
 
   /** The self-type of this template, if it differs from the template type. */
   def selfType : Option[TypeEntity]
@@ -343,8 +348,8 @@ trait Object extends MemberTemplateEntity {
 }
 
 /** An annotation template. Any class which extends `scala.annotation.Annotation` */
-trait AnnotationClass extends MemberTemplateEntity {
-  def kind = "annotation"
+trait AnnotationClass extends Class {
+  override def kind = "annotation"
 }
 
 /** A package template. A package is in the universe if it is declared as a package object, or if it
@@ -536,7 +541,7 @@ trait ImplicitMemberShadowing {
 }
 
 /** A trait that encapsulates a constraint necessary for implicit conversion */
-trait Constraint
+sealed trait Constraint
 
 /** A constraint involving a type parameter which must be in scope */
 trait ImplicitInScopeConstraint extends Constraint {
@@ -565,7 +570,7 @@ trait KnownTypeClassConstraint extends TypeClassConstraint {
 }
 
 /** A constraint involving a type parameter */
-trait TypeParamConstraint extends Constraint {
+sealed trait TypeParamConstraint extends Constraint {
   /** The type parameter involved */
   def typeParamName: String
 }

@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 
 import scala.reflect.macros.{ReificationException, UnexpectedReificationException, TypecheckException}
@@ -66,37 +78,35 @@ abstract class Taggers {
           translatingReificationErrors(materializer)
       }
     try c.typecheck(result)
-    catch { case terr @ TypecheckException(pos, msg) => failTag(result, terr) }
+    catch { case terr: TypecheckException => failTag(result, terr) }
   }
 
   def materializeExpr(universe: Tree, mirror: Tree, expr: Tree): Tree = {
     val result = translatingReificationErrors(c.reifyTree(universe, mirror, expr))
     try c.typecheck(result)
-    catch { case terr @ TypecheckException(pos, msg) => failExpr(result, terr) }
+    catch { case terr: TypecheckException => failExpr(result, terr) }
   }
 
   private def translatingReificationErrors(materializer: => Tree): Tree = {
     try materializer
     catch {
       case ReificationException(pos, msg) =>
-        c.abort(pos.asInstanceOf[c.Position], msg) // this cast is a very small price for the sanity of exception handling
-      case UnexpectedReificationException(pos, err, cause) if cause != null =>
+        c.abort(pos.asInstanceOf[c.Position], msg) // this cast is a very small price for the confidence of exception handling
+      case UnexpectedReificationException(_, _, cause) if cause != null =>
         throw cause
     }
   }
 
   private def failTag(result: Tree, reason: Any): Nothing = {
-    val Apply(TypeApply(fun, List(tpeTree)), _) = c.macroApplication
+    val Apply(TypeApply(fun, List(tpeTree)), _) = c.macroApplication: @unchecked
     val tpe = tpeTree.tpe
-    val PolyType(_, MethodType(_, tagTpe)) = fun.tpe
+    val PolyType(_, MethodType(_, tagTpe)) = fun.tpe: @unchecked
     val tagModule = tagTpe.typeSymbol.companionSymbol
-    if (c.compilerSettings.contains("-Xlog-implicits"))
-      c.echo(c.enclosingPosition, s"cannot materialize ${tagModule.name}[$tpe] as $result because:\n$reason")
     c.abort(c.enclosingPosition, "No %s available for %s".format(tagModule.name, tpe))
   }
 
   private def failExpr(result: Tree, reason: Any): Nothing = {
-    val Apply(_, expr :: Nil) = c.macroApplication
+    val Apply(_, expr :: Nil) = c.macroApplication: @unchecked
     c.abort(c.enclosingPosition, s"Cannot materialize $expr as $result because:\n$reason")
   }
 }

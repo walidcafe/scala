@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 
 class X(val v: Int) extends AnyVal
 trait T extends Any

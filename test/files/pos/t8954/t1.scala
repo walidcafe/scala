@@ -1,3 +1,4 @@
+//> using options -Xfatal-warnings -deprecation
 package scala.foo
 
 // 1. a class about to be made final

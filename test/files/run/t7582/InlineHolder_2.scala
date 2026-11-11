@@ -1,6 +1,7 @@
+//> using options -opt:inline:** -Wopt
 package p1 {
   object InlineHolder {
-    @inline def inlinable = p1.PackageProtectedJava_1.protectedMethod() + 1
+    @inline def inlinable = (p1.PackageProtectedJava_1.protectedMethod(): @noinline) + 1
   }
 }
 

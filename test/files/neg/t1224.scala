@@ -1,3 +1,5 @@
+//> using options -Ybreak-cycles
+//
 trait C[T] {}
 
 abstract class A {

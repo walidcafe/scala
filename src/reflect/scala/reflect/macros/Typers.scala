@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package macros
@@ -79,19 +91,25 @@ trait Typers {
    *
    *  If `silent` is false, `TypecheckException` will be thrown in case of an inference error.
    *  If `silent` is true, the typecheck is silent and will return `EmptyTree` if an error occurs.
-   *  Such errors don't vanish and can be inspected by turning on -Xlog-implicits.
+   *  Such errors don't vanish and can be inspected by turning on -Vimplicits.
    *  Unlike in `typecheck`, `silent` is true by default.
    *
    *  @throws scala.reflect.macros.TypecheckException
    */
   def inferImplicitValue(pt: Type, silent: Boolean = true, withMacrosDisabled: Boolean = false, pos: Position = enclosingPosition): Tree
 
+  /** A sibling to [[inferImplicitValue]] that allows to ignore certain symbols during the implicit search.
+   *
+   *  @throws scala.reflect.macros.TypecheckException
+   */
+  def inferImplicitValueIgnoring(pt: Type, silent: Boolean = true, withMacrosDisabled: Boolean = false, pos: Position = enclosingPosition)(ignoredSymbols: Symbol*): Tree
+
   /** Infers an implicit view from the provided tree `tree` of the type `from` to the type `to` in the macro callsite context.
    *  Optional `pos` parameter provides a position that will be associated with the implicit search.
    *
    *  If `silent` is false, `TypecheckException` will be thrown in case of an inference error.
    *  If `silent` is true, the typecheck is silent and will return `EmptyTree` if an error occurs.
-   *  Such errors don't vanish and can be inspected by turning on -Xlog-implicits.
+   *  Such errors don't vanish and can be inspected by turning on -Vimplicits.
    *  Unlike in `typecheck`, `silent` is true by default.
    *
    *  @throws scala.reflect.macros.TypecheckException
@@ -108,7 +126,7 @@ trait Typers {
    *  are observationally different from typed trees (also known as typer trees, typechecked trees or attributed trees),
    *
    *  Usually, if some compiler API takes a tree, then both untyped and typed trees will do. However in some cases,
-   *  only untyped or only typed trees are appropriate. For example, [[eval]] only accepts untyped trees and one can only splice
+   *  only untyped or only typed trees are appropriate. For example, [[Evals.eval]] only accepts untyped trees and one can only splice
    *  typed trees inside typed trees. Therefore in the current reflection API, there is a need in functions
    *  that go back and forth between untyped and typed trees. For this we have [[typecheck]] and `untypecheck`.
    *
@@ -116,7 +134,7 @@ trait Typers {
    *  which makes it sometimes corrupt trees so that they don't make sense anymore. Unfortunately, there's no workaround for that.
    *  We plan to fix this issue soon, but for now please keep it in mind.
    *
-   *  @see [[http://stackoverflow.com/questions/20936509/scala-macros-what-is-the-difference-between-typed-aka-typechecked-an-untyped]]
+   *  @see [[https://stackoverflow.com/questions/20936509/scala-macros-what-is-the-difference-between-typed-aka-typechecked-an-untyped]]
    */
   def untypecheck(tree: Tree): Tree
 }

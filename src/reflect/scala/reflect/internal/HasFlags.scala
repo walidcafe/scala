@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package internal
@@ -109,8 +121,6 @@ trait HasFlags {
   def isOverride            = hasFlag(OVERRIDE)
   def isParamAccessor       = hasFlag(PARAMACCESSOR)
   def isPrivate             = hasFlag(PRIVATE)
-  @deprecated ("use `hasPackageFlag` instead", "2.11.0")
-  def isPackage             = hasFlag(PACKAGE)
   def isPrivateLocal        = hasAllFlags(PrivateLocal)
   def isProtected           = hasFlag(PROTECTED)
   def isProtectedLocal      = hasAllFlags(ProtectedLocal)
@@ -130,11 +140,11 @@ trait HasFlags {
       while (i <= MaxBitPosition) {
         val flag = Flags.rawFlagPickledOrder(i)
         if ((bits & flag) != 0L) {
-          val s = resolveOverloadedFlag(flag)
+          val s = Flags.flagToString(flag)
           if (s.length > 0) {
-            if (sb eq null) sb = new StringBuilder append s
-            else if (sb.length == 0) sb append s
-            else sb append " " append s
+            if (sb eq null) sb = new StringBuilder
+            else if (!sb.isEmpty) sb.append(" ")
+            sb.append(s)
           }
         }
         i += 1

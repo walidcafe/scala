@@ -1,3 +1,4 @@
+//> using options -Werror
 class Test {
   import MyEnum._
 

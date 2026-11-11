@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 
 // alias
 trait Thingy

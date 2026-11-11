@@ -2,8 +2,7 @@ import scala.tools.partest._
 import scala.tools.nsc._
 
 object Test extends DirectTest {
-
-  override def extraSettings: String = "-usejavacp"
+  override def extraSettings: String = s"${super.extraSettings} '-Wconf:cat=deprecation&msg=early initializers:s'"
 
   def code = """
     class testAnn extends annotation.TypeConstraint
@@ -22,10 +21,10 @@ object Test extends DirectTest {
 
       var count = 0
 
-      math.random // some statement
+      math.random() // some statement
 
       def method: String = {
-        math.random
+        math.random()
         val f = inferField
 
         def nested(): String = {
@@ -36,9 +35,9 @@ object Test extends DirectTest {
         nested()
       }
 
-      def this(str: String) {
+      def this(str: String) = {
         this(str.toDouble)
-        math.random
+        math.random()
         count += 1
       }
     }
@@ -116,7 +115,7 @@ object Test extends DirectTest {
     addAnalyzerPlugin(analyzerPlugin)
     compileString(global)(code)
 
-    val res = output.groupBy(identity).mapValues(_.size).map { case (k,v) => s"$k [$v]" }.toList.sorted
+    val res = output.groupBy(identity).view.mapValues(_.size).map { case (k,v) => s"$k [$v]" }.toList.sorted
     println(res.mkString("\n"))
   }
 

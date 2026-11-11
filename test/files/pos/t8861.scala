@@ -1,3 +1,5 @@
+//> using options -Xlint:infer-any -Xfatal-warnings
+//
 
 trait Test {
   type R = PartialFunction[Any, Unit]

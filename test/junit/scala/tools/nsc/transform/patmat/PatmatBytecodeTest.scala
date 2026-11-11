@@ -7,12 +7,15 @@ import org.junit.runners.JUnit4
 
 import scala.tools.asm.Opcodes._
 import scala.tools.nsc.backend.jvm.AsmUtils._
-import scala.tools.testing.BytecodeTesting
-import scala.tools.testing.BytecodeTesting._
+import scala.tools.testkit.ASMConverters.Instruction
+import scala.tools.testkit.BytecodeTesting
+import scala.tools.testkit.BytecodeTesting._
+
+import PartialFunction.cond
 
 @RunWith(classOf[JUnit4])
 class PatmatBytecodeTest extends BytecodeTesting {
-  val optCompiler = cached("optCompiler", () => newCompiler(extraArgs = "-opt:l:inline -opt-inline-from:**"))
+  val optCompiler = cached("optCompiler", () => newCompiler(extraArgs = "-opt:inline:**"))
 
   import compiler._
 
@@ -81,7 +84,7 @@ class PatmatBytecodeTest extends BytecodeTesting {
         |  }
         |}
       """.stripMargin
-    val c :: _ = optCompiler.compileClasses(code)
+    val c :: _ = optCompiler.compileClasses(code): @unchecked
 
     assertSameSummary(getMethod(c, "a"), List(
       NEW, DUP, ICONST_1, LDC, "<init>",
@@ -95,10 +98,11 @@ class PatmatBytecodeTest extends BytecodeTesting {
         |class C {
         |  def a = (Foo(1): Any) match {
         |    case Foo(_: String) =>
+        |    case x              => throw new MatchError(x)
         |  }
         |}
       """.stripMargin
-    val c :: _ = optCompiler.compileClasses(code)
+    val c :: _ = optCompiler.compileClasses(code): @unchecked
     assert(!getInstructions(c, "a").exists(i => i.opcode == IFNULL || i.opcode == IFNONNULL), textify(getAsmMethod(c, "a")))
   }
 
@@ -112,13 +116,13 @@ class PatmatBytecodeTest extends BytecodeTesting {
         |  }
         |}
       """.stripMargin
-    val c :: _ = optCompiler.compileClasses(code)
+    val c :: _ = optCompiler.compileClasses(code): @unchecked
     assertSameSummary(getMethod(c, "a"), List(
-      NEW, DUP, ICONST_1, "boxToInteger", LDC, "<init>", ASTORE /*1*/,
+      NEW, DUP, ICONST_1, "valueOf", LDC, "<init>", ASTORE /*1*/,
       ALOAD /*1*/, "y", ASTORE /*2*/,
-      ALOAD /*1*/, "x", INSTANCEOF, IFNE /*R*/,
-      NEW, DUP, ALOAD /*1*/, "<init>", ATHROW,
-      /*R*/ -1, ALOAD /*2*/, ARETURN))
+      ALOAD /*1*/, "x", INSTANCEOF, IFEQ /*E*/,
+      ALOAD /*2*/, ARETURN,
+      -1 /*E*/, NEW, DUP, ALOAD /*1*/, "<init>", ATHROW))
   }
 
   @Test
@@ -135,12 +139,10 @@ class PatmatBytecodeTest extends BytecodeTesting {
       """.stripMargin
     val c = optCompiler.compileClass(code, allowMessage = _.msg.contains("may not be exhaustive"))
 
-    val expected = List(
+    val expected = List[Any](
       ALOAD /*1*/ , INSTANCEOF /*::*/ , IFEQ /*A*/ ,
-      ALOAD, CHECKCAST /*::*/ , "head", "unboxToInt",
-      ISTORE, GOTO /*B*/ ,
-      -1 /*A*/ , NEW /*MatchError*/ , DUP, ALOAD /*1*/ , "<init>", ATHROW,
-      -1 /*B*/ , ILOAD, IRETURN)
+      ALOAD, CHECKCAST /*::*/ , "head", "unboxToInt", IRETURN,
+      -1 /*A*/ , NEW /*MatchError*/ , DUP, ALOAD /*1*/ , "<init>", ATHROW)
 
     assertSameSummary(getMethod(c, "a"), expected)
     assertSameSummary(getMethod(c, "b"), expected)
@@ -178,5 +180,23 @@ class PatmatBytecodeTest extends BytecodeTesting {
     assertSameSummary(getMethod(c, "t8"), List(ALOAD, "b", IRETURN))
     // C allocation not eliminated - constructor may have side-effects.
     assertSameSummary(getMethod(c, "t9"), List(NEW, DUP, LDC, BIPUSH, "<init>", "a", "toString", ARETURN))
+  }
+
+  @Test
+  def stringSwitch(): Unit = {
+    val code =
+      """import annotation.switch
+        |class Switches {
+        |  val cond = true
+        |  def two   = ("foo" : @switch) match { case "foo" => case "bar" =>                   }
+        |  def guard = ("foo" : @switch) match { case "z"   => case "y"   => case x if cond => }
+        |  def colli = ("foo" : @switch) match { case "DB" =>  case "Ca"  =>                   }
+        |}
+      """.stripMargin
+    val List(switches) = compiler.compileClasses(code)
+    def isSwitchInsn(insn: Instruction) = cond(insn.opcode) { case LOOKUPSWITCH | TABLESWITCH => true }
+    List("two", "guard", "colli") foreach { m =>
+      assert(getInstructions(switches, m).exists(isSwitchInsn))
+    }
   }
 }

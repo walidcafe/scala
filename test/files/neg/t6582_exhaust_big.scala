@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 sealed abstract class Z
 object Z {
    object     Z0    extends Z

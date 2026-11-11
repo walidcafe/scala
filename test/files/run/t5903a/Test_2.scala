@@ -1,3 +1,4 @@
+//> using options -Vreflective-calls
 object Test extends App {
   import NewQuasiquotes._
   SomeTree match {

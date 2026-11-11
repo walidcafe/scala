@@ -1,16 +1,21 @@
-/* NSC -- new Scala compiler -- Copyright 2007-2013 LAMP/EPFL
+/*
+ * Scala (https://www.scala-lang.org)
  *
- * This trait finds implicit conversions for a class in the default scope and creates scaladoc entries for each of them.
+ * Copyright EPFL and Lightbend, Inc. dba Akka
  *
- * @author Vlad Ureche
- * @author Adriaan Moors
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package doc
 package model
 
-import scala.collection._
+import scala.annotation.nowarn
+import scala.tools.nsc.Reporting.WarningCategory
 
 /**
  * This trait finds implicit conversions for a class in the default scope and creates scaladoc entries for each of them.
@@ -26,10 +31,10 @@ import scala.collection._
  *
  *      class C extends B {
  *        def bar = 2
- *        class implicit
+ *        class D
  *      }
  *
- *      D def conv(a: A) = new C
+ *      implicit def conv(a: A) = new C
  *    }
  * }}}
  *
@@ -98,10 +103,10 @@ trait ModelFactoryImplicitSupport {
       // also keep empty conversions, so they appear in diagrams
       // conversions = conversions.filter(!_.members.isEmpty)
 
-      val hiddenConversions: Seq[String] = thisFactory
+      val hiddenConversions: Set[String] = thisFactory
         .comment(sym, inTpl.linkTarget, inTpl)
-        .map(_.hideImplicitConversions)
-        .getOrElse(Nil)
+        .map(_.hideImplicitConversions.toSet)
+        .getOrElse(Set.empty)
 
       conversions = conversions filterNot { conv: ImplicitConversionImpl =>
         hiddenConversions.contains(conv.conversionShortName) ||
@@ -159,7 +164,7 @@ trait ModelFactoryImplicitSupport {
       val (viewSimplifiedType, viewImplicitTypes) = removeImplicitParameters(viewFullType)
 
       // TODO: Isolate this corner case :) - Predef.<%< and put it in the testsuite
-      if (viewSimplifiedType.params.length != 1) {
+      if (viewSimplifiedType.params.lengthIs != 1) {
         // This is known to be caused by the `<%<` object in Predef:
         // {{{
         //    sealed abstract class <%<[-From, +To] extends (From => To) with Serializable
@@ -171,7 +176,7 @@ trait ModelFactoryImplicitSupport {
         return Nil
       }
 
-      if (!settings.docImplicitsShowAll && viewSimplifiedType.resultType.typeSymbol == sym) {
+      if (!settings.docImplicitsShowAll.value && viewSimplifiedType.resultType.typeSymbol == sym) {
         // If, when looking at views for a class A, we find one that returns A as well
         // (possibly with different type parameters), we ignore it.
         // It usually is a way to build a "whatever" into an A, but we already have an A, as in:
@@ -196,8 +201,9 @@ trait ModelFactoryImplicitSupport {
 
           case global.analyzer.SilentResultValue(t: Tree) => t
           case global.analyzer.SilentTypeError(err) =>
-            global.reporter.warning(sym.pos, err.toString)
+            context.warning(sym.pos, err.toString, WarningCategory.Scaladoc)
             return Nil
+          case x => throw new MatchError(x)
         }
       }
 
@@ -260,7 +266,7 @@ trait ModelFactoryImplicitSupport {
       available match {
         case Some(true) =>
           Nil
-        case Some(false) if !settings.docImplicitsShowAll =>
+        case Some(false) if !settings.docImplicitsShowAll.value =>
           // if -implicits-show-all is not set, we get rid of impossible conversions (such as Numeric[String])
           throw new ImplicitNotFound(implType)
         case _ =>
@@ -369,7 +375,7 @@ trait ModelFactoryImplicitSupport {
       convertorOwner match {
         case doc: DocTemplateImpl =>
           val convertors = members.collect { case m: MemberImpl if m.sym == convSym => m }
-          if (convertors.length == 1)
+          if (convertors.lengthIs == 1)
             convertor = convertors.head
         case _ =>
       }
@@ -431,9 +437,9 @@ trait ModelFactoryImplicitSupport {
   def makeShadowingTable(members: List[MemberImpl],
                          convs: List[ImplicitConversionImpl],
                          inTpl: DocTemplateImpl): Map[MemberEntity, ImplicitMemberShadowing] = {
-    assert(modelFinished)
+    assert(modelFinished, "cannot make shadowing table before model is finished")
 
-    val shadowingTable = mutable.Map[MemberEntity, ImplicitMemberShadowing]()
+    val shadowingTable = Map.newBuilder[MemberEntity, ImplicitMemberShadowing]
     val membersByName: Map[Name, List[MemberImpl]] = members.groupBy(_.sym.name)
     val convsByMember = convs.foldLeft(Map.empty[MemberImpl, ImplicitConversionImpl]){
       case (map, conv) => map ++ conv.memberImpls.map (_ -> conv)
@@ -464,12 +470,12 @@ trait ModelFactoryImplicitSupport {
             def ambiguatingMembers: List[MemberEntity] = ambiguous
           }
 
-          shadowingTable += (member -> shadowing)
+          shadowingTable.addOne(member -> shadowing)
         }
       }
     }
 
-    shadowingTable.toMap
+    shadowingTable.result()
   }
 
 
@@ -580,6 +586,7 @@ trait ModelFactoryImplicitSupport {
    * The trick here is that the resultType does not matter - the condition for removal it that paramss have the same
    * structure (A => B => C may not override (A, B) => C) and that all the types involved are
    * of the implicit conversion's member are subtypes of the parent members' parameters */
+  @nowarn("cat=lint-nonlocal-return")
   def isDistinguishableFrom(t1: Type, t2: Type): Boolean = {
     // Vlad: I tried using matches but it's not exactly what we need:
     // (p: AnyRef)AnyRef matches ((t: String)AnyRef returns false -- but we want that to be true

@@ -1,1 +1,4 @@
-@deprecated("hi mom", "") case class Bob ()
+//> using options -Xlint -Werror
+
+@deprecated("hi mom", "")
+case class Bob ()

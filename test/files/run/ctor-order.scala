@@ -1,3 +1,4 @@
+//> using options -Xmaxwarns 0
 
 /** Test that constructor operations are reordered correctly.  */
 class Outer {

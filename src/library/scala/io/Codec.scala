@@ -1,15 +1,20 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package io
 
-import java.nio.charset.{ Charset, CharsetDecoder, CharsetEncoder, CharacterCodingException, CodingErrorAction => Action }
+import java.nio.charset.{CharacterCodingException, Charset, CharsetDecoder, CharsetEncoder, CodingErrorAction => Action}
+import java.nio.charset.StandardCharsets.{ISO_8859_1, UTF_8}
 import scala.annotation.migration
 import scala.language.implicitConversions
 
@@ -39,7 +44,7 @@ class Codec(val charSet: Charset) {
   private[this] var _decodingReplacement: String      = null
   private[this] var _onCodingException: Handler       = e => throw e
 
-  /** The name of the Codec. */
+  /** The name of the `Codec`. */
   override def toString = name
 
   // these methods can be chained to configure the variables above
@@ -72,22 +77,22 @@ class Codec(val charSet: Charset) {
 trait LowPriorityCodecImplicits {
   self: Codec.type =>
 
-  /** The Codec of Last Resort. */
+  /** The `Codec` of Last Resort. */
   implicit lazy val fallbackSystemCodec: Codec = defaultCharsetCodec
 }
 
 object Codec extends LowPriorityCodecImplicits {
-  final val ISO8859: Codec = new Codec(Charset forName "ISO-8859-1")
-  final val UTF8: Codec    = new Codec(Charset forName "UTF-8")
+  final val ISO8859: Codec = Codec(ISO_8859_1)
+  final val UTF8: Codec    = Codec(UTF_8)
 
   /** Optimistically these two possible defaults will be the same thing.
    *  In practice this is not necessarily true, and in fact Sun classifies
    *  the fact that you can influence anything at all via -Dfile.encoding
    *  as an accident, with any anomalies considered "not a bug".
    */
-  def defaultCharsetCodec = apply(Charset.defaultCharset)
-  def fileEncodingCodec   = apply(scala.util.Properties.encodingString)
-  def default             = defaultCharsetCodec
+  def defaultCharsetCodec: Codec = apply(Charset.defaultCharset)
+  def fileEncodingCodec: Codec = apply(scala.util.Properties.encodingString)
+  def default: Codec = defaultCharsetCodec
 
   def apply(encoding: String): Codec        = new Codec(Charset forName encoding)
   def apply(charSet: Charset): Codec        = new Codec(charSet)

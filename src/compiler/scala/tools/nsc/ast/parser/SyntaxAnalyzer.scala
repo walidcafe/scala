@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -8,7 +15,7 @@ package ast.parser
 
 import javac._
 
-/** An nsc sub-component.
+/** The compiler sub-component that defines the parser phase, which converts source code into Trees.
  */
 abstract class SyntaxAnalyzer extends SubComponent with Parsers with MarkupParsers with Scanners with JavaParsers with JavaScanners {
   import global._
@@ -31,12 +38,12 @@ abstract class SyntaxAnalyzer extends SubComponent with Parsers with MarkupParse
          md.mods.isSynthetic
       || md.mods.isParamAccessor
       || nme.isConstructorName(md.name)
-      || (md.name containsName nme.ANON_CLASS_NAME)
+      || md.name.containsName(nme.ANON_CLASS_NAME)
     )
 
     override def traverse(t: Tree): Unit = t match {
       case md: MemberDef if prune(md) =>
-      case md @ PackageDef(_, stats)  => traverseTrees(stats)
+      case PackageDef(_, stats)       => traverseTrees(stats)
       case md: ImplDef                => onMember(md) ; lower(traverseTrees(md.impl.body))
       case md: ValOrDefDef            => onMember(md) ; lower(traverse(md.rhs))
       case _                          => super.traverse(t)
@@ -98,11 +105,8 @@ abstract class SyntaxAnalyzer extends SubComponent with Parsers with MarkupParse
       if (unit.body == EmptyTree)
         unit.body = initialUnitBody(unit)
 
-      if (settings.Yrangepos && !reporter.hasErrors)
-        validatePositions(unit.body)
-
       if (settings.Ymemberpos.isSetByUser)
-        new MemberPosReporter(unit) show (style = settings.Ymemberpos.value)
+        new MemberPosReporter(unit).show(style = settings.Ymemberpos.value)
     }
   }
 }

@@ -1,15 +1,23 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Burak Emir
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package ast.parser
 
+import scala.annotation.unused
 import scala.collection.mutable
-import symtab.Flags.MUTABLE
 import scala.reflect.internal.util.ListOfNil
 import scala.reflect.internal.util.StringOps.splitWhere
+import symtab.Flags.MUTABLE
 
 /** This class builds instance of `Tree` that represent XML.
  *
@@ -20,41 +28,41 @@ import scala.reflect.internal.util.StringOps.splitWhere
  *  who understands this part better wants to give it a shot, please do!
  *
  *  @author  Burak Emir
- *  @version 1.0
  */
-abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
+abstract class SymbolicXMLBuilder(@unused p: Parsers#Parser, @unused preserveWS: Boolean) {
   val global: Global
   import global._
 
   private[parser] var isPattern: Boolean = _
 
   private object xmltypes extends TypeNames {
-    val _Comment: NameType             = "Comment"
-    val _Elem: NameType                = "Elem"
-    val _EntityRef: NameType           = "EntityRef"
-    val _Group: NameType               = "Group"
-    val _MetaData: NameType            = "MetaData"
-    val _NamespaceBinding: NameType    = "NamespaceBinding"
-    val _NodeBuffer: NameType          = "NodeBuffer"
-    val _PCData: NameType              = "PCData"
-    val _PrefixedAttribute: NameType   = "PrefixedAttribute"
-    val _ProcInstr: NameType           = "ProcInstr"
-    val _Text: NameType                = "Text"
-    val _Unparsed: NameType            = "Unparsed"
-    val _UnprefixedAttribute: NameType = "UnprefixedAttribute"
+    val _Comment: NameType             = nameType("Comment")
+    val _Elem: NameType                = nameType("Elem")
+    val _EntityRef: NameType           = nameType("EntityRef")
+    val _Group: NameType               = nameType("Group")
+    val _MetaData: NameType            = nameType("MetaData")
+    val _NamespaceBinding: NameType    = nameType("NamespaceBinding")
+    val _NodeBuffer: NameType          = nameType("NodeBuffer")
+    val _PCData: NameType              = nameType("PCData")
+    val _PrefixedAttribute: NameType   = nameType("PrefixedAttribute")
+    val _ProcInstr: NameType           = nameType("ProcInstr")
+    val _Text: NameType                = nameType("Text")
+    val _Unparsed: NameType            = nameType("Unparsed")
+    val _UnprefixedAttribute: NameType = nameType("UnprefixedAttribute")
   }
 
   private object xmlterms extends TermNames {
-    val _Null: NameType     = "Null"
-    val __Elem: NameType    = "Elem"
-    val _PCData: NameType   = "PCData"
-    val __Text: NameType    = "Text"
-    val _buf: NameType      = "$buf"
-    val _md: NameType       = "$md"
-    val _plus: NameType     = "$amp$plus"
-    val _scope: NameType    = "$scope"
-    val _tmpscope: NameType = "$tmpscope"
-    val _xml: NameType      = "xml"
+    val _Null: NameType     = nameType("Null")
+    val __Elem: NameType    = nameType("Elem")
+    val _PCData: NameType   = nameType("PCData")
+    val __Text: NameType    = nameType("Text")
+    val _buf: NameType      = nameType("$buf")
+    val _md: NameType       = nameType("$md")
+    val _plus: NameType     = nameType("$amp$plus")
+    val _scope: NameType    = nameType("$scope")
+    val _tmpscope: NameType = nameType("$tmpscope")
+    val _xml: NameType      = nameType("xml")
+    val _toVector           = nameType("toVector")
   }
 
   import xmltypes.{
@@ -62,7 +70,7 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
     _PCData, _PrefixedAttribute, _ProcInstr, _Text, _Unparsed, _UnprefixedAttribute
   }
 
-  import xmlterms.{ _Null, __Elem, __Text, _buf, _md, _plus, _scope, _tmpscope, _xml }
+  import xmlterms.{ _Null, __Elem, __Text, _buf, _md, _plus, _scope, _tmpscope, _xml, _toVector }
 
   /** Attachment for trees deriving from text nodes (Text, CData, entities). Used for coalescing. */
   case class TextAttache(pos: Position, text: String)
@@ -104,7 +112,7 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
   {
     def starArgs =
       if (children.isEmpty) Nil
-      else List(Typed(makeXMLseq(pos, children), wildStar))
+      else List(Typed(makeXMLseq(pos, children, toVector = true), wildStar))
 
     def pat    = Apply(_scala_xml__Elem, List(pre, label, wild, wild) ::: convertToTextPat(children))
     def nonpat = New(_scala_xml_Elem, List(List(pre, label, attrs, scope, if (empty) Literal(Constant(true)) else Literal(Constant(false))) ::: starArgs))
@@ -137,7 +145,7 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
   protected def Comment(txt: Tree)                  = New(_scala_xml_Comment, LL(txt))
   protected def ProcInstr(target: Tree, txt: Tree)  = New(_scala_xml_ProcInstr, LL(target, txt))
 
-  /** @todo: attributes */
+  /** @todo attributes */
   def makeXMLpat(pos: Position, n: String, args: scala.collection.Seq[Tree]): Tree = {
     val (prepat, labpat) = splitPrefix(n) match {
       case (Some(pre), rest)  => (const(pre), const(rest))
@@ -159,7 +167,7 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
     parseAttributeValue(s, text(pos, _), entityRef(pos, _)) match {
       case Nil      => gen.mkNil
       case t :: Nil => t
-      case ts       => makeXMLseq(pos, ts.toList)
+      case ts       => makeXMLseq(pos, ts, toVector = true)
     }
   }
 
@@ -169,11 +177,12 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
   }
 
   /** could optimize if args.length == 0, args.length == 1 AND args(0) is <: Node. */
-  def makeXMLseq(pos: Position, args: scala.collection.Seq[Tree]) = {
-    val buffer = ValDef(NoMods, _buf, TypeTree(), New(_scala_xml_NodeBuffer, ListOfNil))
-    val applies = args filterNot isEmptyText map (t => Apply(Select(Ident(_buf), _plus), List(t)))
+  def makeXMLseq(pos: Position, args: scala.collection.Seq[Tree], toVector: Boolean) = {
+    val buffer = atPos(pos)(ValDef(NoMods, _buf, TypeTree(), New(_scala_xml_NodeBuffer, ListOfNil)))
+    val applies = args.filterNot(isEmptyText).map(t => atPos(t.pos)(Apply(Select(Ident(_buf), _plus), List(t))))
 
-    atPos(pos)( Block(buffer :: applies.toList, Ident(_buf)) )
+    val res = if (toVector) Select(Ident(_buf), _toVector) else Ident(_buf)
+    atPos(pos)( gen.mkBlock(buffer :: applies.toList ::: List(res)) )
   }
 
   /** Returns (Some(prefix) | None, rest) based on position of ':' */
@@ -184,7 +193,7 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
 
   /** Various node constructions. */
   def group(pos: Position, args: scala.collection.Seq[Tree]): Tree =
-    atPos(pos)( New(_scala_xml_Group, LL(makeXMLseq(pos, args))) )
+    atPos(pos)( New(_scala_xml_Group, LL(makeXMLseq(pos, args, toVector = true))) )
 
   def unparsed(pos: Position, str: String): Tree =
     atPos(pos)( New(_scala_xml_Unparsed, LL(const(str))) )
@@ -265,6 +274,6 @@ abstract class SymbolicXMLBuilder(p: Parsers#Parser, preserveWS: Boolean) {
       args
     )
 
-    atPos(pos.makeTransparent)( Block(nsResult, Block(attrResult, body)) )
+    atPos(pos.makeTransparent)( gen.mkBlock(nsResult :+ gen.mkBlock(attrResult :+ body)) )
   }
 }

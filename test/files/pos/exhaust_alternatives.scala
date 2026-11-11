@@ -1,3 +1,4 @@
+//> using options -Xfatal-warnings
 sealed abstract class X
 sealed case class A(x: Boolean) extends X
 case object B extends X

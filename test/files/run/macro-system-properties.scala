@@ -2,8 +2,13 @@ import scala.tools.nsc._
 import scala.tools.partest.ReplTest
 
 object Test extends ReplTest {
+    override def transformSettings(s: Settings) = {
+    s.Yreplclassbased.value = false // macros are object-based only
+    s
+  }
+
   def code = """
-    import scala.language.experimental._, scala.reflect.macros.blackbox.Context
+    import scala.language.experimental.macros, scala.reflect.macros.blackbox.Context
     object GrabContext {
       def lastContext = Option(System.getProperties.get("lastContext").asInstanceOf[reflect.macros.runtime.Context])
       // System.properties lets you stash true globals (unlike statics which are classloader scoped)

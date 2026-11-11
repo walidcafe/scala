@@ -1,9 +1,11 @@
+//> using options -Werror
+//
 object Bar {
-  def bar1(foo: Foo_1) = foo match {
-    case Foo_1.A => 1
+  def bar1(foo: Foo) = foo match {
+    case Foo.A => 1
   }
 
-  def bar2(foo: Baz_1) = foo match {
-    case Baz_1.A => 1
-    }
+  def bar2(foo: Baz) = foo match {
+    case Baz.A => 1
+  }
 }

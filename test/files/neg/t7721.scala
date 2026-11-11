@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 import scala.language.reflectiveCalls
 
 trait A {

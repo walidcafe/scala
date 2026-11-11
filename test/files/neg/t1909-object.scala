@@ -1,3 +1,5 @@
+//> using options -Xdev -Xfatal-warnings
+//
 class Kaboom(a: Any) {
   def this() = {
     this({

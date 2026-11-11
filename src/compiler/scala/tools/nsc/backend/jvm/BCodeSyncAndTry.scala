@@ -1,8 +1,14 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2012 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
-
 
 package scala
 package tools.nsc
@@ -14,8 +20,7 @@ import scala.tools.asm
 
 /*
  *
- *  @author  Miguel Garcia, http://lamp.epfl.ch/~magarcia/ScalaCompilerCornerReloaded/
- *  @version 1.0
+ *  @author  Miguel Garcia
  *
  */
 abstract class BCodeSyncAndTry extends BCodeBodyBuilder {
@@ -159,7 +164,7 @@ abstract class BCodeSyncAndTry extends BCodeBodyBuilder {
      *
      *  A number of code patterns can be emitted to realize the intended semantics.
      *
-     *  A popular alternative (GenICode, javac) consists in duplicating the cleanup-chain at each early-return position.
+     *  A popular alternative (javac, and the old GenICode backend) consists in duplicating the cleanup-chain at each early-return position.
      *  The principle at work being that once control is transferred to a cleanup-section,
      *  control will always stay within the cleanup-chain.
      *  That is, barring an exception being thrown in a cleanup-section, in which case the enclosing try-block
@@ -188,6 +193,7 @@ abstract class BCodeSyncAndTry extends BCodeBodyBuilder {
             case Typed(Ident(nme.WILDCARD), tpt)  => NamelessEH(tpeTK(tpt).asClassBType, caseBody)
             case Ident(nme.WILDCARD)              => NamelessEH(jlThrowableRef,  caseBody)
             case Bind(_, _)                       => BoundEH   (pat.symbol, caseBody)
+            case _                                => throw new Exception(s"Unexpected try case pattern tree $pat of class ${pat.shortClass}")
           }
         }
 
@@ -238,7 +244,7 @@ abstract class BCodeSyncAndTry extends BCodeBodyBuilder {
       val endTryBody = currProgramPoint()
       bc goTo postHandlers
 
-      /**
+      /*
        * A return within a `try` or `catch` block where a `finally` is present ("early return")
        * emits a store of the result to a local, jump to a "cleanup" version of the `finally` block,
        * and sets `shouldEmitCleanup = true` (see [[PlainBodyBuilder.genReturn]]).
@@ -396,7 +402,7 @@ abstract class BCodeSyncAndTry extends BCodeBodyBuilder {
 
     /* `tmp` (if non-null) is the symbol of the local-var used to preserve the result of the try-body, see `guardResult` */
     def emitFinalizer(finalizer: Tree, tmp: Symbol, isDuplicate: Boolean): Unit = {
-      var saved: immutable.Map[ /* LabelDef */ Symbol, asm.Label ] = null
+      var saved: immutable.Map[ /* LabelDef */ Symbol, JumpDestination ] = null
       if (isDuplicate) {
         saved = jumpDest
         for(ldef <- labelDefsAtOrUnder.getOrElse(finalizer, Nil)) {
@@ -415,7 +421,7 @@ abstract class BCodeSyncAndTry extends BCodeBodyBuilder {
     /* Does this tree have a try-catch block? */
     def mayCleanStack(tree: Tree): Boolean = tree exists { t => t.isInstanceOf[Try] }
 
-    trait EHClause
+    sealed trait EHClause
     case class NamelessEH(typeToDrop: ClassBType,  caseBody: Tree) extends EHClause
     case class BoundEH    (patSymbol: Symbol, caseBody: Tree) extends EHClause
 

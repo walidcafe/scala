@@ -1,13 +1,19 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package io
+
+import annotation.nowarn
 
 /** The object Position provides convenience methods to encode
  *  line and column number in one single integer.  The encoded line
@@ -31,7 +37,6 @@ package io
  *  {{{
  *  encode(line1,column1) <= encode(line2,column2)
  *  }}}
- *  @author Burak Emir (translated from work by Matthias Zenger and others)
  */
 @deprecated("this class will be removed", "2.10.0")
 private[scala] abstract class Position {
@@ -68,13 +73,12 @@ private[scala] abstract class Position {
   def toString(pos: Int): String = line(pos) + ":" + column(pos)
 }
 
+@nowarn
 private[scala] object Position extends Position {
   def checkInput(line: Int, column: Int): Unit = {
     if (line < 0)
-      throw new IllegalArgumentException(line + " < 0")
-    if ((line == 0) && (column != 0))
-      throw new IllegalArgumentException(line + "," + column + " not allowed")
-    if (column < 0)
-      throw new IllegalArgumentException(line + "," + column + " not allowed")
+      throw new IllegalArgumentException(s"$line < 0")
+    if (line == 0 && column != 0 || column < 0)
+      throw new IllegalArgumentException(s"$line,$column not allowed")
   }
 }

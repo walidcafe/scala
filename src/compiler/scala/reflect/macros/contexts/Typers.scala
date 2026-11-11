@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.macros
 package contexts
 
@@ -27,7 +39,7 @@ trait Typers {
             case universe.analyzer.SilentResultValue(result) =>
               macroLogVerbose(result)
               result
-            case error@universe.analyzer.SilentTypeError(_) =>
+            case error: universe.analyzer.SilentTypeError =>
               macroLogVerbose(error.err.errMsg)
               if (!silent) throw new TypecheckException(error.err.errPos, error.err.errMsg)
               universe.EmptyTree
@@ -41,13 +53,18 @@ trait Typers {
 
   def inferImplicitValue(pt: Type, silent: Boolean = true, withMacrosDisabled: Boolean = false, pos: Position = enclosingPosition): Tree = {
     macroLogVerbose(s"inferring implicit value of type $pt, macros = ${!withMacrosDisabled}")
-    universe.analyzer.inferImplicit(universe.EmptyTree, pt, false, callsiteTyper.context, silent, withMacrosDisabled, pos, (pos, msg) => throw TypecheckException(pos, msg))
+    universe.analyzer.inferImplicit(universe.EmptyTree, pt, isView = false, callsiteTyper.context, silent, withMacrosDisabled, pos, (pos, msg) => throw TypecheckException(pos, msg))
+  }
+
+  def inferImplicitValueIgnoring(pt: Type, silent: Boolean = true, withMacrosDisabled: Boolean = false, pos: Position = enclosingPosition)(ignoredSymbols: Symbol*): Tree = {
+    macroLogVerbose(s"inferring implicit value of type $pt, macros = ${!withMacrosDisabled}, ignored symbols = ${ignoredSymbols.mkString(", ")}")
+    universe.analyzer.inferImplicitIgnoring(universe.EmptyTree, pt, isView = false, callsiteTyper.context, silent, withMacrosDisabled, pos, (pos, msg) => throw TypecheckException(pos, msg), ignoredSymbols.toSet)
   }
 
   def inferImplicitView(tree: Tree, from: Type, to: Type, silent: Boolean = true, withMacrosDisabled: Boolean = false, pos: Position = enclosingPosition): Tree = {
     macroLogVerbose(s"inferring implicit view from $from to $to for $tree, macros = ${!withMacrosDisabled}")
     val viewTpe = universe.appliedType(universe.definitions.FunctionClass(1).toTypeConstructor, List(from, to))
-    universe.analyzer.inferImplicit(tree, viewTpe, true, callsiteTyper.context, silent, withMacrosDisabled, pos, (pos, msg) => throw TypecheckException(pos, msg))
+    universe.analyzer.inferImplicit(tree, viewTpe, isView = true, callsiteTyper.context, silent, withMacrosDisabled, pos, (pos, msg) => throw TypecheckException(pos, msg))
   }
 
   def resetLocalAttrs(tree: Tree): Tree = universe.resetAttrs(universe.duplicateAndKeepPositions(tree))

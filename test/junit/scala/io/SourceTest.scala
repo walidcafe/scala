@@ -2,18 +2,15 @@
 package scala.io
 
 import org.junit.Test
-import org.junit.Assert._
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
+import org.junit.Assert.assertEquals
 
-import scala.tools.testing.AssertUtil._
+import scala.tools.testkit.AssertUtil.{assertThrows, fail}
 
-import java.io.{ Console => _, _ }
+import java.io.{Console => _, _}
 
-@RunWith(classOf[JUnit4])
 class SourceTest {
 
-  private implicit val `our codec` = Codec.UTF8
+  private implicit val `our codec`: Codec = Codec.UTF8
   private val charSet = Codec.UTF8.charSet.name
 
   private def sampler = """
@@ -25,13 +22,17 @@ class SourceTest {
 
   private def in = new ByteArrayInputStream(sampler.getBytes)
 
-  @Test def canIterateLines() = {
-    assertEquals(sampler.lines.size, (Source fromString sampler).getLines.size)
-  }
+  @Test def canIterateLines() = assertEquals(sampler.linesIterator.size, (Source fromString sampler).getLines().size)
   @Test def loadFromResource() = {
     val res = Source.fromResource("rootdoc.txt")
-    assertTrue("No classpath resource found", res.getLines().size > 5)
+    val ls = res.getLines()
+    ls.next() match {
+      case "The Scala compiler and reflection APIs." =>
+      case "This is the documentation for the Scala standard library." =>
+      case l => fail(s"$l\n${ls.mkString("\n")}")
+    }
   }
+  @Test def loadFromMissingResource(): Unit = assertThrows[FileNotFoundException](Source.fromResource("missing.txt"))
   @Test def canCustomizeReporting() = {
     class CapitalReporting(is: InputStream) extends BufferedSource(is) {
       override def report(pos: Int, msg: String, out: PrintStream): Unit = {
@@ -49,7 +50,7 @@ class SourceTest {
     val s = new CapitalReporting(in)
     // skip to next line and report an error
     do {
-      val c = s.next()
+      s.next()
     } while (s.ch != '\n')
     s.next()
     val out = new ByteArrayOutputStream
@@ -70,7 +71,7 @@ class SourceTest {
       override def pos = _pos
       private[this] var _ch: Char = _
       override def ch = _ch
-      override def next = {
+      override def next() = {
         _ch = iter.next()
         _pos += 1
         _ch
@@ -79,12 +80,34 @@ class SourceTest {
     val s = new CapitalReporting(in)
     // skip to next line and report an error
     do {
-      val c = s.next()
+      s.next()
     } while (s.ch != '\n')
     s.next()
     val out = new ByteArrayOutputStream
     val ps  = new PrintStream(out, true, charSet)
     s.reportError(s.pos, "That doesn't sound right.", ps)
     assertEquals("0030: THAT DOESN'T SOUND RIGHT.", out.toString(charSet))
+  }
+  @Test def `t8690 mkString uses correct iterator and sees first char`: Unit = {
+    val txt = "abcdef"
+    val source = Source.fromInputStream(new ByteArrayInputStream(txt.getBytes(charSet)))
+    assertEquals("<iterator>", source.toString) // forces the BufferedSource to look at the head of the input
+    assertEquals(txt, source.mkString)          // previously returned "bcdef" ...
+  }
+  @Test def `t2104 mkString checks for EOF and sees last char`: Unit = {
+    val N = 4
+    val chars = List('\n','\r','a')
+    def allStrings(n: Int): List[List[Char]] =
+      if (n==0) List(Nil)
+      else {
+        val sufs = allStrings(n-1)
+        chars.flatMap((c) => sufs.map(c :: _))
+      }
+    def test(n: Int): Unit =
+      for (cs <- allStrings(n)) {
+        val source = Source.fromInputStream(new ByteArrayInputStream(cs.mkString.getBytes(charSet)))
+        assertEquals(cs, source.toList)
+      }
+    (0 until N).foreach(test(_))
   }
 }

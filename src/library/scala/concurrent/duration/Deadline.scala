@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.concurrent.duration
 
@@ -25,33 +29,33 @@ package scala.concurrent.duration
  */
 case class Deadline private (time: FiniteDuration) extends Ordered[Deadline] {
   /**
-   * Return a deadline advanced (i.e., moved into the future) by the given duration.
+   * Returns a deadline advanced (i.e., moved into the future) by the given duration.
    */
   def +(other: FiniteDuration): Deadline = copy(time = time + other)
   /**
-   * Return a deadline moved backwards (i.e., towards the past) by the given duration.
+   * Returns a deadline moved backwards (i.e., towards the past) by the given duration.
    */
   def -(other: FiniteDuration): Deadline = copy(time = time - other)
   /**
-   * Calculate time difference between this and the other deadline, where the result is directed (i.e., may be negative).
+   * Calculates time difference between this and the other deadline, where the result is directed (i.e., may be negative).
    */
   def -(other: Deadline): FiniteDuration = time - other.time
   /**
-   * Calculate time difference between this duration and now; the result is negative if the deadline has passed.
+   * Calculates time difference between this duration and now; the result is negative if the deadline has passed.
    *
    * '''''Note that on some systems this operation is costly because it entails a system call.'''''
    * Check `System.nanoTime` for your platform.
    */
   def timeLeft: FiniteDuration = this - Deadline.now
   /**
-   * Determine whether the deadline still lies in the future at the point where this method is called.
+   * Determines whether the deadline still lies in the future at the point where this method is called.
    *
    * '''''Note that on some systems this operation is costly because it entails a system call.'''''
    * Check `System.nanoTime` for your platform.
    */
   def hasTimeLeft(): Boolean = !isOverdue()
   /**
-   * Determine whether the deadline lies in the past at the point where this method is called.
+   * Determines whether the deadline lies in the past at the point where this method is called.
    *
    * '''''Note that on some systems this operation is costly because it entails a system call.'''''
    * Check `System.nanoTime` for your platform.
@@ -60,12 +64,12 @@ case class Deadline private (time: FiniteDuration) extends Ordered[Deadline] {
   /**
    * The natural ordering for deadline is determined by the natural order of the underlying (finite) duration.
    */
-  def compare(other: Deadline) = time compare other.time
+  def compare(other: Deadline): Int = time compare other.time
 }
 
 object Deadline {
   /**
-   * Construct a deadline due exactly at the point where this method is called. Useful for then
+   * Constructs a deadline due exactly at the point where this method is called. Useful for then
    * advancing it to obtain a future deadline, or for sampling the current time exactly once and
    * then comparing it to multiple deadlines (using subtraction).
    */
@@ -75,7 +79,7 @@ object Deadline {
    * The natural ordering for deadline is determined by the natural order of the underlying (finite) duration.
    */
   implicit object DeadlineIsOrdered extends Ordering[Deadline] {
-    def compare(a: Deadline, b: Deadline) = a compare b
+    def compare(a: Deadline, b: Deadline): Int = a compare b
   }
 
 }

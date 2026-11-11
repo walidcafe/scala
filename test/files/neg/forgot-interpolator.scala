@@ -1,3 +1,5 @@
+//> using options -Werror -Xlint:missing-interpolator
+
 class A {
   val bippy = 123
 
@@ -90,4 +92,87 @@ package curry {
     def f4 = "I also salute $calico" // warn 9
     def f5 = "I draw the line at $palomino" // no warn
   }
+}
+
+package companions {
+  class X
+  object X
+  class C {
+    def f1 = "$X"   // nowarn companion
+    def f2 = "$Byte"   // nowarn companion
+    def f3 = "$Char"   // nowarn companion
+    def f4 = "$Short"   // nowarn companion
+    def f5 = "$Int"   // nowarn companion
+    def f6 = "$Float"   // nowarn companion
+    def f7 = "$Double"   // nowarn companion
+    def f8 = "$Character"   // nowarn companion
+    def f9 = "$Integer"   // nowarn companion
+    def f0 = "$companions"   // nowarn companion
+  }
+}
+package object companions
+
+object `t10125 avoid forcing owners` {
+  implicit class HasIr(s: String) {
+    def ir: Int = 1234
+  }
+
+  val bar = "$bar".ir   // nowarn owner
+
+  val x = "$x" // nowarn owner
+}
+
+object t10456 {
+  @deprecated("${myProperty}")
+  var myProperty: String = _
+}
+
+package pancake { }
+
+object Tester {
+  type NonVal = Int
+
+  def ok = "Don't warn on $nosymbol interpolated."
+
+  def pass = "Don't warn on $pancake package names."
+
+  def types = "Or $NonVal type symbols either."
+
+  def bar = "bar"
+  def f = {
+    val foo = "bar"
+    "An important $foo message!"                              // warn on ident in scope
+  }
+  def g = {
+    val foo = "bar"
+    "A doubly important ${foo * 2} message!"                  // warn on some expr, see below
+  }
+  def h = s"Try using '$$bar' instead."                       // no warn
+  def i = s"Try using '${ "$bar" }' instead."                 // was: no warn on space test
+  def j = s"Try using '${ "something like $bar" }' instead."  // warn
+  def k = f"Try using '$bar' instead."                        // no warn on other std interps
+  def p = "Template ${} {}"                                   // no warn on unlikely or empty expressions
+  def q = "${}$bar"                                           // disables subsequent checks! (a feature)
+  def r = "${}${bar}"                                         // disables subsequent checks! (a feature)
+
+  def v = "${baz}${bar}"                                      // warn on second expr
+  def w = "${ op_* }"                                         // warn, only cheap ident parsing
+  def x = "${ bar }"                                          // warn, a cheap ident in scope
+  def y = "${ baz }"                                          // no warn, cheap ident not in scope
+  def z = "${ baz * 3}"                                       // warn, no expr parsing
+
+  def thisly = "$this"
+  def exprly = "${this}"
+}
+
+trait X {
+  val s = "hello"
+  val t = "$s"
+  val u = "a${s}b"
+  val v = "a$s b"
+}
+
+trait DollarDollar {
+  val foo, bar = 42
+  def s = "$foo$bar"
 }

@@ -1,3 +1,5 @@
+//> using options -opt:none
+//
 object Ex {
   def unapply(t: Throwable): Option[Throwable] = Some(t)
 }

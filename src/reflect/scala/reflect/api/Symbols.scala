@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package api
@@ -43,7 +55,7 @@ package api
  *  to obtain the symbol that represents their declaration. During the typechecking phase, the compiler looks up the
  *  symbol based on the name and scope and sets the [[Trees.SymTreeApi.symbol `symbol` field]] of tree nodes.
  *
- *  For more information about `Symbol` usage and attached intricacies, see the [[http://docs.scala-lang.org/overviews/reflection/symbols-trees-types.html Reflection Guide: Symbols]]
+ *  For more information about `Symbol` usage and attached intricacies, see the [[https://docs.scala-lang.org/overviews/reflection/symbols-trees-types.html Reflection Guide: Symbols]]
  *
  *  @group ReflectionAPI
  *
@@ -324,7 +336,7 @@ trait Symbols { self: Universe =>
      *
      *  This method always returns signatures in the most generic way possible, even if the underlying symbol is obtained from an
      *  instantiation of a generic type. For example, signature
-     *  of the method `def map[B](f: (A) ⇒ B): List[B]`, which refers to the type parameter `A` of the declaring class `List[A]`,
+     *  of the method `def map[B](f: (A) => B): List[B]`, which refers to the type parameter `A` of the declaring class `List[A]`,
      *  will always feature `A`, regardless of whether `map` is loaded from the `List[_]` or from `List[Int]`. To get a signature
      *  with type parameters appropriately instantiated, one should use `infoIn`.
      *
@@ -430,7 +442,9 @@ trait Symbols { self: Universe =>
     def privateWithin: Symbol
 
     /** Does this symbol represent the definition of a package?
-     *  Known issues: [[https://github.com/scala/bug/issues/6732]].
+     *
+     *  True for term symbols that are packages and for type symbols
+     *  for which `isPackageClass` is true.
      *
      *  @group Tests
      */
@@ -446,7 +460,7 @@ trait Symbols { self: Universe =>
     /** Is this symbol static (i.e. with no outer instance)?
      *  Q: When exactly is a sym marked as STATIC?
      *  A: If it's a member of a toplevel object, or of an object contained in a toplevel object, or any number of levels deep.
-     *  http://groups.google.com/group/scala-internals/browse_thread/thread/d385bcd60b08faf6
+     *  https://groups.google.com/group/scala-internals/browse_thread/thread/d385bcd60b08faf6
      *
      *  @group Tests
      */
@@ -549,7 +563,7 @@ trait Symbols { self: Universe =>
    *  $SYMACCESSORS
    *  @group API
    */
-  trait TermSymbolApi extends SymbolApi { this: TermSymbol =>
+  trait TermSymbolApi extends SymbolApi { this: TermSymbol with TermSymbolApi =>
     /** Term symbols have their names of type `TermName`.
      */
     final type NameType = TermName

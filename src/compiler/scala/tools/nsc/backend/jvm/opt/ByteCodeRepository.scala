@@ -1,21 +1,29 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2014 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package backend.jvm
 package opt
 
-import java.util.concurrent.atomic.AtomicLong
-
-import scala.collection.JavaConverters._
+import scala.annotation.nowarn
 import scala.collection.{concurrent, mutable}
+import scala.jdk.CollectionConverters._
+import scala.reflect.internal.util.NoPosition
 import scala.tools.asm
-import scala.tools.asm.Attribute
+import scala.tools.asm.{Attribute, Type}
 import scala.tools.asm.tree._
 import scala.tools.nsc.backend.jvm.BTypes.InternalName
 import scala.tools.nsc.backend.jvm.BackendReporting._
+import scala.tools.nsc.backend.jvm.analysis.BackendUtils.LambdaMetaFactoryCall
 import scala.tools.nsc.backend.jvm.opt.BytecodeUtils._
 
 /**
@@ -27,7 +35,7 @@ abstract class ByteCodeRepository extends PerRunInit {
 
   import postProcessor.{bTypes, bTypesFromClassfile}
   import bTypes._
-  import frontendAccess.{backendClassPath, recordPerRunCache}
+  import frontendAccess.{backendReporting, backendClassPath, recordPerRunCache}
 
   /**
    * Contains ClassNodes and the canonical path of the source file path of classes being compiled in
@@ -48,7 +56,8 @@ abstract class ByteCodeRepository extends PerRunInit {
    * Note - although this is typed a mutable.Map, individual simple get and put operations are threadsafe as the
    * underlying data structure is synchronized.
    */
-  val parsedClasses: mutable.Map[InternalName, Either[ClassNotFound, ClassNode]] = recordPerRunCache(LruMap[InternalName, Either[ClassNotFound, ClassNode]](maxCacheSize, true))
+  val parsedClasses: mutable.Map[InternalName, Either[ClassNotFound, ClassNode]] =
+    recordPerRunCache(FifoCache[InternalName, Either[ClassNotFound, ClassNode]](maxCacheSize, threadsafe = true))
 
   /**
    * Contains the internal names of all classes that are defined in Java source files of the current
@@ -154,9 +163,21 @@ abstract class ByteCodeRepository extends PerRunInit {
   def methodNode(ownerInternalNameOrArrayDescriptor: String, name: String, descriptor: String): Either[MethodNotFound, (MethodNode, InternalName)] = {
     def findMethod(c: ClassNode): Option[MethodNode] = c.methods.asScala.find(m => m.name == name && m.desc == descriptor)
 
-    // https://docs.oracle.com/javase/specs/jvms/se8/html/jvms-2.html#jvms-2.9: "In Java SE 8, the only
-    // signature polymorphic methods are the invoke and invokeExact methods of the class MethodHandle.
-    def isSignaturePolymorphic(owner: InternalName) = owner == coreBTypes.jliMethodHandleRef.internalName && (name == "invoke" || name == "invokeExact")
+    // https://docs.oracle.com/javase/specs/jvms/se11/html/jvms-2.html#jvms-2.9.3
+    def findSignaturePolymorphic(owner: ClassNode): Option[MethodNode] = {
+      def hasObjectArrayParam(m: MethodNode) = Type.getArgumentTypes(m.desc) match {
+        case Array(pt) => pt.getDimensions == 1 && pt.getElementType.getInternalName == coreBTypes.ObjectRef.internalName
+        case _ => false
+      }
+      // Don't try to build a BType for `VarHandle`, it doesn't exist on JDK 8
+      if (owner.name == coreBTypes.jliMethodHandleRef.internalName || owner.name == "java/lang/invoke/VarHandle")
+        owner.methods.asScala.find(m =>
+          m.name == name &&
+            isNativeMethod(m) &&
+            isVarargsMethod(m) &&
+            hasObjectArrayParam(m))
+      else None
+    }
 
     // Note: if `owner` is an interface, in the first iteration we search for a matching member in the interface itself.
     // If that fails, the recursive invocation checks in the superclass (which is Object) with `publicInstanceOnly == true`.
@@ -164,10 +185,13 @@ abstract class ByteCodeRepository extends PerRunInit {
     def findInSuperClasses(owner: ClassNode, publicInstanceOnly: Boolean = false): Either[ClassNotFound, Option[(MethodNode, InternalName)]] = {
       findMethod(owner) match {
         case Some(m) if !publicInstanceOnly || (isPublicMethod(m) && !isStaticMethod(m)) => Right(Some((m, owner.name)))
-        case None =>
-          if (isSignaturePolymorphic(owner.name)) Right(Some((owner.methods.asScala.find(_.name == name).get, owner.name)))
-          else if (owner.superName == null) Right(None)
-          else classNode(owner.superName).flatMap(findInSuperClasses(_, isInterface(owner)))
+        case _ =>
+          findSignaturePolymorphic(owner) match {
+            case Some(m) => Right(Some((m, owner.name)))
+            case _ =>
+              if (owner.superName == null) Right(None)
+              else classNode(owner.superName).flatMap(findInSuperClasses(_, publicInstanceOnly = isInterface(owner)))
+          }
       }
     }
 
@@ -175,12 +199,13 @@ abstract class ByteCodeRepository extends PerRunInit {
       val visited = mutable.Set.empty[InternalName]
       val found = mutable.ListBuffer.empty[(MethodNode, ClassNode)]
 
+      @nowarn("cat=lint-nonlocal-return")
       def findIn(owner: ClassNode): Option[ClassNotFound] = {
         for (i <- owner.interfaces.asScala if !visited(i)) classNode(i) match {
           case Left(e) => return Some(e)
           case Right(c) =>
             visited += i
-            // abstract and static methods are excluded, see jvms-5.4.3.3
+            // private and static methods are excluded, see jvms-5.4.3.3
             for (m <- findMethod(c) if !isPrivateMethod(m) && !isStaticMethod(m)) found += ((m, c))
             val recursionResult = findIn(c)
             if (recursionResult.isDefined) return recursionResult
@@ -188,42 +213,46 @@ abstract class ByteCodeRepository extends PerRunInit {
         None
       }
 
-      findIn(initialOwner)
-
-      val result =
-        if (found.size <= 1) found.headOption
-        else {
-          val maxSpecific = found.filterNot({
-            case (method, owner) =>
-              isAbstractMethod(method) || {
-                val ownerTp = bTypesFromClassfile.classBTypeFromClassNode(owner)
-                found exists {
-                  case (other, otherOwner) =>
-                    (other ne method) && {
-                      val otherTp = bTypesFromClassfile.classBTypeFromClassNode(otherOwner)
-                      otherTp.isSubtypeOf(ownerTp).get
-                    }
-                }
+      findIn(initialOwner) match {
+        case Some(cnf) => Left(cnf)
+        case _ =>
+          val result =
+            if (found.sizeIs <= 1) found.headOption
+            else {
+              val maxSpecific = found.filterNot {
+                case (method, owner) =>
+                  val ownerTp = bTypesFromClassfile.classBTypeFromClassNode(owner)
+                  found.exists {
+                    case (other, otherOwner) =>
+                      (other ne method) && {
+                        val otherTp = bTypesFromClassfile.classBTypeFromClassNode(otherOwner)
+                        otherTp.isSubtypeOf(ownerTp).get
+                      }
+                  }
               }
-          })
-          // (*) note that if there's no single, non-abstract, maximally-specific method, the jvm
-          // method resolution (jvms-5.4.3.3) returns any of the non-private, non-static parent
-          // methods at random (abstract or concrete).
-          // we chose not to do this here, to prevent the inliner from potentially inlining the
-          // wrong method. in other words, we guarantee that a concrete method is only returned if
-          // it resolves deterministically.
-          // however, there may be multiple abstract methods inherited. in this case we *do* want
-          // to return a result to allow performing accessibility checks in the inliner. note that
-          // for accessibility it does not matter which of these methods is return, as they are all
-          // non-private (i.e., public, protected is not possible, jvms-4.1).
-          // the remaining case (when there's no max-specific method, but some non-abstract one)
-          // does not occur in bytecode generated by scalac or javac. we return no result in this
-          // case. this may at worst prevent some optimizations from happening.
-          if (maxSpecific.size == 1) maxSpecific.headOption
-          else if (found.forall(p => isAbstractMethod(p._1))) found.headOption // (*)
-          else None
-        }
-      Right(result.map(p => (p._1, p._2.name)))
+              // (*) if there's no single, non-abstract, maximally-specific method, JVM method resolution
+              // (jvms-5.4.3.3) returns any of the non-private, non-static parent methods arbitrarily
+              // (abstract or concrete).
+              // we chose not to do this here, to prevent the inlining the wrong method. in other words,
+              // a concrete method is only returned if it resolves deterministically.
+              // if there's no non-abstract method, we *do* want to return a result to allow performing
+              // accessibility checks in the inliner. for accessibility it does not matter which of these
+              // methods is returned, they are all public (protected is not possible, jvms-4.1).
+              // TODO: it would be cleaner to make `methodNode` return a list of methods and deal
+              // with it at the call sites, but it's a bigger refactoring that affects the
+              // `CallGraph`. in any case, it should not occur in Scala bytecode as we emit mixin
+              // forwarders.
+              val nonAbs = maxSpecific.filterNot(p => isAbstractMethod(p._1))
+              if (nonAbs.sizeIs == 1) nonAbs.headOption
+              else {
+                val foundNonAbs = found.filterNot(p => isAbstractMethod(p._1))
+                if (foundNonAbs.sizeIs == 1) foundNonAbs.headOption
+                else if (foundNonAbs.isEmpty) found.headOption // (*)
+                else None
+              }
+            }
+          Right(result.map(p => (p._1, p._2.name)))
+      }
     }
 
     // In a MethodInsnNode, the `owner` field may be an array descriptor, for example when invoking `clone`. We don't have a method node to return in this case.
@@ -232,6 +261,7 @@ abstract class ByteCodeRepository extends PerRunInit {
     } else {
       def notFound(cnf: Option[ClassNotFound]) = Left(MethodNotFound(name, descriptor, ownerInternalNameOrArrayDescriptor, cnf))
       val res: Either[ClassNotFound, Option[(MethodNode, InternalName)]] = classNode(ownerInternalNameOrArrayDescriptor).flatMap(c =>
+        // TODO: if `c` is an interface, should directly go to `findInInterfaces`
         findInSuperClasses(c) flatMap {
           case None => findInInterfaces(c)
           case res => Right(res)
@@ -245,27 +275,57 @@ abstract class ByteCodeRepository extends PerRunInit {
     }
   }
 
+  private def removeLineNumbersAndAddLMFImplMethods(classNode: ClassNode): Unit = {
+    for (m <- classNode.methods.asScala) {
+      val iter = m.instructions.iterator
+      while (iter.hasNext) {
+        val insn = iter.next()
+        insn.getType match {
+          case AbstractInsnNode.LINE =>
+            iter.remove()
+          case AbstractInsnNode.INVOKE_DYNAMIC_INSN => insn match {
+            case LambdaMetaFactoryCall(indy, _, implMethod, _, _) =>
+              postProcessor.backendUtils.addIndyLambdaImplMethod(classNode.name, m, indy, implMethod)
+            case _ =>
+          }
+          case _ =>
+        }
+      }
+
+    }
+  }
+
+
   private def parseClass(internalName: InternalName): Either[ClassNotFound, ClassNode] = {
     val fullName = internalName.replace('/', '.')
-    backendClassPath.findClassFile(fullName) map { classFile =>
-      val classNode = new asm.tree.ClassNode()
-      val classReader = new asm.ClassReader(classFile.toByteArray)
+    backendClassPath.findClassFile(fullName).flatMap { classFile =>
+      val classNode = new ClassNode1
 
-      // Passing the InlineInfoAttributePrototype makes the ClassReader invoke the specific `read`
-      // method of the InlineInfoAttribute class, instead of putting the byte array into a generic
-      // Attribute.
-      // We don't need frames when inlining, but we want to keep the local variable table, so we
-      // don't use SKIP_DEBUG.
-      classReader.accept(classNode, Array[Attribute](InlineInfoAttributePrototype), asm.ClassReader.SKIP_FRAMES)
-      // SKIP_FRAMES leaves line number nodes. Remove them because they are not correct after
-      // inlining.
-      // TODO: we need to remove them also for classes that are not parsed from classfiles, why not simplify and do it once when inlining?
-      // OR: instead of skipping line numbers for inlined code, use write a SourceDebugExtension
-      // attribute that contains JSR-45 data that encodes debugging info.
-      //   http://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.7.11
-      //   https://jcp.org/aboutJava/communityprocess/final/jsr045/index.html
-      removeLineNumberNodes(classNode)
-      classNode
+      try {
+        // Fails for classfiles with a version unsupported by ASM, e.g., from a newer JDK (scala/bug#13204)
+        val classReader = new asm.ClassReader(classFile.toByteArray)
+        // Passing the InlineInfoAttributePrototype makes the ClassReader invoke the specific `read`
+        // method of the InlineInfoAttribute class, instead of putting the byte array into a generic
+        // Attribute.
+        // We don't need frames when inlining, but we want to keep the local variable table, so we
+        // don't use SKIP_DEBUG.
+        classReader.accept(classNode, Array[Attribute](InlineInfoAttributePrototype), asm.ClassReader.SKIP_FRAMES)
+        // SKIP_FRAMES leaves line number nodes. Remove them because they are not correct after
+        // inlining.
+        // TODO: we need to remove them also for classes that are not parsed from classfiles, why not simplify and do it once when inlining?
+        // OR: instead of skipping line numbers for inlined code, use write a SourceDebugExtension
+        // attribute that contains JSR-45 data that encodes debugging info.
+      //   https://docs.oracle.com/javase/specs/jvms/se7/html/jvms-4.html#jvms-4.7.11
+        //   https://jcp.org/aboutJava/communityprocess/final/jsr045/index.html
+        removeLineNumbersAndAddLMFImplMethods(classNode)
+        Some(classNode)
+      } catch {
+        case ex: Exception =>
+          if (frontendAccess.compilerSettings.debug) ex.printStackTrace()
+          if (frontendAccess.compilerSettings.optWarningNoInlineMissingBytecode)
+            backendReporting.optimizerWarning(NoPosition, s"Error while reading the classfile of ${fullName} for the optimizer\n${ex.getMessage}", site = "")
+          None
+      }
     } match {
       case Some(node) => Right(node)
       case None       => Left(ClassNotFound(internalName, javaDefinedClasses.get(internalName)))

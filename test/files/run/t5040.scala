@@ -1,3 +1,5 @@
+//> using options -language:dynamics
+//
 abstract class Prova2 extends Dynamic {
   def applyDynamic(m: String)(): Unit
   private def privateMethod() = println("private method")

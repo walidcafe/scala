@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -12,17 +16,20 @@ package scala
  *  The only method not already present in class `AnyRef` is `canEqual`.
  */
 trait Equals extends Any {
-  /** A method that should be called from every well-designed equals method
+  /** Checks whether this instance can possibly equal `that`.
+   *
+   *  A method that should be called from every well-designed equals method
    *  that is open to be overridden in a subclass. See
-   *  [[http://www.artima.com/pins1ed/object-equality.html Programming in Scala,
+   *  [[https://www.artima.com/pins1ed/object-equality.html Programming in Scala,
    *  Chapter 28]] for discussion and design.
    *
    *  @param    that    the value being probed for possible equality
-   *  @return   true if this instance can possibly equal `that`, otherwise false
+   *  @return   `true` if this instance can possibly equal `that`, otherwise `false`
    */
   def canEqual(that: Any): Boolean
 
-  /** The universal equality method defined in `AnyRef`.
+  /** Checks whether this instance is equal to `that`.
+   *  This universal equality method is defined in `AnyRef`.
    */
   def equals(that: Any): Boolean
 }

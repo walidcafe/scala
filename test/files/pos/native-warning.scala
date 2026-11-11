@@ -1,3 +1,4 @@
+//> using options -Xfatal-warnings -deprecation
 class A {
   @native def setup(): Unit
 

@@ -40,8 +40,8 @@ object overloads {
         if (value == "\u0000") value = "\\u0000";
         Console.print(": " + what + " = " + value);
         if (!success) Console.print(" != " + expected);
-        Console.println;
-        Console.flush;
+        Console.println()
+        Console.flush()
     }
 
     def - = 0;
@@ -52,7 +52,7 @@ object overloads {
     def --(c: Char) = c;
     def --(i: Int) = i;
 
-    def test: Unit = {
+    def test(): Unit = {
         check("-('a')", -('a'), -97);
         check("-(97)", -(97), -97);
 
@@ -87,7 +87,7 @@ object overloads {
 object Test {
 
   def main(args: Array[String]): Unit = {
-    overloads.test;
+    overloads.test()
   }
 
 }

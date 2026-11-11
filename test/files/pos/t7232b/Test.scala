@@ -1,3 +1,4 @@
+//> using options -Werror
 object Test {
   import pack._
 

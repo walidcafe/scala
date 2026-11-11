@@ -1,5 +1,4 @@
 object Test {
-  import scala.collection.SeqLike
   def slowSearch[A](xs: Seq[A], ys: Seq[A], start: Int = 0): Int = {
     if (xs startsWith ys) start
     else if (xs.isEmpty) -1
@@ -17,13 +16,13 @@ object Test {
     for (h <- Array(2,5,1000)) {
       for (i <- 0 to 100) {
         for (j <- 0 to 10) {
-          val xs = (0 to j).map(_ => (rng.nextInt & 0x7FFFFFFF) % h)
+          val xs = (0 to j).map(_ => (rng.nextInt() & 0x7FFFFFFF) % h)
           val xsa = xs.toArray
           val xsv = Vector() ++ xs
           val xsl = xs.toList
           val xss = Vector[Seq[Int]](xs,xsa.toIndexedSeq,xsv,xsl)
           for (k <- 0 to 5) {
-            val ys = (0 to k).map(_ => (rng.nextInt & 0x7FFFFFFF) % h)
+            val ys = (0 to k).map(_ => (rng.nextInt() & 0x7FFFFFFF) % h)
             val ysa = ys.toArray
             val ysv = Vector() ++ ys
             val ysl = ys.toList
@@ -54,7 +53,7 @@ object Test {
     )
     (haystacks zip needles) foreach {
       case (hay, nee) =>
-        println(hay.indexOfSlice(nee,2) + " " + hay.lastIndexOfSlice(nee,13))
+        println(s"${hay.indexOfSlice(nee,2)} ${hay.lastIndexOfSlice(nee,13)}")
     }
   }
 }

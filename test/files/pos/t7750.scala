@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings -feature
+//
 trait LazyCombiner[Elem, +To, Buff <: Growable[Elem] with Sizing]
 trait Growable[T]
 trait Sizing

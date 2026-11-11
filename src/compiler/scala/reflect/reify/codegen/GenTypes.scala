@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package codegen
 
@@ -34,35 +46,35 @@ trait GenTypes {
     if (tsym.isClass && tpe == tsym.typeConstructor && tsym.isStatic)
       Select(Select(reify(tsym), nme.asType), nme.toTypeConstructor)
     else tpe match {
-      case tpe : NoType.type =>
+      case tpe: NoType.type =>
         reifyMirrorObject(tpe)
-      case tpe : NoPrefix.type =>
+      case tpe: NoPrefix.type =>
         reifyMirrorObject(tpe)
-      case tpe @ ThisType(root) if root.isRoot =>
+      case ThisType(root) if root.isRoot =>
         mirrorBuildCall(nme.thisPrefix, mirrorMirrorSelect(nme.RootClass))
-      case tpe @ ThisType(empty) if empty.isEmptyPackageClass =>
+      case ThisType(empty) if empty.isEmptyPackageClass =>
         mirrorBuildCall(nme.thisPrefix, mirrorMirrorSelect(nme.EmptyPackageClass))
-      case tpe @ ThisType(clazz) if clazz.isModuleClass && clazz.isStatic =>
+      case ThisType(clazz) if clazz.isModuleClass && clazz.isStatic =>
         val module = reify(clazz.sourceModule)
         val moduleClass = Select(Select(module, nme.asModule), nme.moduleClass)
         mirrorBuildCall(nme.ThisType, moduleClass)
-      case tpe @ ThisType(sym) =>
+      case ThisType(sym) =>
         reifyBuildCall(nme.ThisType, sym)
-      case tpe @ SuperType(thistpe, supertpe) =>
+      case SuperType(thistpe, supertpe) =>
         reifyBuildCall(nme.SuperType, thistpe, supertpe)
-      case tpe @ SingleType(pre, sym) =>
+      case SingleType(pre, sym) =>
         reifyBuildCall(nme.SingleType, pre, sym)
-      case tpe @ ConstantType(value) =>
+      case ConstantType(value) =>
         mirrorBuildCall(nme.ConstantType, reifyProduct(value))
-      case tpe @ TypeRef(pre, sym, args) =>
+      case TypeRef(pre, sym, args) =>
         reifyBuildCall(nme.TypeRef, pre, sym, args)
-      case tpe @ TypeBounds(lo, hi) =>
+      case TypeBounds(lo, hi) =>
         reifyBuildCall(nme.TypeBounds, lo, hi)
-      case tpe @ NullaryMethodType(restpe) =>
+      case NullaryMethodType(restpe) =>
         reifyBuildCall(nme.NullaryMethodType, restpe)
-      case tpe @ AnnotatedType(anns, underlying) =>
+      case tpe: AnnotatedType =>
         reifyAnnotatedType(tpe)
-      case _ =>
+      case tpe =>
         reifyToughType(tpe)
     }
   }
@@ -76,7 +88,7 @@ trait GenTypes {
 
       val tagFlavor = if (concrete) tpnme.TypeTag.toString else tpnme.WeakTypeTag.toString
       // if this fails, it might produce the dreaded "erroneous or inaccessible type" error
-      // to find out the whereabouts of the error run scalac with -Ydebug
+      // to find out the whereabouts of the error run scalac with -Vdebug
       if (reifyDebug) println("launching implicit search for %s.%s[%s]".format(universe, tagFlavor, tpe))
       val result =
         typer.resolveTypeTag(defaultErrorPosition, universe.tpe, tpe, concrete = concrete, allowMaterialization = false) match {
@@ -124,7 +136,7 @@ trait GenTypes {
     val result = typer.silent(silentTyper => silentTyper.context.withMacrosDisabled(searchForManifest(silentTyper)))
     result match {
       case analyzer.SilentResultValue(result) => result
-      case analyzer.SilentTypeError(_) => EmptyTree
+      case _: analyzer.SilentTypeError        => EmptyTree
     }
   }
 
@@ -153,8 +165,9 @@ trait GenTypes {
    *  I.e. we can compile the code that involves `ru.Type`, but we cannot serialize an instance of `ru.Type`.
    */
   private def reifySemiConcreteTypeMember(tpe: Type): Tree = tpe match {
-    case tpe @ TypeRef(pre @ SingleType(prepre, presym), sym, args) if sym.isAbstractType && !sym.isExistential =>
+    case TypeRef(pre @ SingleType(_, _), sym, args) if sym.isAbstractType && !sym.isExistential =>
       mirrorBuildCall(nme.TypeRef, reify(pre), mirrorBuildCall(nme.selectType, reify(sym.owner), reify(sym.name.toString)), reify(args))
+    case x => throw new MatchError(x)
   }
 
   /** Reify an annotated type, i.e. the one that makes us deal with AnnotationInfos */
@@ -174,18 +187,18 @@ trait GenTypes {
 
     tpe match {
       case tpe @ RefinedType(parents, decls) =>
-        reifySymDef(tpe.typeSymbol)
+        List(tpe.typeSymbol).foreach(reifySymDef)
         mirrorBuildCall(nme.RefinedType, reify(parents), reifyScope(decls), reify(tpe.typeSymbol))
-      case tpe @ ExistentialType(tparams, underlying) =>
-        tparams foreach reifySymDef
+      case ExistentialType(tparams, underlying) =>
+        tparams.foreach(reifySymDef)
         reifyBuildCall(nme.ExistentialType, tparams, underlying)
       case tpe @ ClassInfoType(parents, decls, clazz) =>
-        reifySymDef(clazz)
+        List(clazz).foreach(reifySymDef)
         mirrorBuildCall(nme.ClassInfoType, reify(parents), reifyScope(decls), reify(tpe.typeSymbol))
-      case tpe @ MethodType(params, restpe) =>
+      case MethodType(params, restpe) =>
         params foreach reifySymDef
         reifyBuildCall(nme.MethodType, params, restpe)
-      case tpe @ PolyType(tparams, underlying) =>
+      case PolyType(tparams, underlying) =>
         tparams foreach reifySymDef
         reifyBuildCall(nme.PolyType, tparams, underlying)
       case _ =>

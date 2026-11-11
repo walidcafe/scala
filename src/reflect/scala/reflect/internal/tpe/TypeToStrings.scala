@@ -1,25 +1,28 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package internal
 package tpe
 
-import scala.collection.mutable.HashSet
-
-private[internal] trait TypeToStrings {
-  self: SymbolTable =>
+private[internal] final class TypeToStrings[U <: SymbolTable with Singleton](val self: U) {
+  import self._
 
   /** The maximum number of recursions allowed in toString
     */
   final val maxToStringRecursions = 50
 
-  private var _toStringRecursions = 0
-  def toStringRecursions = _toStringRecursions
-  def toStringRecursions_=(value: Int) = _toStringRecursions = value
-
-  private var _toStringSubjects = HashSet[Type]()
-  def toStringSubjects = _toStringSubjects
-
-  protected def typeToString(tpe: Type): String =
+  def typeToString(tpe: Type): String =
     // if (toStringSubjects contains tpe) {
     //   // handles self-referential anonymous classes and who knows what else
     //   "..."
@@ -27,7 +30,7 @@ private[internal] trait TypeToStrings {
     // else
     if (toStringRecursions >= maxToStringRecursions) {
       devWarning("Exceeded recursion depth attempting to print " + util.shortClassOfInstance(tpe))
-      if (settings.debug)
+      if (settings.isDebug)
         (new Throwable).printStackTrace
 
       "..."

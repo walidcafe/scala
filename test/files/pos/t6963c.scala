@@ -1,3 +1,5 @@
+//> using options -Werror -Xmigration:2.9
+//
 import collection.Seq
 object Test {
   def f1(x: Any) = x.isInstanceOf[Seq[_]]

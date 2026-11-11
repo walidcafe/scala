@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 trait T {
   final case class A()
 

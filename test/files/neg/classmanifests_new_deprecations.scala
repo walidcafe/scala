@@ -1,3 +1,5 @@
+//> using options -Xlint -Werror
+//
 object Test extends App {
   def rcm1[T: scala.reflect.ClassManifest] = ???
   def rcm2[T](implicit evidence$1: scala.reflect.ClassManifest[T]) = ???

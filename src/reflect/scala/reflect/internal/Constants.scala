@@ -1,57 +1,61 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect
 package internal
 
-import scala.{ Symbol => SSymbol }
-import scala.annotation.switch
+import scala.annotation.{nowarn, switch}
 
 trait Constants extends api.Constants {
   self: SymbolTable =>
 
   import definitions._
 
-  final val NoTag      = 0
-  final val UnitTag    = 1
-  final val BooleanTag = 2
-  final val ByteTag    = 3
-  final val ShortTag   = 4
-  final val CharTag    = 5
-  final val IntTag     = 6
-  final val LongTag    = 7
-  final val FloatTag   = 8
-  final val DoubleTag  = 9
-  final val StringTag  = 10
-  final val NullTag    = 11
-  final val ClazzTag   = 12
+  final val NoTag        = 0
+  final val UnitTag      = 1
+  final val BooleanTag   = 2
+  final val ByteTag      = 3
+  final val ShortTag     = 4
+  final val CharTag      = 5
+  final val IntTag       = 6
+  final val LongTag      = 7
+  final val FloatTag     = 8
+  final val DoubleTag    = 9
+  final val StringTag    = 10
+  final val NullTag      = 11
+  final val ClazzTag     = 12
   // For supporting java enumerations inside java annotations (see ClassfileParser)
-  final val EnumTag    = 13
-  final val SSymbolTag = 14
+  final val EnumTag      = 13
 
   case class Constant(value: Any) extends ConstantApi {
     import java.lang.Double.doubleToRawLongBits
     import java.lang.Float.floatToRawIntBits
 
     val tag: Int = value match {
-      case null         => NullTag
-      case x: Unit      => UnitTag
-      case x: Boolean   => BooleanTag
-      case x: Byte      => ByteTag
-      case x: Short     => ShortTag
-      case x: Int       => IntTag
-      case x: Long      => LongTag
-      case x: Float     => FloatTag
-      case x: Double    => DoubleTag
-      case x: String    => StringTag
-      case x: Char      => CharTag
-      case x: Type      => ClazzTag
-      case x: Symbol    => EnumTag
-      case x: SSymbol   => SSymbolTag
-      case _            => throw new Error("bad constant value: " + value + " of class " + value.getClass)
+      case null       => NullTag
+      case x: Unit    => UnitTag
+      case x: Boolean => BooleanTag
+      case x: Byte    => ByteTag
+      case x: Short   => ShortTag
+      case x: Int     => IntTag
+      case x: Long    => LongTag
+      case x: Float   => FloatTag
+      case x: Double  => DoubleTag
+      case x: String  => StringTag
+      case x: Char    => CharTag
+      case x: Type    => ClazzTag
+      case x: Symbol  => EnumTag
+      case _          => throw new Error("bad constant value: " + value + " of class " + value.getClass)
     }
 
     def isByteRange: Boolean  = isIntRange && Byte.MinValue <= intValue && intValue <= Byte.MaxValue
@@ -59,11 +63,11 @@ trait Constants extends api.Constants {
     def isCharRange: Boolean  = isIntRange && Char.MinValue <= intValue && intValue <= Char.MaxValue
     def isIntRange: Boolean   = ByteTag <= tag && tag <= IntTag
     def isLongRange: Boolean  = ByteTag <= tag && tag <= LongTag
-    def isFloatRange: Boolean = ByteTag <= tag && tag <= FloatTag
+    def isFloatRepresentable: Boolean = ByteTag <= tag && tag <= FloatTag && (tag != IntTag || intValue == intValue.toFloat.toInt) && (tag != LongTag || longValue == longValue.toFloat.toLong)
+    def isDoubleRepresentable: Boolean = ByteTag <= tag && tag <= DoubleTag && (tag != LongTag || longValue == longValue.toDouble.toLong)
     def isNumeric: Boolean    = ByteTag <= tag && tag <= DoubleTag
     def isNonUnitAnyVal       = BooleanTag <= tag && tag <= DoubleTag
-    def isSymbol: Boolean     = tag == SSymbolTag
-    def isSuitableLiteralType = (BooleanTag <= tag && tag <= NullTag) || tag == SSymbolTag
+    def isSuitableLiteralType = BooleanTag <= tag && tag <= NullTag
     def isAnyVal              = UnitTag <= tag && tag <= DoubleTag
 
     def tpe: Type = tag match {
@@ -80,7 +84,6 @@ trait Constants extends api.Constants {
       case NullTag    => NullTpe
       case ClazzTag   => ClassType(typeValue)
       case EnumTag    => EnumType(symbolValue)
-      case SSymbolTag => SymbolTpe
     }
 
     /** We need the equals method to take account of tags as well as values.
@@ -88,7 +91,29 @@ trait Constants extends api.Constants {
     // !!! In what circumstance could `equalHashValue == that.equalHashValue && tag != that.tag` be true?
     override def equals(other: Any): Boolean = other match {
       case that: Constant =>
-        this.tag == that.tag && equalHashValue == that.equalHashValue
+        this.tag == that.tag && {
+          //
+          // Consider two `NaN`s to be identical, despite non-equality
+          // Consider -0d to be distinct from 0d, despite equality
+          //
+          // We use the raw versions (i.e. `floatToRawIntBits` rather than `floatToIntBits`)
+          // to avoid treating different encodings of `NaN` as the same constant.
+          // You probably can't express different `NaN` varieties as compile time
+          // constants in regular Scala code, but it is conceivable that you could
+          // conjure them with a macro.
+          //
+          this.tag match {
+            case NullTag =>
+              true
+            case FloatTag =>
+              floatToRawIntBits(value.asInstanceOf[Float]) == floatToRawIntBits(that.value.asInstanceOf[Float])
+            case DoubleTag =>
+              doubleToRawLongBits(value.asInstanceOf[Double]) == doubleToRawLongBits(that.value.asInstanceOf[Double])
+            case _ =>
+              // we do not want cooperative equality for determining if constants are equal
+              this.value.equals(that.value): @nowarn("cat=other-non-cooperative-equals")
+          }
+        }
       case _ => false
     }
 
@@ -195,9 +220,9 @@ trait Constants extends api.Constants {
         Constant(intValue)
       else if (target == LongClass && isLongRange)
         Constant(longValue)
-      else if (target == FloatClass && isFloatRange)
+      else if (target == FloatClass && isFloatRepresentable)
         Constant(floatValue)
-      else if (target == DoubleClass && isNumeric)
+      else if (target == DoubleClass && isDoubleRepresentable)
         Constant(doubleValue)
       else
         null
@@ -208,23 +233,63 @@ trait Constants extends api.Constants {
       else if (tag == ClazzTag) signature(typeValue)
       else value.toString()
 
-    def escapedChar(ch: Char): String = (ch: @switch) match {
-      case '\b' => "\\b"
-      case '\t' => "\\t"
-      case '\n' => "\\n"
-      case '\f' => "\\f"
-      case '\r' => "\\r"
-      case '"'  => "\\\""
-      case '\'' => "\\\'"
-      case '\\' => "\\\\"
-      case _    => if (ch.isControl) "\\u%04X".format(ch.toInt) else String.valueOf(ch)
-    }
-
     def escapedStringValue: String = {
-      def escape(text: String): String = text flatMap escapedChar
+      import java.lang.StringBuilder
+      def requiresFormat(c: Char): Boolean =
+        (c: @switch) match {
+          case '\b' | '\t' | '\n' | '\f' | '\r' | '"' | '\'' | '\\' => true
+          case c => c.isControl
+        }
+      def escapedChar(b: StringBuilder, c: Char): Unit = {
+        def quadNibble(b: StringBuilder, x: Int, i: Int): Unit =
+          if (i < 4) {
+            quadNibble(b, x >> 4, i + 1)
+            val n = x & 0xF
+            val c = if (n < 10) '0' + n else 'A' + (n - 10)
+            b.append(c.toChar)
+          }
+        val replace = (c: @switch) match {
+          case '\b' => "\\b"
+          case '\t' => "\\t"
+          case '\n' => "\\n"
+          case '\f' => "\\f"
+          case '\r' => "\\r"
+          case '"'  => "\\\""
+          case '\'' => "\\\'"
+          case '\\' => "\\\\"
+          case c =>
+            if (c.isControl) {
+              b.append("\\u")
+              quadNibble(b, c.toInt, 0)
+            }
+            else b.append(c)
+            return
+        }
+        b.append(replace)
+      }
+      def escape(text: String) = {
+        def mustBuild: Boolean = {
+          var i = 0
+          while (i < text.length) {
+            if (requiresFormat(text.charAt(i))) return true
+            i += 1
+          }
+          false
+        }
+        if (mustBuild) {
+          val b = new StringBuilder(text.length + 16).append('"')
+          var i = 0
+          while (i < text.length) {
+            escapedChar(b, text.charAt(i))
+            i += 1
+          }
+          b.append('"').toString
+        }
+        else "\"" + text + "\""
+      }
       tag match {
         case NullTag   => "null"
-        case StringTag => "\"" + escape(stringValue) + "\""
+        case StringTag => escape(stringValue)
         case ClazzTag  =>
           def show(tpe: Type) = "classOf[" + signature(tpe) + "]"
           typeValue match {
@@ -239,43 +304,40 @@ trait Constants extends api.Constants {
               show(clazz.tpe_*)
             case _ => show(typeValue)
           }
-        case CharTag   => "'" + escapedChar(charValue) + "'"
-        case LongTag   => longValue.toString() + "L"
-        case EnumTag   => symbolValue.name.toString()
-        case _         => String.valueOf(value)
+        case CharTag =>
+          val c = charValue
+          if (requiresFormat(c)) {
+            val b = new StringBuilder().append('\'')
+            escapedChar(b, c)
+            b.append('\'').toString
+          }
+          else "'" + c + "'"
+        case LongTag => longValue.toString() + "L"
+        case EnumTag => symbolValue.name.toString()
+        case _       => String.valueOf(value)
       }
     }
     def typeValue: Type     = value.asInstanceOf[Type]
     def symbolValue: Symbol = value.asInstanceOf[Symbol]
-    def scalaSymbolValue: SSymbol = value.asInstanceOf[SSymbol]
-
-    /**
-     * Consider two `NaN`s to be identical, despite non-equality
-     * Consider -0d to be distinct from 0d, despite equality
-     *
-     * We use the raw versions (i.e. `floatToRawIntBits` rather than `floatToIntBits`)
-     * to avoid treating different encodings of `NaN` as the same constant.
-     * You probably can't express different `NaN` varieties as compile time
-     * constants in regular Scala code, but it is conceivable that you could
-     * conjure them with a macro.
-     */
-    private def equalHashValue: Any = value match {
-      case f: Float  => floatToRawIntBits(f)
-      case d: Double => doubleToRawLongBits(d)
-      case v         => v
-    }
 
     override def hashCode: Int = {
       import scala.util.hashing.MurmurHash3._
       val seed = 17
       var h = seed
       h = mix(h, tag.##) // include tag in the hash, otherwise 0, 0d, 0L, 0f collide.
-      h = mix(h, equalHashValue.##)
+      val valueHash = tag match {
+        case NullTag => 0
+        // We could just use value.hashCode here, at the cost of a collision between different NaNs
+        case FloatTag => java.lang.Integer.hashCode(floatToRawIntBits(value.asInstanceOf[Float]))
+        case DoubleTag => java.lang.Long.hashCode(doubleToRawLongBits(value.asInstanceOf[Double]))
+        case _ => value.hashCode()
+      }
+      h = mix(h, valueHash)
       finalizeHash(h, length = 2)
     }
   }
 
   object Constant extends ConstantExtractor
 
-  implicit val ConstantTag = ClassTag[Constant](classOf[Constant])
+  implicit val ConstantTag: ClassTag[Constant] = ClassTag[Constant](classOf[Constant])
 }

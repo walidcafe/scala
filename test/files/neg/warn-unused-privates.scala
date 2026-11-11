@@ -1,8 +1,11 @@
+//
+//> using options -deprecation -Werror -Wunused:privates
+//
 class Bippy(a: Int, b: Int) {
   private def this(c: Int) = this(c, c)           // warn
-  private def bippy(x: Int): Int      = bippy(x)  // TODO: could warn
+  private def bippy(x: Int): Int      = bippy(x)  // warn
   private def boop(x: Int)            = x+a+b     // warn
-  final private val MILLIS1           = 2000      // no warn, might have been inlined
+  final private val MILLIS1           = 2000      // now warn, might have been inlined
   final private val MILLIS2: Int      = 1000      // warn
   final private val HI_COMPANION: Int = 500       // no warn, accessed from companion
   def hi() = Bippy.HI_INSTANCE
@@ -19,6 +22,8 @@ class B1(msg: String) extends A(msg)
 class B2(msg0: String) extends A(msg0)
 class B3(msg0: String) extends A("msg")
 
+trait Bing
+
 /*** Early defs warnings disabled primarily due to scala/bug#6595.
  *   The test case is here to assure we aren't issuing false positives;
  *   the ones labelled "warn" don't warn.
@@ -31,11 +36,11 @@ class Boppy extends {
   final val himinline     = him
   private val hum: String = "jkl"       // warn
   final val ding = hmm.length
-} with Mutable {
+} with Bing {
   val dinger = hom
   private val hummer = "def" // warn
 
-  private final val bum   = "ghi"       // no warn, might have been (was) inlined
+  private final val bum   = "ghi"       // now warn, might have been (was) inlined
   final val bum2          = "ghi"       // no warn, same
 }
 
@@ -45,10 +50,16 @@ trait Accessors {
   private var v3: Int = 0 // warn, never got
   private var v4: Int = 0 // no warn
 
+  private[this] var v5 = 0 // warn, never set
+  private[this] var v6 = 0 // warn, never got
+  private[this] var v7 = 0 // no warn
+
   def bippy(): Int = {
-    v3 = 5
-    v4 = 6
-    v2 + v4
+    v3 = 3
+    v4 = 4
+    v6 = 6
+    v7 = 7
+    v2 + v4 + v5 + v7
   }
 }
 
@@ -58,10 +69,16 @@ class StableAccessors {
   private var s3: Int = 0 // warn, never got
   private var s4: Int = 0 // no warn
 
+  private[this] var s5 = 0 // warn, never set
+  private[this] var s6 = 0 // no warn, limitation
+  private[this] var s7 = 0 // no warn
+
   def bippy(): Int = {
-    s3 = 5
-    s4 = 6
-    s2 + s4
+    s3 = 3
+    s4 = 4
+    s6 = 6
+    s7 = 7
+    s2 + s4 + s5 + s7
   }
 }
 
@@ -241,5 +258,53 @@ trait `short comings` {
   def f: Int = {
     val x = 42
     17
+  }
+}
+
+class `issue 12600 ignore abstract types` {
+  type Abs
+}
+
+class `t12992 enclosing def is unused` {
+  private val n = 42
+  @annotation.unused def f() = n + 2 // unused code uses n
+}
+
+class `recursive reference is not a usage` {
+  private def f(i: Int): Int = // warn
+    if (i <= 0) i
+    else f(i-1)
+  private class P {
+    def f() = new P()
+  }
+}
+
+class Constantly {
+  private final val Here = "here"
+  private final val There = "there" // warn
+  def bromide = Here + " today, gone tomorrow."
+}
+
+class Annots {
+  import annotation._
+
+  trait T {
+    def value: Int
+  }
+
+  class C {
+    private final val Here = "here"
+    private final val There = "msg=there"
+    def f(implicit @implicitNotFound(Here) t: T) = t.value
+    def x: String @nowarn(There) = ""
+  }
+
+  // cf HashMap#mergeInto which looped on type of new unchecked
+  // case bm: BitmapIndexedMapNode[K, V] @unchecked =>
+  class Weird[K, V] {
+    def f(other: Weird[K, V]) =
+      other match {
+        case weird: Weird[K, V] @unchecked =>
+      }
   }
 }

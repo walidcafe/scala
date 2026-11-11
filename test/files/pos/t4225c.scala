@@ -1,3 +1,6 @@
+
+//
+//
 trait A
 trait B
 

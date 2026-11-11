@@ -1,3 +1,5 @@
+//> using options -opt:inline:**
+//
 object Single {
   var i = 0
   def isEmpty = false
@@ -58,6 +60,7 @@ object Test {
       case collection.Seq(_, i) =>
         buffer(1) = 1
         assertZero(i) // failed
+      case x => throw new MatchError(x)
     }
 
     case class CaseSequence(as: Int*)

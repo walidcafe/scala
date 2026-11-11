@@ -1,3 +1,5 @@
+//> using options -opt:inline:**
+//
 object Test {
 
   class Foo(final var i:Int)

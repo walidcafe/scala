@@ -1,3 +1,4 @@
+//> using options -opt:inline:** -Wopt
 package instrumented
 
 object MyPredef {

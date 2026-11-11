@@ -1,0 +1,6 @@
+t11379a.scala:17: error: type mismatch;
+ found   : scala.util.Right[Nothing,Unit]
+ required: Unit => Unit
+  def test4: Either[Int, Unit] = Right(()).map(Right(()))
+                                                    ^
+1 error

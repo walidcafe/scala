@@ -1,4 +1,5 @@
-import scala.language.higherKinds
+//> using options -Xsource:2.13
+//
 
 trait Forall[F[_]] {
   def instantiate[A]: F[A]

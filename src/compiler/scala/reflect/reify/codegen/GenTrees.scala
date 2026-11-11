@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package codegen
 
@@ -9,7 +21,7 @@ trait GenTrees {
 
   // unfortunately, these are necessary to reify AnnotatedTypes
   // I'd gladly get rid of them, but I don't fancy making a metaprogramming API that doesn't work with annotated types
-  // luckily for our sanity, these vars are mutated only within a very restricted code execution path
+  // luckily for our confidence, these vars are mutated only within a very restricted code execution path
   def reifyTreeSymbols: Boolean = state.reifyTreeSymbols
   def reifyTreeTypes: Boolean = state.reifyTreeTypes
 
@@ -105,7 +117,7 @@ trait GenTrees {
                 abort("free var local to the reifee, should have already been inlined by Metalevels: " + inlinedSymtab.symDef(sym))
               state.symtab ++= inlinedSymtab
               rtree
-            case tree =>
+            case _ =>
               val migrated = Apply(Select(splicee, nme.in), List(Ident(nme.MIRROR_SHORT)))
               Select(migrated, nme.tree)
           }
@@ -145,7 +157,7 @@ trait GenTrees {
         }
         else if (!sym.isLocalToReifee) {
           if (sym.isVariable && sym.owner.isTerm) {
-            captureVariable(sym) // Note order dependency: captureVariable needs to come before reification here.
+            capturedVariables.captureVariable(sym) // Note order dependency: captureVariable needs to come before reification here.
             mirrorCall(nme.Select, mirrorBuildCall(nme.mkIdent, reify(sym)), reify(nme.elem))
           }
           else mirrorBuildCall(nme.mkIdent, reify(sym))

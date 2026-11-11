@@ -1,4 +1,14 @@
-// Copyright 2005-2017 LAMP/EPFL and Lightbend, Inc
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.tools.nsc
 package transform
@@ -74,15 +84,17 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
         if (sym.isSetter) setterBody(sym, sym.getterIn(clazz)) else getterBody(sym)
 
       protected def getterBody(getter: Symbol): Tree = {
-        assert(getter.isGetter)
-        assert(getter.hasFlag(PARAMACCESSOR))
+        assert(getter.isGetter, s"$getter must be a getter")
+        assert(getter.hasFlag(PARAMACCESSOR), s"$getter must be an accessor")
 
         fieldAccess(getter)
       }
 
       protected def setterBody(setter: Symbol, getter: Symbol): Tree = {
         assert(getter.hasFlag(PARAMACCESSOR), s"missing implementation for non-paramaccessor $setter in $clazz")
-
+        // scala-dev#408: fields for locals captured in a trait are non-final. The lambdalift phase adds the
+        // ConstructorNeedsFence attachment to the primary constructor of the class to ensure safe publication.
+        setter.accessed.setFlag(MUTABLE)
         Assign(fieldAccess(setter), Ident(setter.firstParam))
       }
 
@@ -106,7 +118,7 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
 
 
   // TODO: better way to communicate from info transform to tree transform?
-  private[this] val _bitmapInfo  = perRunCaches.newMap[Symbol, BitmapInfo]
+  private[this] val _bitmapInfo  = perRunCaches.newMap[Symbol, BitmapInfo]()
   private[this] val _slowPathFor = perRunCaches.newMap[Symbol, Symbol]()
 
   def checkedAccessorSymbolSynth(clz: Symbol): CheckedAccessorSymbolSynth =
@@ -188,10 +200,10 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
         bitmapSyms
       }
 
-      fields groupBy bitmapCategory flatMap {
+      fields.groupBy(bitmapCategory).flatMap {
         case (category, fields) if category != nme.NO_NAME && fields.nonEmpty => allocateBitmaps(fields, category): Iterable[Symbol]
         case _ => Nil
-      } toList
+      }.toList
     }
 
     def slowPathFor(lzyVal: Symbol): Symbol = _slowPathFor(lzyVal)
@@ -224,7 +236,7 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
         */
       def mkTest(bm: BitmapInfo, equalToZero: Boolean = true): Tree =
         if (bm.isBoolean)
-          if (equalToZero) NOT(bm.select(thisRef)) else bm.select(thisRef)
+          if (equalToZero) Apply(NOT(bm.select(thisRef)), Nil) else bm.select(thisRef)
         else
           Apply(bm.member(bm.applyToMask(thisRef, nme.AND), if (equalToZero) nme.EQ else nme.NE), List(ZERO))
 
@@ -244,23 +256,23 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
       /**
         * The compute method (slow path) looks like:
         *
-        * ```
-        * def l$compute() = {
+        * {{{
+        * def l\$compute() = {
         *   synchronized(this) {
-        *     if ((bitmap$n & MASK) == 0) {
-        *      init // l$ = <rhs>
-        *      bitmap$n = bimap$n | MASK
+        *     if ((bitmap\$n & MASK) == 0) {
+        *      init // l\$ = <rhs>
+        *      bitmap\$n = bimap\$n | MASK
         *     }
         *   }
         *   ...
         *   this.f1 = null
         *   ...
         *   this.fn = null
-        *   l$
+        *   l\$
         * }
-        * ```
+        * }}}
         *
-        * `bitmap$n` is a byte, int or long value acting as a bitmap of initialized values.
+        * `bitmap\$n` is a byte, int or long value acting as a bitmap of initialized values.
         * The kind of the bitmap determines how many bit indicators for lazy vals are stored in it.
         * For Int bitmap it is 32 and then 'n' in the above code is: (offset / 32),
         * the MASK is (1 << (offset % 32)).
@@ -278,7 +290,7 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
         */
       def expandLazyClassMember(lazyVar: global.Symbol, lazyAccessor: global.Symbol, transformedRhs: global.Tree): Tree = {
         val slowPathSym  = slowPathFor(lazyAccessor)
-        val rhsAtSlowDef = transformedRhs.changeOwner(lazyAccessor -> slowPathSym)
+        val rhsAtSlowDef = transformedRhs.changeOwner(lazyAccessor, slowPathSym)
 
         val isUnit    = isUnitGetter(lazyAccessor)
         val selectVar = if (isUnit) UNIT         else Select(thisRef, lazyVar)
@@ -292,7 +304,7 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
 
         // The lazy accessor delegates to the compute method if needed, otherwise just accesses the var (it was initialized previously)
         // `if ((bitmap&n & MASK) == 0) this.l$compute() else l$`
-        val accessorRhs = If(needsInit, Apply(Select(thisRef, slowPathSym), Nil), selectVar)
+        val accessorRhs = fields.castHack(If(needsInit, Apply(Select(thisRef, slowPathSym), Nil), selectVar), lazyVar.info)
 
         afterOwnPhase { // so that we can assign to vals
           Thicket(List((DefDef(slowPathSym, slowPathRhs)), DefDef(lazyAccessor, accessorRhs)) map typedPos(lazyAccessor.pos.focus))
@@ -303,7 +315,7 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
     class SynthInitCheckedAccessorsIn(clazz: Symbol) extends SynthCheckedAccessorsTreesInClass(clazz) {
 
       // Add statements to the body of a constructor to set the 'init' bit for each field initialized in the constructor
-      private object addInitBitsTransformer extends Transformer {
+      private object addInitBitsTransformer extends AstTransformer {
         override def transformStats(stats: List[Tree], exprOwner: Symbol) = {
           val checkedStats = stats flatMap {
             // Mark field as initialized after an assignment
@@ -314,7 +326,7 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
             // TODO is this case ever hit? constructors does not generate Assigns with EmptyTree for the rhs AFAICT
             // !!! Ident(self) is never referenced, is it supposed to be confirming
             // that self is anything in particular?
-            case Apply(lhs@Select(Ident(self), _), EmptyTree.asList) if lhs.symbol.isSetter => Nil
+            case Apply(lhs@Select(Ident(_), _), EmptyTree.asList) if lhs.symbol.isSetter => Nil
             case stat => List(stat)
           }
 
@@ -343,7 +355,7 @@ trait AccessorSynthesis extends Transform with ast.TreeDSL {
         else rhs
 
       private def mkCheckedAccessorRhs(retVal: Tree, pos: Position, bitmap: BitmapInfo): Tree = {
-        val msg = s"Uninitialized field: ${clazz.sourceFile}: ${pos.line}"
+        val msg = s"Uninitialized field: ${clazz.sourceFile.name}: ${pos.line}"
         val result =
           IF(mkTest(bitmap, equalToZero = false)).
             THEN(retVal).

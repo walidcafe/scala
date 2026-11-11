@@ -5,14 +5,14 @@ object Test {
 
   def main(args: Array[String]): Unit = {
     val foo1 = mkFoo[Double](5.0d)
-    val foo2 = mkFoo[Long](5l)
+    val foo2 = mkFoo[Long](5L)
 
     List(foo1, foo2, foo1.##, foo2.##, foo1 == foo2) foreach println
 
     println("## method 1: " + foo1.##)
     println("## method 2: " + foo2.##)
-    println("   Murmur 1: " + scala.util.hashing.MurmurHash3.productHash(foo1))
-    println("   Murmur 2: " + scala.util.hashing.MurmurHash3.productHash(foo2))
+    println("   Murmur 1: " + scala.util.hashing.MurmurHash3.caseClassHash(foo1))
+    println("   Murmur 2: " + scala.util.hashing.MurmurHash3.caseClassHash(foo2))
   }
 }
 

@@ -1,3 +1,5 @@
+/* -Xsource:3.0 */
+
 import scala.language.reflectiveCalls
 
 class A {
@@ -28,6 +30,7 @@ object Test {
       case _: x3.type     => 3
       case _: self.type   => 4
       case x: Dingus.type => x.IamDingus
+      case x              => throw new MatchError(x)
     }
   }
 
@@ -35,7 +38,10 @@ object Test {
 
     assert(x1 == x1)
     assert(x1 != x2)
-    assert(x1 != ())
+
+    // This is a workaround for x1 != (())
+    val unit = ()
+    assert(x1 != unit)
     assert(x2 != x1)
 
     assert(x3 == x3)

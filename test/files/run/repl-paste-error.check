@@ -1,0 +1,21 @@
+
+scala> :paste < END
+// Entering paste mode (END to finish)
+
+def f(): Unit = {
+  "hello"
+  42
+}
+END
+// Exiting paste mode... now interpreting.
+
+  "hello"
+  ^
+<pastie>:2: warning: a pure expression does nothing in statement position; multiline expressions might require enclosing parentheses
+
+  42
+  ^
+<pastie>:3: warning: discarded pure expression does nothing
+def f(): Unit
+
+scala> :quit

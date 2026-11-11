@@ -1,16 +1,22 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package typechecker
 
-import scala.language.postfixOps
-
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
-
+import scala.runtime.Statics
+import scala.tools.nsc.Reporting.WarningCategory
 import symtab.Flags._
 
 /** Synthetic method implementations for case classes and case objects.
@@ -19,7 +25,7 @@ import symtab.Flags._
  *    def productArity: Int
  *    def productElement(n: Int): Any
  *    def productPrefix: String
- *    def productIterator: Iterator[Any]
+ *    def productIterator: Iterator[Any]   // required for binary compatibility of value classes
  *
  *  Selectively added to case classes/objects, unless a non-default
  *  implementation already exists:
@@ -29,16 +35,16 @@ import symtab.Flags._
  *    def toString(): String
  *
  *  Special handling:
- *    protected def readResolve(): AnyRef
+ *    protected def writeReplace(): AnyRef
  */
 trait SyntheticMethods extends ast.TreeDSL {
-  self: Analyzer =>
+  self: AbstractAnalyzer =>
 
   import global._
   import definitions._
   import CODE._
 
-  private lazy val productSymbols    = List(Product_productPrefix, Product_productArity, Product_productElement, Product_iterator, Product_canEqual)
+  private lazy val productSymbols    = List(Product_productPrefix, Product_productArity, Product_productElement) ::: Product_productElementName.toOption.toList ::: List(Product_iterator, Product_canEqual)
   private lazy val valueSymbols      = List(Any_hashCode, Any_equals)
   private lazy val caseSymbols       = List(Object_hashCode, Object_toString) ::: productSymbols
   private lazy val caseValueSymbols  = Any_toString :: valueSymbols ::: productSymbols
@@ -64,7 +70,7 @@ trait SyntheticMethods extends ast.TreeDSL {
    */
   def addSyntheticMethods(templ: Template, clazz0: Symbol, context: Context): Template = {
     val syntheticsOk = (phase.id <= currentRun.typerPhase.id) && {
-      symbolsToSynthesize(clazz0) filter (_ matchingSymbol clazz0.info isSynthetic) match {
+      symbolsToSynthesize(clazz0).filter(_.matchingSymbol(clazz0.info).isSynthetic) match {
         case Nil  => true
         case syms => log("Not adding synthetic methods: already has " + syms.mkString(", ")) ; false
       }
@@ -72,10 +78,8 @@ trait SyntheticMethods extends ast.TreeDSL {
     if (!syntheticsOk)
       return templ
 
-    val synthesizer = new ClassMethodSynthesis(
-      clazz0,
-      newTyper( if (reporter.hasErrors) context makeSilent false else context )
-    )
+    val typer = newTyper(if (reporter.hasErrors) context.makeSilent(reportAmbiguousErrors = false) else context)
+    val synthesizer = new ClassMethodSynthesis(clazz0, typer)
     import synthesizer._
 
     if (clazz0 == AnyValClass || isPrimitiveValueClass(clazz0)) return {
@@ -87,11 +91,13 @@ trait SyntheticMethods extends ast.TreeDSL {
       else templ
     }
 
+    def Lit(c: Any) = LIT.typed(c)
+
     def accessors = clazz.caseFieldAccessors
     val arity = accessors.size
 
     def forwardToRuntime(method: Symbol): Tree =
-      forwardMethod(method, getMember(ScalaRunTimeModule, (method.name prepend "_")))(mkThis :: _)
+      forwardMethod(method, getMember(ScalaRunTimeModule, method.name.prepend("_")))(mkThis :: _)
 
     def callStaticsMethodName(name: TermName)(args: Tree*): Tree = {
       val method = RuntimeStaticsModule.info.member(name)
@@ -111,17 +117,18 @@ trait SyntheticMethods extends ast.TreeDSL {
         (m0 ne meth) && !m0.isDeferred && !m0.isSynthetic && (m0.owner != AnyValClass) && (typeInClazz(m0) matches typeInClazz(meth))
       }
     }
-    def productIteratorMethod = {
+    def productIteratorMethod =
       createMethod(nme.productIterator, iteratorOfType(AnyTpe))(_ =>
         gen.mkMethodCall(ScalaRunTimeModule, nme.typedProductIterator, List(AnyTpe), List(mkThis))
       )
-    }
 
-    /* Common code for productElement and (currently disabled) productElementName */
-    def perElementMethod(name: Name, returnType: Type)(caseFn: Symbol => Tree): Tree =
+    def perElementMethod(name: Name, returnType: Type)(caseFn: Symbol => Tree): Tree = 
       createSwitchMethod(name, accessors.indices, returnType)(idx => caseFn(accessors(idx)))
 
-    // def productElementNameMethod = perElementMethod(nme.productElementName, StringTpe)(x => LIT(x.name.toString))
+    def productElementNameMethod = {
+      val elementAccessors = clazz.constrParamAccessors.take(arity)
+      createSwitchMethod(nme.productElementName, elementAccessors.indices, StringTpe)(idx => LIT(elementAccessors(idx).name.dropLocal.decode))
+    }
 
     var syntheticCanEqual = false
 
@@ -147,7 +154,7 @@ trait SyntheticMethods extends ast.TreeDSL {
       Match(
         Ident(eqmeth.firstParam),
         List(
-          CaseDef(Typed(Ident(nme.WILDCARD), TypeTree(clazz.tpe)), EmptyTree, TRUE),
+          CaseDef(Typed(Ident(nme.WILDCARD), TypeTree(typer.applyTypeToWildcards(clazz.tpe))), EmptyTree, TRUE),
           CaseDef(Ident(nme.WILDCARD), EmptyTree, FALSE)
         )
       )
@@ -172,16 +179,25 @@ trait SyntheticMethods extends ast.TreeDSL {
      * - asInstanceOf if no equality checks need made (see scala/bug#9240, scala/bug#10361)
      */
     def equalsCore(eqmeth: Symbol, accessors: List[Symbol]) = {
-      def usefulEquality(acc: Symbol): Boolean = {
-        val rt = acc.info.resultType
-        rt != NothingTpe && rt != NullTpe && rt != UnitTpe
-      }
-
-      val otherName = freshTermName(clazz.name + "$")(freshNameCreatorFor(context))
+      val otherName = freshTermName(clazz.name.toStringWithSuffix("$"))(freshNameCreatorFor(context))
       val otherSym  = eqmeth.newValue(otherName, eqmeth.pos, SYNTHETIC) setInfo clazz.tpe
-      val pairwise  = accessors collect {
-        case acc if usefulEquality(acc) =>
-          fn(Select(mkThis, acc), acc.tpe member nme.EQ, Select(Ident(otherSym), acc))
+      val pairwise  = {
+        //compare primitive fields first, slow equality checks of non-primitive fields can be skipped when primitives differ
+        val prims = ListBuffer[Tree]()
+        val refs  = ListBuffer[Tree]()
+        for (acc <- accessors) {
+          val resultType   = acc.info.resultType
+          val usefulEquals = resultType != NothingTpe && resultType != NullTpe && resultType != UnitTpe
+          if (usefulEquals) {
+            val thisAcc  = Select(mkThis, acc)
+            val otherAcc = Select(Ident(otherSym), acc)
+            if (isPrimitiveValueType(resultType))
+              prims += fn(thisAcc, acc.tpe.member(nme.EQ), otherAcc)
+            else
+              refs  += fn(thisAcc, Any_==, otherAcc)
+          }
+        }
+        prims.prependToList(refs.toList)      // (prims ++ refs).toList
       }
       val canEq     = gen.mkMethodCall(otherSym, nme.canEqual_, Nil, List(mkThis))
       val tests     = if (clazz.isDerivedValueClass || clazz.isFinal && syntheticCanEqual) pairwise else pairwise :+ canEq
@@ -225,17 +241,24 @@ trait SyntheticMethods extends ast.TreeDSL {
       equalsCore(m, List(clazz.derivedValueClassUnbox))
     }
 
-    /* The hashcode method for value classes
-     * def hashCode(): Int = this.underlying.hashCode
+    /* The hashcode method for value classes. If the value is primitive:
+     *  def hashCode(): Int = this.underlying.hashCode
+     * otherwise, the null-safe variant:
+     *   def hashCode(): Int = java.util.Objects.hashCode(this.underlying)
      */
     def hashCodeDerivedValueClassMethod: Tree = createMethod(nme.hashCode_, Nil, IntTpe) { m =>
-      Select(mkThisSelect(clazz.derivedValueClassUnbox), nme.hashCode_)
+      val acc = clazz.derivedValueClassUnbox
+      val tp = acc.info.resultType
+      if (isPrimitiveValueType(tp))
+        Select(mkThisSelect(acc), nme.hashCode_)
+      else
+        gen.mkMethodCall(Objects_hashCode, List(mkThisSelect(acc)))
     }
 
     /* The _1, _2, etc. methods to implement ProductN, disabled
      * until we figure out how to introduce ProductN without cycles.
      */
-    /****
+    /*
     def productNMethods = {
       val accs = accessors.toIndexedSeq
       1 to arity map (num => productProj(arity, num) -> (() => projectionMethod(accs(num - 1), num)))
@@ -243,26 +266,37 @@ trait SyntheticMethods extends ast.TreeDSL {
     def projectionMethod(accessor: Symbol, num: Int) = {
       createMethod(nme.productAccessorName(num), accessor.tpe.resultType)(_ => REF(accessor))
     }
-    ****/
+    */
 
     // methods for both classes and objects
-    def productMethods = {
+    def productMethods: List[(Symbol, () => Tree)] = {
       List(
-        Product_productPrefix   -> (() => constantNullary(nme.productPrefix, clazz.name.decode)),
-        Product_productArity    -> (() => constantNullary(nme.productArity, arity)),
-        Product_productElement  -> (() => perElementMethod(nme.productElement, AnyTpe)(mkThisSelect)),
-        Product_iterator        -> (() => productIteratorMethod),
-        Product_canEqual        -> (() => canEqualMethod)
-        // This is disabled pending a reimplementation which doesn't add any
-        // weight to case classes (i.e. inspects the bytecode.)
-        // Product_productElementName  -> (() => productElementNameMethod(accessors)),
+        Product_productPrefix -> (() => constantNullary(nme.productPrefix, clazz.name.decode)),
+        Product_productArity -> (() => constantNullary(nme.productArity, arity)),
+        Product_productElement -> (() => perElementMethod(nme.productElement, AnyTpe)(mkThisSelect)),
+        Product_iterator -> (() => productIteratorMethod),
+        Product_canEqual -> (() => canEqualMethod)
       )
+    }
+
+    def productClassMethods: List[(Symbol, () => Tree)] = {
+      // Classes get productElementName but case objects do not.
+      // For a case object the correct behaviour (i.e. to throw an IOOBE)
+      // is already provided by the default implementation in the Product trait.
+
+      // Support running the compiler with an older library on the classpath
+      def elementName: List[(Symbol, () => Tree)] = Product_productElementName match {
+        case NoSymbol => Nil
+        case sym => (sym, () => productElementNameMethod) :: Nil
+      }
+
+      productMethods ::: elementName
     }
 
     def hashcodeImplementation(sym: Symbol): Tree = {
       sym.tpe.finalResultType.typeSymbol match {
-        case UnitClass | NullClass              => Literal(Constant(0))
-        case BooleanClass                       => If(Ident(sym), Literal(Constant(1231)), Literal(Constant(1237)))
+        case UnitClass | NullClass              => Lit(0)
+        case BooleanClass                       => If(Ident(sym), Lit(1231), Lit(1237))
         case IntClass                           => Ident(sym)
         case ShortClass | ByteClass | CharClass => Select(Ident(sym), nme.toInt)
         case LongClass                          => callStaticsMethodName(nme.longHash)(Ident(sym))
@@ -275,37 +309,64 @@ trait SyntheticMethods extends ast.TreeDSL {
     def specializedHashcode = {
       createMethod(nme.hashCode_, Nil, IntTpe) { m =>
         val accumulator = m.newVariable(newTermName("acc"), m.pos, SYNTHETIC) setInfo IntTpe
-        val valdef      = ValDef(accumulator, Literal(Constant(0xcafebabe)))
+        val valdef      = ValDef(accumulator, Lit(0xcafebabe))
+        val mixPrefix   =
+          Assign(
+            Ident(accumulator),
+            callStaticsMethod("mix")(Ident(accumulator), Lit(clazz.name.decode.hashCode)))
         val mixes       = accessors map (acc =>
           Assign(
             Ident(accumulator),
             callStaticsMethod("mix")(Ident(accumulator), hashcodeImplementation(acc))
           )
         )
-        val finish = callStaticsMethod("finalizeHash")(Ident(accumulator), Literal(Constant(arity)))
+        val finish = callStaticsMethod("finalizeHash")(Ident(accumulator), Lit(arity))
 
-        Block(valdef :: mixes, finish)
+        Block(valdef :: mixPrefix :: mixes, finish)
       }
     }
-    def chooseHashcode = {
+
+    def productHashCode: Tree = {
+      // case `hashCode` used to call `ScalaRunTime._hashCode`, but that implementation mixes in the result
+      // of `productPrefix`, which causes scala/bug#13033.
+      // Because case hashCode has two possible implementations (`specializedHashcode` and `productHashCode`) we
+      // need to fix it twice.
+      // 1. `specializedHashcode` above was changed to mix in the case class name statically.
+      // 2. we can achieve the same thing here by calling `MurmurHash3Module.productHash` with a `seed` that mixes
+      // in the case class name already. This is backwards and forwards compatible:
+      //   - the new generated code works with old and new standard libraries
+      //   - the `MurmurHash3Module.productHash` implementation returns the same result as before when called by
+      //     previously compiled case classes
+      // Alternatively, we could decide to always generate the full implementation (like `specializedHashcode`)
+      // at the cost of bytecode size.
+      createMethod(nme.hashCode_, Nil, IntTpe) { _ =>
+        if (arity == 0) Lit(clazz.name.decode.hashCode)
+        else gen.mkMethodCall(MurmurHash3Module, TermName("productHash"), List(
+          mkThis,
+          Lit(Statics.mix(0xcafebabe, clazz.name.decode.hashCode)),
+          Lit(true)
+        ))
+      }
+    }
+
+    def chooseHashcode =
       if (accessors exists (x => isPrimitiveValueType(x.tpe.finalResultType)))
         specializedHashcode
       else
-        forwardToRuntime(Object_hashCode)
-    }
+        productHashCode
 
     def valueClassMethods = List(
       Any_hashCode -> (() => hashCodeDerivedValueClassMethod),
       Any_equals -> (() => equalsDerivedValueClassMethod)
     )
 
-    def caseClassMethods = productMethods ++ /*productNMethods ++*/ Seq(
+    def caseClassMethods = productClassMethods ++ /*productNMethods ++*/ Seq(
       Object_hashCode -> (() => chooseHashcode),
       Object_toString -> (() => forwardToRuntime(Object_toString)),
       Object_equals   -> (() => equalsCaseClassMethod)
     )
 
-    def valueCaseClassMethods = productMethods ++ /*productNMethods ++*/ valueClassMethods ++ Seq(
+    def valueCaseClassMethods = productClassMethods ++ /*productNMethods ++*/ valueClassMethods ++ Seq(
       Any_toString -> (() => forwardToRuntime(Object_toString))
     )
 
@@ -316,16 +377,17 @@ trait SyntheticMethods extends ast.TreeDSL {
       // Object_equals   -> (() => createMethod(Object_equals)(m => This(clazz) ANY_EQ Ident(m.firstParam)))
     )
 
-    /* If you serialize a singleton and then deserialize it twice,
-     * you will have two instances of your singleton unless you implement
-     * readResolve.  Here it is implemented for all objects which have
-     * no implementation and which are marked serializable (which is true
-     * for all case objects.)
+    /* If you serialize a singleton you will get an additional 
+     * instance of the singleton, unless you implement 
+     * special serialization logic.  Here we use a serialization proxy that prevents 
+     * serialization of state and will, on deserialization by replaced by the object
+     * via use of readResolve. This is done for all top level objects which extend
+     * `java.io.Serializable` (such as case objects)
      */
-    def needsReadResolve = (
+    def needsModuleSerializationProxy = (
          clazz.isModuleClass
       && clazz.isSerializable
-      && !hasConcreteImpl(nme.readResolve)
+      && !hasConcreteImpl(nme.writeReplace)
       && clazz.isStatic
     )
 
@@ -347,9 +409,9 @@ trait SyntheticMethods extends ast.TreeDSL {
           !hasOverridingImplementation(m) || {
             clazz.isDerivedValueClass && (m == Any_hashCode || m == Any_equals) && {
               // Without a means to suppress this warning, I've thought better of it.
-              if (settings.warnValueOverrides) {
+              if (settings.warnValueOverrides.value) {
                  (clazz.info nonPrivateMember m.name) filter (m => (m.owner != AnyClass) && (m.owner != clazz) && !m.isDeferred) andAlso { m =>
-                   typer.context.warning(clazz.pos, s"Implementation of ${m.name} inherited from ${m.owner} overridden in $clazz to enforce value class semantics")
+                   typer.context.warning(clazz.pos, s"Implementation of ${m.name} inherited from ${m.owner} overridden in $clazz to enforce value class semantics", WarningCategory.Other /* settings.warnValueOverrides is not exposed as compiler flag */)
                  }
                }
               true
@@ -359,13 +421,14 @@ trait SyntheticMethods extends ast.TreeDSL {
         for ((m, impl) <- methods ; if shouldGenerate(m)) yield impl()
       }
       def extras = {
-        if (needsReadResolve) {
+        if (needsModuleSerializationProxy) {
           // Aha, I finally decoded the original comment.
           // This method should be generated as private, but apparently if it is, then
           // it is name mangled afterward.  (Wonder why that is.) So it's only protected.
-          // For sure special methods like "readResolve" should not be mangled.
-          List(createMethod(nme.readResolve, Nil, ObjectTpe)(m => {
-            m setFlag PRIVATE; REF(clazz.sourceModule)
+          // For sure special methods like "writeReplace" should not be mangled.
+          List(createMethod(nme.writeReplace, Nil, ObjectTpe)(m => {
+            m setFlag PRIVATE
+            New(ModuleSerializationProxyClass, gen.mkClassOf(clazz.typeOfThis))
           }))
         }
         else Nil
@@ -390,11 +453,11 @@ trait SyntheticMethods extends ast.TreeDSL {
         val i = original.owner.caseFieldAccessors.indexOf(original)
         def freshAccessorName = {
           devWarning(s"Unable to find $original among case accessors of ${original.owner}: ${original.owner.caseFieldAccessors}")
-          freshTermName(original.name + "$")(freshNameCreatorFor(context))
+          freshTermName(original.name.toStringWithSuffix("$"))(freshNameCreatorFor(context))
         }
-        def nameSuffixedByParamIndex = original.name.append(nme.CASE_ACCESSOR + "$" + i).toTermName
+        def nameSuffixedByParamIndex = original.name.append(s"${nme.CASE_ACCESSOR}$$${i}").toTermName
         val newName = if (i < 0) freshAccessorName else nameSuffixedByParamIndex
-        val newAcc = deriveMethod(ddef.symbol, name => newName) { newAcc =>
+        val newAcc = deriveMethod(ddef.symbol, _ => newName) { newAcc =>
           newAcc.makePublic
           newAcc resetFlag (ACCESSOR | PARAMACCESSOR | OVERRIDE)
           ddef.rhs.duplicate

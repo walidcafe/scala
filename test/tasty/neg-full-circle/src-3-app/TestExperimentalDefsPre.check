@@ -1,0 +1,37 @@
+-- Error: TestExperimentalDefsPre_fail.scala:1:18
+1 |import downstream.ExperimentalDefsPre.*
+  |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |       object ExperimentalDefsPre is marked @experimental
+  |
+  |       Experimental definition may only be used under experimental mode:
+  |         1. in a definition marked as @experimental, or
+  |         2. an experimental feature is imported at the package level, or
+  |         3. compiling with the -experimental compiler flag.
+-- Error: TestExperimentalDefsPre_fail.scala:4:10
+4 |  def test = new SubExperimentalNotExperimental
+  |          ^
+  |         object ExperimentalDefsPre is marked @experimental
+  |
+  |         Experimental definition may only be used under experimental mode:
+  |           1. in a definition marked as @experimental, or
+  |           2. an experimental feature is imported at the package level, or
+  |           3. compiling with the -experimental compiler flag.
+-- Error: TestExperimentalDefsPre_fail.scala:4:17
+4 |  def test = new SubExperimentalNotExperimental
+  |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         object ExperimentalDefsPre is marked @experimental
+  |
+  |         Experimental definition may only be used under experimental mode:
+  |           1. in a definition marked as @experimental, or
+  |           2. an experimental feature is imported at the package level, or
+  |           3. compiling with the -experimental compiler flag.
+-- Error: TestExperimentalDefsPre_fail.scala:6:35
+6 |  class SubSubExperimental extends SubExperimentalNotExperimental
+  |                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |         object ExperimentalDefsPre is marked @experimental
+  |
+  |         Experimental definition may only be used under experimental mode:
+  |           1. in a definition marked as @experimental, or
+  |           2. an experimental feature is imported at the package level, or
+  |           3. compiling with the -experimental compiler flag.
+4 errors found

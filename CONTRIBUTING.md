@@ -2,27 +2,30 @@
 
 We follow the standard GitHub [fork & pull](https://help.github.com/articles/using-pull-requests/#fork--pull) approach to pull requests. Just fork the official repo, develop in a branch, and submit a PR!
 
-You're always welcome to submit your PR straight away and start the discussion (without reading the rest of this wonderful doc, or the [`README.md`](README.md)). The goal of these notes is to make your experience contributing to Scala as smooth and pleasant as possible. We're happy to guide you through the process once you've submitted your PR.
-
-## The Scala Community
-
-In 2014, you -- the Scala community -- matched the core team at EPFL in number of commits contributed to Scala 2.11, doubling the percentage of commits from outside EPFL/Lightbend since 2.10. Excellent work! (The split was roughly 25/25/50 for you/EPFL/Lightbend.)
-
-We are super happy about this, and are eager to make your experience contributing to Scala productive and satisfying, so that we can keep up this growth. We can't do this alone (nor do we want to)!
-
-This is why we're collecting these notes on how to contribute, and we hope you'll share your experience to improve the process for the next contributor! (Feel free to send a PR for this note, send your thoughts to scala/contributors (Gitter) or contributors.scala-lang.org (Discourse), or tweet about it to @adriaanm.)
-
-By the way, the team at Lightbend is: @adriaanm, @lrytz, @retronym, @SethTisue, and @szeiger.
+You're always welcome to submit your PR straight away and start the discussion (without reading the rest of this wonderful doc, or the [`README.md`](README.md)).
+But take into account our [LLM policy](LLM_POLICY.md) for rules and guidelines regarding the use  of LLM-based tools in your contributions.
+The goal of these notes is to make your experience contributing to Scala as smooth and pleasant as possible.
+We're happy to guide you through the process once you've submitted your PR.
 
 ## What kind of PR are you submitting?
 
-Regardless of the nature of your Pull Request, we have to ask you to digitally sign the [Scala CLA](http://www.lightbend.com/contribute/cla/scala), to protect the OSS nature of the code base.
+Regardless of the nature of your Pull Request, we have to ask you to digitally sign the [Scala CLA](https://cla.scala-lang.org/scala/scala), to protect the OSS nature of the code base.
 
-You don't need to submit separate PRs for 2.12.x and 2.13.x. Any change accepted on 2.12.x will, in time, be merged onto 2.13.x too. (We are no longer accepting PRs for 2.11.x.)
+You don't need to submit separate PRs for 2.12.x and 2.13.x. Any change accepted on 2.12.x will, in time, be merged onto 2.13.x too.
+
+### Standard library additions
+
+The Scala 2 standard library is mostly frozen for additions. Any new additions should be proposed and accepted in Scala 3 first before being considered for a possible Scala 2 backport. Don't put a lot of work in a Scala 2 backport of an addition before inquiring first about its chances of being accepted.
+
+Additions to the Scala 3 standard library are governed by the Scala Standard Library Process, which is documented [in the Scala 3 repo](https://github.com/scala/scala3/blob/main/docs/_docs/contributing/procedures/contributing-to-stdlib.md).
+
+### Standard library fixes
+
+If you want to fix a bug in the Scala 2 standard library, you're free to submit the fix to either Scala 2 first, or Scala 3 first. Once the fix is accepted, you may also be encouraged to submit a forward or backward port to the other repo.
 
 ### Documentation
 
-Whether you finally decided you couldn't stand that annoying typo anymore, you fixed the outdated code sample in some comment, or you wrote a nice, comprehensive, overview for an under-documented package, some docs for a class or the specifics about a method, your documentation improvement is very much appreciated, and we will do our best to fasttrack it.
+Whether you finally decided you couldn't stand that annoying typo anymore, you fixed the outdated code sample in some comment, or you wrote a nice, comprehensive, overview for an under-documented package, some docs for a class or the specifics about a method, your documentation improvement is very much appreciated, and we will do our best to fast-track it.
 
 You can make these changes directly in your browser in GitHub, or follow the same process as for code. Up to you!
 
@@ -32,21 +35,23 @@ For bigger documentation changes, you may want to poll contributors.scala-lang.o
 
 For bigger changes, we do recommend announcing your intentions on contributors.scala-lang.org first, to avoid duplicated effort, or spending a lot of time reworking something we are not able to change at this time in the release cycle, for example.
 
-The kind of code we can accept depends on the life cycle for the release you're targeting. The current maintenance release (2.12.x) cannot break source/binary compatibility, which means public APIs cannot change. It also means we are reluctant to change, e.g., type inference or implicit search, as this can have unforeseen consequences for source compatibility.
+The kind of code we can accept depends on the life cycle for the release you're targeting. The current maintenance release (2.13.x) cannot break source/binary compatibility of the standard library, which means public APIs cannot change. It also means we are reluctant to change, e.g., type inference or implicit search, as this can have unforeseen consequences for source compatibility.
 
-#### Bug Fix
+#### Bug Fix (compiler or standard library)
 
-At the end of the commit message, include "Fixes scala/bug#NNNN", where https://github.com/scala/bug/issues/NNNN tracks the bug you're fixing. We also recommend naming your branch after the ticket number.
+At the end of the PR description, which is autofilled with the commit message if there is only one commit, add the phrase, "Fixes scala/bug#NNNN", where `https://github.com/scala/bug/issues/NNNN` tracks the bug you're fixing. Github will turn your bug number into a link.
+
+We also recommend naming your branch after the ticket number.
 
 Please make sure the ticket's milestone corresponds to the upcoming milestone for the branch your PR targets. The CI automation will automatically assign the milestone after you open the PR.
 
 #### Enhancement or New Feature
 
-For longer-running development, likely required for this category of code contributions, we suggest you include `topic/` or `wip/` in your branch name, to indicate that this is work in progress, and that others should be prepared to rebase if they branch off your branch.
+For longer-running development, likely required for this category of code contributions, we suggest you include `topic/` or `wip/` in your branch name, to indicate that this is work in progress and that others should be prepared to rebase if they branch off your branch.
 
 Any language change (including bug fixes) must be accompanied by the relevant updates to the spec, which lives in the same repository for this reason.
 
-A new language feature or other substantial enough language change requires a SIP (Scala Improvement Process) proposal. For more details on submitting SIPs, see [how to submit a SIP](http://docs.scala-lang.org/sips/sip-submission.html).
+A new language feature or other substantial enough language change requires a SIP (Scala Improvement Process) proposal. For more details on submitting SIPs, see [how to submit a SIP](https://docs.scala-lang.org/sips/sip-submission.html).
 
 ## Guidelines
 
@@ -79,7 +84,11 @@ root> junit/testQuick
 
 It might take a few minutes the first time you run `junit/testQuick`, but from the second time onwards
 sbt will only run the tests that is affected by the code change since the last run.
-See `test/junit/` for the examples of JUnit tests.
+See `test/junit/` for examples of JUnit tests.
+
+JUnit tests will be compiled with the `starr` compiler, and run against the `quick` library. Some JUnit tests (search for `BytecodeTesting`) invoke the compiler programmatically and test its behavior or output, these tests use the `quick` compiler. 
+
+`starr` is the Scala release used to build the compiler and library, usually the last release. `quick` is the result of that compilation. See also ["Build Setup"](https://github.com/scala/scala#build-setup) in the README.
 
 #### ScalaCheck
 
@@ -109,8 +118,50 @@ To run a single negative test from sbt shell:
 root> partest --verbose test/files/neg/delayed-init-ref.scala
 ```
 
-To specify specific flags such as `-deprecation -Xlint -Xfatal-warnings`, you can put them in
-`test/files/neg/<test>.flags`. This could be used to test specific behavior under `-deprecation` flag etc.
+A test can be either a single `.scala` file or a directory containing multiple `.scala` and `.java` files.
+For testing separate compilation, files can be grouped using `_N` suffixes in the filename. For example, a test
+with files (`A.scala`, `B_1.scala`, `C_1.java`, `Test_2.scala`) does:
+```
+scalac         A.scala            -d out
+scalac -cp out B_1.scala C_1.java -d out
+javac  -cp out C_1.java           -d out
+scalac -cp out Test_2.scala       -d out
+scala  -cp out Test
+```
+
+**Flags**
+
+Partest reads `//> using <tool> <args>` directives from the first 10 lines of each source file in a test. Directives from all files of a test apply to the whole test. Any other header line that looks like a directive (an unknown `using` key, or the obsolete `// scalac:` style) fails the test.
+
+  - `//> using options -Werror -Xlint` passes flags to the Scala compiler.
+  - `//> using javacOpt <flags>` passes flags to the Java compiler.
+  - `//> using filter <regex>` eliminates output lines that match the regex before comparing to the `.check` file. Quote a regex that contains spaces.
+  - `//> using javaOpt <flags>` makes a `run` test execute in a separate JVM and passes the additional flags to the `java` command.
+  - `//> using jvm <N[+|-M]>` makes partest skip the test if the Java version is outside the requested range (e.g. `8`, `15+`, `9-11`).
+  - `//> using retest.options <flags>` on a `neg` test: after the expected failure matches the `.check` file, compile again with the extra flags and expect success.
+
+**Check files**
+
+Before comparing, partest drops output lines that match any regex in `test/files/filters` (for JVM warnings and similar) or in a `filters` file in the test's category directory, as well as the test's own `//> using filter` patterns.
+
+Output that differs between environments can be handled inside the `.check` file. A line starting with `#partest` begins a block that is kept only if its condition holds, until the next `#partest` line. A bare `#partest` is always true, which ends a conditional block. Conditions are `java11` (exactly that version), `java11+`, `isWin`, or a compiler flag such as `-Xlint` that is set in the run's extra options; a leading `!` negates any of them. For example:
+
+```
+#partest java8
+  location: class
+#partest !java8
+  location: class Test
+#partest
+1 error
+```
+
+**Common Usage**
+
+To test that no warnings are emitted while compiling a `pos` test, use `-Werror`.
+That will fail a `pos` test if there are warnings. Note that `pos` tests do not have `.check` files.
+
+To test that warnings are correctly emitted, use `-Werror` with a `neg` test and `.check` file.
+The usual way to create a `.check` file is `partest --update-check`.
 
 To run all tests in `neg` categories from sbt shell:
 
@@ -118,8 +169,10 @@ To run all tests in `neg` categories from sbt shell:
 root> partest --neg
 ```
 
-This might take a couple of minutes to complete. But in a few minutes you could test 1000+ negative examples,
-so it's totally worth your time if you are working on changing error messages for example.
+This might take a couple of minutes to complete. But in a few minutes, you could test 1000+ negative examples,
+so it's totally worth your time, especially if you are working on changing error messages.
+If you have made a bunch of tests fail by tweaking a message, you can update them in bulk
+with `partest --update-check --failed`.
 
 Suppose you're interested in ranges. Here's how you can grep the partests and run them:
 
@@ -141,18 +194,33 @@ only the failed tests, similar to `testQuick`.
 root> partest --grep range --failed
 ```
 
+To inspect the generated files after running the test, add `--debug`:
+
+```
+root> partest --debug --verbose test/files/pos/traits.scala
+...
+# starting 1 test in pos
+% scalac pos/traits.scala -d /home/aengelen/dev/scala/test/files/pos/traits-pos.obj
+ok 1 - pos/traits.scala
+```
+
 See `--help` for more info:
 
 ```
 root> partest --help
 ```
 
-If you're fixing a bug in the compiler, you would typically start with Partest;
-If you're fixing a bug or implementing new features in the the library, consider using JUnit and/or ScalaCheck.
+Partests are compiled by the bootstrapped `quick` compiler (and `run` partests executed with the `quick` library),
+and therefore:
+
+* if you're working on the compiler, you must write a partest, or a `BytecodeTesting` JUnit test which invokes the compiler programmatically; however
+* if you're working on the library, a JUnit and/or ScalaCheck is better.
+
+If you're working on Partest itself, note that some of its source files are part of Scala's sbt build, and are compiled when sbt is launched, not via its `compile` command.
 
 #### exploring with REPL
 
-Before or during the test, you might get better insight of the code by starting a REPL session
+Before or during the test, you might get better insight into the code by starting a REPL session
 using the freshly built scala. To start a REPL session from the sbt shell:
 
 ```
@@ -189,10 +257,16 @@ Consider updating the package-level doc (in the package object), if appropriate.
 
 Please follow these standard code standards, though in moderation (scouts quickly learn to let sleeping dogs lie):
 
-* Don't violate [DRY](http://programmer.97things.oreilly.com/wiki/index.php/Don%27t_Repeat_Yourself).
-* Follow the [Boy Scout Rule](http://programmer.97things.oreilly.com/wiki/index.php/The_Boy_Scout_Rule).
+Don't violate [DRY](https://en.wikipedia.org/wiki/Don%27t_repeat_yourself).
+* DRY means: "Don't repeat yourself". 
+* Every piece of knowledge must have a single, unambiguous, authoritative representation within a system. 
+* Try to only write functionality or algorithms once and reference them (Abstraction) instead of Copy&Paste
 
-Please also have a look at the [Scala Hacker Guide](http://www.scala-lang.org/contribute/hacker-guide.html) by @xeno-by.
+Follow the [Boy Scout Rule](https://martinfowler.com/bliki/OpportunisticRefactoring.html).
+* "Always leave the code behind in a better state than you found it"
+* This translates to using any opportunity possible to improve and clean up the code in front of you
+
+Please also have a look at the [Scala Hacker Guide](https://www.scala-lang.org/contribute/hacker-guide.html) by @xeno-by.
 
 ### Clean commits, clean history
 
@@ -200,29 +274,31 @@ A pull request should consist of commits with messages that clearly state what p
 
 Commit logs should be stated in the active, present tense.
 
-A commit's subject should be 72 characters or less.  Overall, think of
-the first line of the commit as a description of the action performed
+The subject line of a commit message should be no more than 72 characters.
+Overall, think of the first line of the commit as a description of the action performed
 by the commit on the code base, so use the active voice and the
 present tense.  That also makes the commit subjects easy to reuse in
 release notes.
 
-For a bugfix, the end of the commit message should say "Fixes scala/bug#NNNN".
+For a bugfix, the end of the PR description (that is, the first comment on the PR) should say, "Fixes scala/bug#NNNN", as mentioned above.
 
-If a commit purely refactors and is not intended to change behaviour,
+NOTE: it's best not to add the issue reference to your commit message, as github will pollute the conversation on the ticket with notifications every time you commit.
+
+If a commit purely refactors and is not intended to change behavior,
 say so.
 
 Backports should be tagged as "[backport]".
 
-When working on maintenance branches (e.g., 2.12.x), include "[nomerge]"
+When working on older maintenance branches (namely 2.12.x), include "[nomerge]"
 if this commit should not be merged forward into the next release
 branch.
 
 Here is standard advice on good commit messages:
-http://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html
+https://tbaggery.com/2008/04/19/a-note-about-git-commit-messages.html
 
 ### Pass Scabot
 
-Our pull request bot, Scabot, automatically builds all of the PR's commits individually on Jenkins. Every commit is expected to pass CI, so we can `git bisect` later.
+Our pull request bot, Scabot, automatically builds the PR on Jenkins.
 
 Click on the little x next to a commit sha to go to the overview of the PR validation job. To diagnose a failure, consult the console output of the job that failed.
 
@@ -231,8 +307,7 @@ See the [scala-jenkins-infra repo](https://github.com/scala/scala-jenkins-infra)
 ### Pass code review
 
 Your PR will need to be assigned to one or more reviewers. You can suggest reviewers
-yourself; if you're not sure, see the list in [README.md](README.md) or ask on scala/contributors (Gitter)
-or contributors.scala-lang.org (Discourse).
+yourself; if you're not sure, see the list in [README.md](README.md) or ask on \#scala-contributors (on [Discord](https://discord.com/invite/scala)) or contributors.scala-lang.org (Discourse).
 
 To assign a reviewer, add a "review by @reviewer" to the PR description or in a
 comment on your PR.
@@ -246,8 +321,8 @@ and `push -f` to the branch. This is to keep the git history clean. Additional c
 are OK if they stand on their own.
 
 Once all these conditions are met, we will merge your changes -- if we
-agree with it!  We are available on scala/contributors (Gitter) or
-contributors.scala-lang.org (Discourse) to discuss changes beforehand,
+agree with it!  We are available on \#scala-contributors (on [Discord](https://discord.com/invite/scala))
+or contributors.scala-lang.org (Discourse) to discuss changes beforehand,
 before you put in the coding work.
 
 

@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2016, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -13,7 +17,10 @@ package scala
  * single inhabitant. Eligible types are singleton types of the form `stablePath.type`,
  * Unit and singleton types corresponding to value literals.
  *
- * Instances of `ValueOf[T]` are provided implicitly for all eligible types. Typically
+ * The value itself can conveniently be retrieved with [[Predef#valueOf]], which requires
+ * a `ValueOf` to be available in implicit scope.
+ *
+ * The compiler provides instances of `ValueOf[T]` for all eligible types. Typically
  * an instance would be required where a runtime value corresponding to a type level
  * computation is needed.
 
@@ -44,5 +51,5 @@ package scala
  * is required in the implementation of `+` it is provided at the call site via the
  * implicit argument `m` of type `ValueOf[M]`.
  */
-@scala.annotation.implicitNotFound(msg = "No singleton value available for ${T}.")
+@scala.annotation.implicitNotFound(msg = "No singleton value available for ${T}; eligible singleton types for `ValueOf` synthesis include literals and stable paths.")
 final class ValueOf[T](val value: T) extends AnyVal

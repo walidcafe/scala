@@ -1,3 +1,5 @@
+//> using options -Xcheckinit
+//
 object Obj {
   private var cache: Any = ()
   def returning(f: () => Unit) = ()

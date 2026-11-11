@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package phases
 
@@ -7,7 +19,10 @@ trait Calculate {
   import global._
 
   implicit class RichCalculateSymbol(sym: Symbol) {
-    def metalevel: Int = { assert(sym != null && sym != NoSymbol); localSymbols.getOrElse(sym, 0) }
+    def metalevel: Int = {
+      assert(sym != null && sym != NoSymbol, "Missing symbol")
+      localSymbols.getOrElse(sym, 0)
+    }
     def isLocalToReifee = (localSymbols contains sym) // todo. how do I account for local skolems?
   }
 
@@ -28,7 +43,7 @@ trait Calculate {
   /**
    *  Merely traverses the target and records symbols local to the reifee along with their metalevels.
    */
-  val calculate = new Traverser {
+  val calculate: Traverser = new Traverser {
     // see the explanation of metalevels in `Metalevels`
     var currMetalevel = 1
 
@@ -45,8 +60,8 @@ trait Calculate {
         bindRelatedSymbol(tree.symbol.moduleClass, "moduleClass")
         bindRelatedSymbol(tree.symbol.companionClass, "companionClass")
         bindRelatedSymbol(tree.symbol.companionModule, "companionModule")
-        Some(tree.symbol) collect { case termSymbol: TermSymbol => bindRelatedSymbol(termSymbol.referenced, "referenced") }
-        Some(tree) collect { case labelDef: LabelDef => labelDef.params foreach (param => bindRelatedSymbol(param.symbol, "labelParam")) }
+        tree.symbol match { case termSymbol: TermSymbol => bindRelatedSymbol(termSymbol.referenced, "referenced") case _ => }
+        tree match { case labelDef: LabelDef => labelDef.params.foreach(param => bindRelatedSymbol(param.symbol, "labelParam")) case _ => }
         def bindRelatedSymbol(related: Symbol, name: String): Unit =
           if (related != null && related != NoSymbol) {
             if (reifyDebug) println("boundSym (" + name + "): " + related)

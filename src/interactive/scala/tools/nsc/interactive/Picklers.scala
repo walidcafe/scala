@@ -1,7 +1,15 @@
-/* NSC -- new Scala compiler
- * Copyright 2009-2013 Typesafe/Scala Solutions and LAMP/EPFL
- * @author Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.nsc
 package interactive
 
@@ -34,9 +42,7 @@ trait Picklers { self: Global =>
       .wrapped[AbstractFile] { new PlainFile(_) } { _.path }
       .asClass (classOf[PlainFile])
 
-  private val sourceFilesSeen = new mutable.HashMap[AbstractFile, Array[Char]] {
-    override def default(key: AbstractFile) = Array()
-  }
+  private val sourceFilesSeen = mutable.HashMap.empty[AbstractFile, Array[Char]].withDefaultValue(Array.empty[Char])
 
   type Diff = (Int /*start*/, Int /*end*/, String /*replacement*/)
 
@@ -92,7 +98,7 @@ trait Picklers { self: Global =>
     }
 
   implicit lazy val symPickler: Pickler[Symbol] = {
-    def ownerNames(sym: Symbol, buf: ListBuffer[Name]): ListBuffer[Name] = {
+    def ownerNames(sym: Symbol, buf: ListBuffer[Name]): buf.type = {
       if (!sym.isRoot) {
         ownerNames(sym.owner, buf)
         buf += (if (sym.isModuleClass) sym.sourceModule else sym).name
@@ -100,7 +106,7 @@ trait Picklers { self: Global =>
           val sym1 = sym.owner.info.decl(sym.name)
           if (sym1.isOverloaded) {
             val index = sym1.alternatives.indexOf(sym)
-            assert(index >= 0, sym1+" not found in alternatives "+sym1.alternatives)
+            assert(index >= 0, s"$sym1 not found in alternatives ${sym1.alternatives}")
             buf += newTermName(index.toString)
           }
         }
@@ -170,7 +176,7 @@ trait Picklers { self: Global =>
 
   implicit def askLoadedTypedItem: CondPickler[AskLoadedTypedItem] =
     pkl[SourceFile]
-      .wrapped { source => new AskLoadedTypedItem(source, false, new Response) } { _.source }
+      .wrapped { source => new AskLoadedTypedItem(source, keepLoaded = false, new Response) } { _.source }
       .asClass (classOf[AskLoadedTypedItem])
 
   implicit def askParsedEnteredItem: CondPickler[AskParsedEnteredItem] =

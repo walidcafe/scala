@@ -12,12 +12,12 @@ class SymbolTableTest {
   object symbolTable extends SymbolTableForUnitTesting
 
   @Test
-  def initDefinitions = {
+  def initDefinitions(): Unit = {
     symbolTable.definitions.init()
   }
 
   @Test
-  def basicSubTypeCheck = {
+  def basicSubTypeCheck(): Unit = {
     symbolTable.definitions.init()
     val listClassTpe = symbolTable.definitions.ListClass.tpe
     val seqClassTpe = symbolTable.definitions.SeqClass.tpe
@@ -29,7 +29,7 @@ class SymbolTableTest {
    * from scratch and perform sub type check.
    */
   @Test
-  def customClassesSubTypeCheck: Unit = {
+  def customClassesSubTypeCheck(): Unit = {
     import symbolTable._
     symbolTable.definitions.init()
     val rootClass = symbolTable.rootMirror.RootClass
@@ -45,8 +45,37 @@ class SymbolTableTest {
   }
 
   @Test
-  def noSymbolOuterClass_t9133: Unit = {
+  def noSymbolOuterClass_t9133(): Unit = {
     import symbolTable._
-    assert(NoSymbol.outerClass == NoSymbol)
+    assertEquals(NoSymbol, NoSymbol.outerClass)
+  }
+
+  @Test def t12702_glb(): Unit = {
+    import symbolTable._
+    import SymbolTableTest.t12702._
+    val t1 = typeOf[IOS.type]
+    val t2 = {
+      val sd = typeOf[SD]
+      sd.memberType(sd.member(TermName("mFI"))).finalResultType
+    }
+    // t1: Test.IOS.type
+    // t2: Test.MFI{type +ST = S}
+
+    // Ends up in `throw GlbFailure` in glb => Null
+    assertTrue(definitions.NullTpe =:= glb(t1 :: t2 :: Nil))
+  }
+}
+
+object SymbolTableTest {
+  object t12702 {
+    import scala.language.existentials
+    trait MFSS[X <: MFSS[_]]
+    trait CS extends MFSS[CS]
+    trait MFI { type ST }
+    case class MFSD[S](mFI: MFI {type ST = S})
+    case object IOS extends MFI { type ST = CS }
+    type SD = MFSD[S] forSome {
+      type S <: MFSS[S]
+    }
   }
 }

@@ -5,6 +5,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
+import scala.tools.testkit.AssertUtil.assertThrows
+
 @RunWith(classOf[JUnit4])
 class ArrayOpsTest {
 
@@ -28,17 +30,25 @@ class ArrayOpsTest {
   }
 
   @Test
-  def reverseIterator: Unit = {
+  def reverseIterator(): Unit = {
     val a = Array(1,2,3)
     assertEquals(List(3,2,1), a.reverseIterator.toList)
   }
 
   @Test
-  def folds: Unit = {
+  def folds(): Unit = {
     val a = Array(1,2,3)
     assertEquals(6, a.foldLeft(0){ (a, b) => a+b })
     assertEquals(6, a.foldRight(0){ (a, b) => a+b })
     assertEquals(6, a.fold(0){ (a, b) => a+b })
+    val b = Array[Int]()
+    assertEquals(0, b.foldLeft(0){ (a, b) => a+b })
+    assertEquals(0, b.foldRight(0){ (a, b) => a+b })
+    assertEquals(0, b.fold(0){ (a, b) => a+b })
+    val c = Array(1)
+    assertEquals(3, c.foldLeft(2){ (a, b) => a+b })
+    assertEquals(3, c.foldRight(2){ (a, b) => a+b })
+    assertEquals(3, c.fold(2){ (a, b) => a+b })
   }
 
   @Test
@@ -70,6 +80,20 @@ class ArrayOpsTest {
   }
 
   @Test
+  def startsWith(): Unit = {
+    val l0 = Nil
+    val l1 = 1 :: Nil
+    val a0 = Array[Int]()
+    val a1 = Array[Int](1)
+    assertEquals(l0.startsWith(l0, 0), a0.startsWith(a0, 0))
+    assertEquals(l0.startsWith(l0, 1), a0.startsWith(a0, 1))
+    assertEquals(l0.startsWith(l1, 0), a0.startsWith(a1, 0))
+    assertEquals(l0.startsWith(l1, 1), a0.startsWith(a1, 1))
+    assertEquals(l0.startsWith(l1, -1), a0.startsWith(a1, -1))
+    assertEquals(l0.startsWith(l1, Int.MinValue), a0.startsWith(a1, Int.MinValue))
+  }
+
+  @Test
   def patch(): Unit = {
     val a1 = Array.empty[Int]
     val v1 = a1.toVector
@@ -80,5 +104,92 @@ class ArrayOpsTest {
     assertEquals(v2.patch(0, a2, 3), a2.patch(0, v2, 3).toSeq)
     assertEquals(v2.patch(0, a2, 8), a2.patch(0, v2, 8).toSeq)
     assertEquals(v1.patch(-1, a2, 1), a1.patch(-1, v2, 1).toSeq)
+  }
+
+  @Test
+  def slice(): Unit = {
+    assertArrayEquals(Array[Int](2), Array[Int](1, 2).slice(1, 2))
+    assertArrayEquals(Array[Int](), Array[Int](1).slice(1052471512, -1496048404))
+    assertArrayEquals(Array[Int](), Array[Int](1).slice(2, 3))
+  }
+
+  @Test
+  def copyToArrayOutOfBoundsTest(): Unit = {
+    val target = Array[Int]()
+    assertEquals(0, Array(1,2).copyToArray(target, 1, 0))
+  }
+
+  @Test
+  def t11499(): Unit = {
+    val a: Array[Byte] = new Array[Byte](1000).sortWith { _ < _ }
+    assertEquals(0, a(0))
+  }
+
+  @Test
+  def `transpose still incorrectly throws class cast exception`(): Unit = {
+    // If ArrayOps.transpose is fixed, this test should be updated to be positive
+    // and the method's Scaladoc should be updated to reflect the state of the method.
+    // See scala/bug#13178
+    assertThrows[ClassCastException] {
+      val _: Array[Array[Int]] = Array().transpose((_: Object) => Array(1))
+    }
+  }
+
+  @Test
+  def transpose(): Unit = {
+    assertArrayEquals(Array[Object](), Array(Array[Object]()).transpose.asInstanceOf[Array[Object]])
+
+    assertArrayEquals(
+      Array(Array(1, 3), Array(2, 4)).asInstanceOf[Array[Object]],
+      Array(Array(1, 2), Array(3, 4)).transpose.asInstanceOf[Array[Object]]
+    )
+
+    assertArrayEquals(
+      Array(Array(1, 1), Array(2, 2)).asInstanceOf[Array[Object]],
+      Array(new Object(), new Object()).transpose(_ => Array(1, 2)).asInstanceOf[Array[Object]]
+    )
+  }
+
+  @Test
+  def `empty intersection has correct component type for array`(): Unit = {
+    val something = Array(3.14)
+    val nothing   = Array[Double]()
+    val empty     = Array.empty[Double]
+
+    assertEquals(classOf[Double], nothing.intersect(something).getClass.getComponentType)
+    assertTrue(nothing.intersect(something).isEmpty)
+
+    assertEquals(classOf[Double], empty.intersect(something).getClass.getComponentType)
+    assertTrue(empty.intersect(something).isEmpty)
+    assertEquals(classOf[Double], empty.intersect(nothing).getClass.getComponentType)
+    assertTrue(empty.intersect(nothing).isEmpty)
+
+    assertEquals(classOf[Double], something.intersect(nothing).getClass.getComponentType)
+    assertTrue(something.intersect(nothing).isEmpty)
+    assertEquals(classOf[Double], something.intersect(empty).getClass.getComponentType)
+    assertTrue(something.intersect(empty).isEmpty)
+  }
+
+  // discovered while working on scala/scala#9388
+  @Test
+  def iterator_drop(): Unit = {
+    val it = Array(1, 2, 3)
+      .iterator
+      .drop(Int.MaxValue)
+      .drop(Int.MaxValue)  // potential index overflow to negative
+    assertFalse(it.hasNext)// bug had index as negative and this returning true
+                           // even though the index is both out of bounds and should
+                           // always be between `0` and `Array#length`.
+  }
+
+  @Test def `array collect`: Unit = {
+    val vs = (1 to 10).toArray
+    val res = vs.collect { case n if n%2 == 0 => 10*n }
+    assertArrayEquals((2 to 10 by 2).map(_ * 10).toArray, res)
+  }
+  @Test def `array collect first`: Unit = {
+    val vs = (1 to 10).toArray
+    val res = vs.collectFirst { case n if n > 4 => 10*n }
+    assertEquals(Some(50), res)
   }
 }

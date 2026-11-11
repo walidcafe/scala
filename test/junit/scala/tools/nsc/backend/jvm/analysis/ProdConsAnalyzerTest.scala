@@ -4,32 +4,28 @@ package analysis
 
 import org.junit.Assert._
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
 
 import scala.tools.asm.Opcodes
 import scala.tools.asm.tree.AbstractInsnNode
 import scala.tools.nsc.backend.jvm.AsmUtils._
-import scala.tools.partest.ASMConverters._
-import scala.tools.testing.BytecodeTesting
-import scala.tools.testing.BytecodeTesting._
+import scala.tools.testkit.ASMConverters._
+import scala.tools.testkit.BytecodeTesting
+import scala.tools.testkit.BytecodeTesting._
 
-@RunWith(classOf[JUnit4])
 class ProdConsAnalyzerTest extends BytecodeTesting {
   override def compilerArgs = "-opt:l:none"
   import compiler._
-  import global.genBCode.postProcessor.backendUtils._
 
   def prodToString(producer: AbstractInsnNode) = producer match {
     case p: InitialProducer => p.toString
     case p => textify(p)
   }
 
-  def testSingleInsn(singletonInsns: Traversable[AbstractInsnNode], expected: String): Unit = {
+  def testSingleInsn(singletonInsns: Iterable[AbstractInsnNode], expected: String): Unit = {
     testInsn(single(singletonInsns), expected)
   }
 
-  def testMultiInsns(insns: Traversable[AbstractInsnNode], expected: Traversable[String]): Unit = {
+  def testMultiInsns(insns: Iterable[AbstractInsnNode], expected: Iterable[String]): Unit = {
     assertTrue(s"Sizes don't match: ${insns.size} vs ${expected.size}", insns.size == expected.size)
     for (insn <- insns) {
       val txt = prodToString(insn)
@@ -42,7 +38,7 @@ class ProdConsAnalyzerTest extends BytecodeTesting {
     assertTrue(s"Expected $expected, found $txt", txt contains expected)
   }
 
-  def single[T](c: Traversable[T]): T = {
+  def single[T](c: Iterable[T]): T = {
     assertTrue(s"Expected singleton collection, got $c", c.size == 1)
     c.head
   }
@@ -223,7 +219,7 @@ class ProdConsAnalyzerTest extends BytecodeTesting {
 
   @Test
   def copyingInsns(): Unit = {
-    val m = compileAsmMethod("def f = 0l.asInstanceOf[Int]")
+    val m = compileAsmMethod("def f = 0L.asInstanceOf[Int]")
     val a = new ProdConsAnalyzer(m, "C")
 
     val cnst = findInstr(m, "LCONST_0")

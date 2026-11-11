@@ -1,0 +1,11 @@
+wildcards-future.scala:7: error: type mismatch;
+ found   : scala.collection.immutable.Map[_$1,Any] where type _$1 <: AnyRef
+ required: Map[String,String]
+  underscores : Map[String, String] // error wildcard variables starting with `_`
+  ^
+wildcards-future.scala:9: error: type mismatch;
+ found   : scala.collection.immutable.Map[?$1,Any] where type ?$1 <: AnyRef
+ required: Map[String,String]
+  qmarks : Map[String, String] // error – wildcard variables should start with `?` to differentiate from the old syntax
+  ^
+2 errors

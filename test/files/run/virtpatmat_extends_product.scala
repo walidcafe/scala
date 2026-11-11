@@ -1,3 +1,5 @@
+//> using options 
+//
 object Test extends App {
   case class AnnotationInfo(a: String, b: Int) extends Product2[String, Int] {
     def _1 = a

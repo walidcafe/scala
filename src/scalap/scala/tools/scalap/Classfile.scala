@@ -1,10 +1,14 @@
-/*     ___ ____ ___   __   ___   ___
-**    / _// __// _ | / /  / _ | / _ \    Scala classfile decoder
-**  __\ \/ /__/ __ |/ /__/ __ |/ ___/    (c) 2003-2013, LAMP/EPFL
-** /____/\___/_/ |_/____/_/ |_/_/
-**
-*/
-
+/*
+ * Scala classfile decoder (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.tools.scalap
 
@@ -22,10 +26,10 @@ class Classfile(in: ByteArrayReader) {
   val classname = in.nextChar
   val superclass = in.nextChar
   val interfaces = readInterfaces
-  val fields = readMembers(true)
-  val methods = readMembers(false)
+  val fields = readMembers(field = true)
+  val methods = readMembers(field = false)
   val attribs = readAttribs
-  def scalaSigAttribute = attribs find (_.toString == Main.SCALA_SIG)
+  def scalaSigAttribute = attribs.find(_.toString == Main.SCALA_SIG)
 
   def readAttribs = {
     val n = in.nextChar

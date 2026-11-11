@@ -1,7 +1,18 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect
 package quasiquotes
 
-import java.util.UUID.randomUUID
 import scala.collection.mutable
 
 /** Emulates hole support (see Holes.scala) in the quasiquote parser (see Parsers.scala).
@@ -20,17 +31,16 @@ trait Placeholders { self: Quasiquotes =>
   lazy val posMap = mutable.LinkedHashMap[Position, (Int, Int)]()
   lazy val code = {
     val sb = new StringBuilder()
-    val sessionSuffix = randomUUID().toString.replace("-", "").substring(0, 8) + "$"
 
-    def appendPart(value: String, pos: Position) = {
+    def appendPart(value: String, pos: Position): Unit = {
       val start = sb.length
       sb.append(value)
       val end = sb.length
       posMap += pos -> ((start, end))
     }
 
-    def appendHole(tree: Tree, rank: Rank) = {
-      val placeholderName = c.freshName(TermName(nme.QUASIQUOTE_PREFIX + sessionSuffix))
+    def appendHole(tree: Tree, rank: Rank): Unit = {
+      val placeholderName = c.freshName(TermName(nme.QUASIQUOTE_PREFIX))
       sb.append(placeholderName)
       val holeTree =
         if (method != nme.unapply) tree
@@ -66,14 +76,13 @@ trait Placeholders { self: Quasiquotes =>
       accessed += skey
       value
     }
-    def update(key: Name, hole: Hole) =
+    def update(key: Name, hole: Hole): Unit =
       underlying += key.toString -> hole
     def get(key: Name): Option[Hole] = {
       val skey = key.toString
-      underlying.get(skey).map { v =>
-        accessed += skey
-        v
-      }
+      val res = underlying.get(skey)
+      res.foreach(_ => accessed += skey)
+      res
     }
     def keysIterator: Iterator[TermName] = underlying.keysIterator.map(TermName(_))
   }

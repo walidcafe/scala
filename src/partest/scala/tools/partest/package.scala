@@ -1,11 +1,24 @@
-/* NEST (New Scala Test)
- * Copyright 2007-2013 LAMP/EPFL
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools
 
-import java.util.concurrent.{ Callable, ExecutorService }
+import java.nio.file.Files
+import java.util.concurrent.{Callable, ExecutorService}
+
 import scala.concurrent.duration.Duration
+import scala.io.Codec
+import scala.jdk.CollectionConverters._
+import scala.language.implicitConversions
 import scala.tools.nsc.util.Exceptional
 
 package object partest {
@@ -23,19 +36,19 @@ package object partest {
   val ClassPath    = scala.tools.nsc.util.ClassPath
 
   val space                       = "\u0020"
-  val EOL                         = scala.compat.Platform.EOL
+  val EOL                         = System.lineSeparator()
   def onull(s: String)            = if (s == null) "" else s
   def oempty(xs: String*)         = xs filterNot (x => x == null || x == "")
   def ojoin(xs: String*): String  = oempty(xs: _*) mkString space
   def nljoin(xs: String*): String = oempty(xs: _*) mkString EOL
 
-  implicit val codec = scala.io.Codec.UTF8
+  implicit val codec: Codec = Codec.UTF8
 
   def setUncaughtHandler() = {
     Thread.setDefaultUncaughtExceptionHandler(
       new Thread.UncaughtExceptionHandler {
         def uncaughtException(thread: Thread, t: Throwable): Unit = {
-          val t1 = Exceptional unwrap t
+          val t1 = Exceptional.rootCause(t)
           System.err.println(s"Uncaught exception on thread $thread: $t1")
           t1.printStackTrace()
         }
@@ -45,24 +58,30 @@ package object partest {
 
   /** Sources have a numerical group, specified by name_7 and so on. */
   private val GroupPattern = """.*_(\d+)""".r
+  private object IntOf {
+    def unapply(ds: String): Some[Int] = Some {
+      try ds.toInt
+      catch { case _: NumberFormatException => -1 }
+    }
+  }
 
   implicit class `special string ops`(private val s: String) extends AnyVal {
-    def linesIfNonEmpty: Iterator[String] = if (!s.isEmpty) s.lines else Iterator.empty
+    def linesIfNonEmpty: Iterator[String] = if (!s.isEmpty) s.linesIterator else Iterator.empty
   }
 
   implicit class FileOps(val f: File) {
     private def sf = SFile(f)
 
-    def testIdent = {
-      f.toString split """[/\\]+""" takeRight 2 mkString "/" // e.g. pos/t1234
-    }
+    // e.g. pos/t1234.scala
+    def withEnclosing: String = f.toPath.iterator.asScala.toList.takeRight(2).mkString("/")
+    def testIdent = withEnclosing
 
     def mapInPlace(mapFn: String => String)(filterFn: String => Boolean = _ => true): Unit =
       writeAll(fileLines filter filterFn map (x => mapFn(x) + EOL): _*)
 
     def appendAll(strings: String*): Unit = sf.appendAll(strings: _*)
     def writeAll(strings: String*): Unit = sf.writeAll(strings: _*)
-    def absolutePathSegments: List[String] = f.getAbsolutePath split """[/\\]+""" toList
+    def absolutePathSegments: List[String] = f.getAbsolutePath.split("""[/\\]+""").toList
 
     def isJava        = f.isFile && (sf hasExtension "java")
     def isScala       = f.isFile && (sf hasExtension "scala")
@@ -72,21 +91,22 @@ package object partest {
     def hasExtension(ext: String) = sf hasExtension ext
     def changeExtension(ext: String): File = (sf changeExtension ext).jfile
 
-    /** The group number for this source file, or -1 for no group. */
+    /** The group number for this source file, or -1 for no group or out of range. */
     def group: Int =
       sf.stripExtension match {
-        case GroupPattern(g) if g.toInt >= 0 => g.toInt
-        case _                               => -1
+        case GroupPattern(IntOf(g)) => g
+        case _                      => -1
       }
 
-    def fileContents: String    = try sf.slurp() catch { case _: java.io.FileNotFoundException => "" }
-    def fileLines: List[String] = fileContents.linesIfNonEmpty.toList
+    // Files.readString on jdk 11
+    def fileContents: String    = if (Files.isReadable(f.toPath)) try sf.slurp() catch { case _: java.io.FileNotFoundException => "" } else ""
+    def fileLines: List[String] = if (Files.isReadable(f.toPath)) Files.readAllLines(f.toPath).asScala.toList else Nil
   }
 
-  implicit class PathOps(p: Path) extends FileOps(p.jfile) { }
+  implicit class PathOps(p: Path) extends FileOps(p.jfile)
 
   implicit class Copier(val f: SFile) extends AnyVal {
-    def copyTo(dest: Path): Unit = dest.toFile writeAll f.slurp(scala.io.Codec.UTF8)
+    def copyTo(dest: Path): Unit = dest.toFile writeAll f.slurp(Codec.UTF8)
   }
 
   implicit class LoaderOps(val loader: ClassLoader) extends AnyVal {
@@ -97,31 +117,21 @@ package object partest {
      */
     def instantiate[A >: Null](name: String): A = (
       catching(classOf[ClassNotFoundException], classOf[SecurityException]) opt
-      (loader loadClass name).newInstance.asInstanceOf[A] orNull
-    )
+      loader.loadClass(name).getConstructor().newInstance().asInstanceOf[A]
+    ).orNull
   }
 
   implicit class ExecutorOps(val executor: ExecutorService) {
-    def awaitTermination[A](wait: Duration)(failing: => A = ()): Option[A] = (
-      if (executor awaitTermination (wait.length, wait.unit)) None
+    def awaitTermination[A](wait: Duration)(failing: => A = ()): Option[A] =
+      if (executor.awaitTermination(wait.length, wait.unit)) None
       else Some(failing)
-    )
   }
 
   implicit def temporaryPath2File(x: Path): File = x.jfile
   implicit def stringPathToJavaFile(path: String): File = new File(path)
 
-  implicit lazy val postfixOps = scala.language.postfixOps
-  implicit lazy val implicitConversions = scala.language.implicitConversions
-
   def fileSeparator = java.io.File.separator
   def pathSeparator = java.io.File.pathSeparator
-
-  def pathToTestIdent(path: Path) = path.jfile.testIdent
-
-  def canonicalizeSlashes(line: String) = line.replaceAll("""[/\\]+""", "/")
-
-  def words(s: String): List[String] = (s.trim split "\\s+").toList
 
   def timed[T](body: => T): (T, Long) = {
     val t1 = System.currentTimeMillis
@@ -133,27 +143,12 @@ package object partest {
 
   def callable[T](body: => T): Callable[T] = new Callable[T] { override def call() = body }
 
-  def file2String(f: File): String = f.fileContents
-
   def basename(name: String): String = Path(name).stripExtension
-
-  /** In order to allow for spaces in flags/options, this
-   *  parses .flags, .javaopts, javacopts etc files as follows:
-   *  If it is exactly one line, it is split (naively) on spaces.
-   *  If it contains more than one line, each line is its own
-   *  token, spaces and all.
-   */
-  def readOptionsFile(file: File): List[String] = {
-    file.fileLines match {
-      case x :: Nil   => words(x)
-      case xs         => xs
-    }
-  }
 
   def findProgram(name: String): Option[File] = {
     val pathDirs = sys.env("PATH") match {
       case null => List("/usr/local/bin", "/usr/bin", "/bin")
-      case path => path split "[:;]" filterNot (_ == "") toList
+      case path => path.split("[:;]").filterNot(_ == "").toList
     }
     pathDirs.iterator map (d => new File(d, name)) find (_.canExecute)
   }
@@ -170,7 +165,6 @@ package object partest {
   }
 
   def vmArgString = {
-    import scala.collection.JavaConverters._
     val javaVmArguments =
       java.lang.management.ManagementFactory.getRuntimeMXBean.getInputArguments.asScala.toList
     javaVmArguments.mkString(
@@ -181,7 +175,13 @@ package object partest {
   }
 
   def allPropertiesString = {
-    import scala.collection.JavaConverters._
     System.getProperties.asScala.toList.sorted map { case (k, v) => "%s -> %s\n".format(k, v) } mkString ""
   }
+
+  def ifJavaAtLeast[A](version: String)(yesRun: => A) = new TestUnderJavaAtLeast(version, { yesRun })
+
+  /** Debugger interest only below this line **/
+  def isDebug                = sys.props.contains("partest.debug") || sys.env.contains("PARTEST_DEBUG")
+  def debugSettings          = sys.props.getOrElse("partest.debug.settings", "")
+  def log(msg: => Any): Unit = if (isDebug) Console.err.println(msg)
 }

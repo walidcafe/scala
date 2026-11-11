@@ -6,16 +6,29 @@ chapter: 15
 
 # Changelog
 
-Changes in Version 2.8.0
-------------------------
+This changelog was no longer maintained after version 2.8.0.
 
-#### Trailing commas
+A pull request updating this chapter to list the most significant
+changes made in more recent Scala versions would be highly welcome.
+
+Many language changes, especially larger ones, are documented in SIP
+(Scala Improvement Process) proposals.  Most proposals that were
+accepted and implemented have not merged into the main spec.  Pull
+requests that merge SIPs into the main spec are also highly welcome.
+
+To find out what has changed in Scala 2 since 2.8.0, you can consult
+the following sources:
+
+* Scala release notes (recent versions): https://github.com/scala/scala/releases
+* Scala release notes (older versions): https://scala-lang.org/blog/announcements/
+* Scala release notes (even older versions): presumably findable via search engine
+* Spec changelog in version control: https://github.com/scala/scala/commits/2.13.x/spec
+* SIPs: https://docs.scala-lang.org/sips/all.html
+
+## Changes in Version 2.8.0
 
 Trailing commas in expression, argument, type or pattern sequences are
 no longer supported.
-
-Changes in Version 2.8
-----------------------
 
 Changed visibility rules for nested packages (where done?)
 
@@ -41,8 +54,7 @@ Clarified differences between [`isInstanceOf` and pattern matches](12-the-scala-
 
 Allowed [`implicit` modifier on function literals](06-expressions.html#anonymous-functions) with a single parameter.
 
-Changes in Version 2.7.2
-------------------------
+## Changes in Version 2.7.2
 
 _(10-Nov-2008)_
 
@@ -61,11 +73,10 @@ A formal parameter to an anonymous function may now be a
 
 #### Unicode alternative for left arrow
 
-The Unicode glyph ‘\\(\leftarrow\\)’ \\(`\u2190`\\) is now treated as a reserved
+The Unicode glyph ‘´\leftarrow´’ ´`\u2190`´ is now treated as a reserved
 identifier, equivalent to the ASCII symbol ‘`<-`’.
 
-Changes in Version 2.7.1
-------------------------
+## Changes in Version 2.7.1
 
 _(09-April-2008)_
 
@@ -88,12 +99,11 @@ interpreted.
 
 The contractiveness requirement for
 [implicit method definitions](07-implicits.html#implicit-parameters)
-has been dropped. Instead it is checked for each implicit expansion individually
+has been dropped. Instead, it is checked for each implicit expansion individually
 that the expansion does not result in a cycle or a tree of infinitely
 growing types.
 
-Changes in Version 2.7.0
-------------------------
+## Changes in Version 2.7.0
 
 _(07-Feb-2008)_
 
@@ -145,8 +155,7 @@ Three restrictions on case classes have been removed.
 
 3.  Case classes may now come with companion objects.
 
-Changes in Version 2.6.1
-------------------------
+## Changes in Version 2.6.1
 
 _(30-Nov-2007)_
 
@@ -169,8 +178,7 @@ Self types can now be introduced without defining an alias name for
         trait Trait { this: T => ... }
       }
 
-Changes in Version 2.6
-----------------------
+## Changes in Version 2.6
 
 _(27-July-2007)_
 
@@ -193,7 +201,7 @@ one may for example write the following existential types
 It is now possible to define lazy value declarations using the new modifier
 [`lazy`](04-basic-declarations-and-definitions.html#value-declarations-and-definitions).
 A `lazy` value definition evaluates its right hand
-side \\(e\\) the first time the value is accessed. Example:
+side ´e´ the first time the value is accessed. Example:
 
     import compat.Platform._
     val t0 = currentTime
@@ -227,8 +235,7 @@ is a shorthand for
 
     new AnyRef{ def getName() = "aaron" }
 
-Changes in Version 2.5
-----------------------
+## Changes in Version 2.5
 
 _(02-May-2007)_
 
@@ -324,12 +331,11 @@ directly for functions of arities greater than one. Previously, only
 unary functions could be defined that way. Example:
 
     def scalarProduct(xs: Array[Double], ys: Array[Double]) =
-      (0.0 /: (xs zip ys)) {
+      (xs zip ys).foldLeft(0.0) {
         case (a, (b, c)) => a + b * c
       }
 
-Changes in Version 2.4
-----------------------
+## Changes in Version 2.4
 
 _(09-Mar-2007)_
 
@@ -337,24 +343,24 @@ _(09-Mar-2007)_
 
 The `private` and `protected` modifiers now accept a
 [`[this]` qualifier](05-classes-and-objects.html#modifiers).
-A definition \\(M\\) which is labelled `private[this]` is private,
+A definition ´M´ which is labelled `private[this]` is private,
 and in addition can be accessed only from within the current object.
-That is, the only legal prefixes for \\(M\\) are `this` or `$C$.this`.
-Analogously, a definition \\(M\\) which is labelled `protected[this]` is
+That is, the only legal prefixes for ´M´ are `this` or `´C´.this`.
+Analogously, a definition ´M´ which is labelled `protected[this]` is
 protected, and in addition can be accessed only from within the current
 object.
 
 #### Tuples, revised
 
-The syntax for [tuples](06-expressions.html#tuples) has been changed from \\(\\{…\\}\\) to
-\\((…)\\). For any sequence of types \\(T_1 , … , T_n\\),
+The syntax for [tuples](06-expressions.html#tuples) has been changed from ´\\{…\\}´ to
+´(…)´. For any sequence of types ´T_1 , … , T_n´,
 
-\\((T_1 , … , T_n)\\) is a shorthand for `Tuple$n$[$T_1 , … , T_n$]`.
+´(T_1 , … , T_n)´ is a shorthand for `Tuple´n´[´T_1 , … , T_n´]`.
 
-Analogously, for any sequence of expressions or patterns \\(x_1
-, … , x_n\\),
+Analogously, for any sequence of expressions or patterns ´x_1
+, … , x_n´,
 
-\\((x_1 , … , x_n)\\) is a shorthand for `Tuple$n$($x_1 , … , x_n$)`.
+´(x_1 , … , x_n)´ is a shorthand for `Tuple´n´(´x_1 , … , x_n´)`.
 
 #### Access modifiers for primary constructors
 
@@ -417,8 +423,7 @@ It is now possible to [combine operators with assignments]
     var x: int = 0
     x += 1
 
-Changes in Version 2.3.2
-------------------------
+## Changes in Version 2.3.2
 
 _(23-Jan-2007)_
 
@@ -456,13 +461,13 @@ Patterns” by Emir, Odersky and Williams.
 #### Tuples
 
 A new [lightweight syntax for tuples](06-expressions.html#tuples) has been introduced.
-For any sequence of types \\(T_1 , … , T_n\\),
+For any sequence of types ´T_1 , … , T_n´,
 
-\\(\{T_1 , … , T_n \}\\) is a shorthand for `Tuple$n$[$T_1 , … , T_n$]`.
+´\{T_1 , … , T_n \}´ is a shorthand for `Tuple´n´[´T_1 , … , T_n´]`.
 
-Analogously, for any sequence of expressions or patterns \\(x_1, … , x_n\\),
+Analogously, for any sequence of expressions or patterns ´x_1, … , x_n´,
 
-\\(\{x_1 , … , x_n \}\\) is a shorthand for `Tuple$n$($x_1 , … , x_n$)`.
+´\{x_1 , … , x_n \}´ is a shorthand for `Tuple´n´(´x_1 , … , x_n´)`.
 
 #### Infix operators of greater arities
 
@@ -482,8 +487,7 @@ A new standard attribute [`deprecated`](11-annotations.html#deprecation-annotati
 is available. If a member definition is marked with this attribute, any
 reference to the member will cause a “deprecated” warning message to be emitted.
 
-Changes in Version 2.3
-----------------------
+## Changes in Version 2.3
 
 _(23-Nov-2006)_
 
@@ -493,8 +497,8 @@ A simplified syntax for [methods returning `unit`]
 (04-basic-declarations-and-definitions.html#procedures) has been introduced.
 Scala now allows the following shorthands:
 
-`def f(params)` \\(\mbox{for}\\) `def f(params): unit`
-`def f(params) { ... }` \\(\mbox{for}\\) `def f(params): unit = { ... }`
+`def f(params)` **for** `def f(params): unit`  
+`def f(params) { ... }` **for** `def f(params): unit = { ... }`
 
 #### Type Patterns
 
@@ -517,8 +521,7 @@ hierarchy have changed as follows:
 
 The old names are still available as type aliases.
 
-Changes in Version 2.1.8
-------------------------
+## Changes in Version 2.1.8
 
 _(23-Aug-2006)_
 
@@ -541,15 +544,15 @@ referenced from the companion module of the class and vice versa.
 
 The lookup method for [implicit definitions](07-implicits.html#implicit-parameters)
 has been generalized.
-When searching for an implicit definition matching a type \\(T\\), now are considered
+When searching for an implicit definition matching a type ´T´, now are considered
 
 1.  all identifiers accessible without prefix, and
 
-2.  all members of companion modules of classes associated with \\(T\\).
+2.  all members of companion modules of classes associated with ´T´.
 
 (The second clause is more general than before). Here, a class is _associated_
-with a type \\(T\\) if it is referenced by some part of \\(T\\), or if it is a
-base class of some part of \\(T\\).
+with a type ´T´ if it is referenced by some part of ´T´, or if it is a
+base class of some part of ´T´.
 For instance, to find implicit members corresponding to the type
 
       HashSet[List[Int], String]
@@ -574,8 +577,7 @@ This will match the second case and hence will print “q”. Before, the
 singleton types were erased to `List`, and therefore the first case would have
 matched, which is non-sensical.
 
-Changes in Version 2.1.7
-------------------------
+## Changes in Version 2.1.7
 
 _(19-Jul-2006)_
 
@@ -609,19 +611,17 @@ Legal alternatives are:
       val f = { x: T => E }
       val f = (x: T) => E
 
-Changes in Version 2.1.5
-------------------------
+## Changes in Version 2.1.5
 
 _(24-May-2006)_
 
 #### Class Literals
 
 There is a new syntax for [class literals](06-expressions.html#literals):
-For any class type \\(C\\), `classOf[$C$]` designates the run-time
-representation of \\(C\\).
+For any class type ´C´, `classOf[´C´]` designates the run-time
+representation of ´C´.
 
-Changes in Version 2.0
-----------------------
+## Changes in Version 2.0
 
 _(12-Mar-2006)_
 
@@ -639,7 +639,7 @@ The following three words are now reserved; they cannot be used as
 
 #### Newlines as Statement Separators
 
-[Newlines](http://www.scala-lang.org/files/archive/spec/2.11/)
+[Newlines](https://www.scala-lang.org/files/archive/spec/2.11/)
 can now be used as statement separators in place of semicolons.
 
 #### Syntax Restrictions

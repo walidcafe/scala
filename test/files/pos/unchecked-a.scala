@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 trait Y
 trait Z extends Y
 class X[+A <: Y]

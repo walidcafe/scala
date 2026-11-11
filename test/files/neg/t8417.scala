@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings -Xlint:adapted-args
+//
 
 
 trait T {

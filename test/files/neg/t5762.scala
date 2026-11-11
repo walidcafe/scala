@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 class D[-A]
 
 object Test {

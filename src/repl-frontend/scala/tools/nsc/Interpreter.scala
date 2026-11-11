@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 
 import scala.tools.nsc.interpreter.{IMain, Repl, ReplCore}
@@ -80,6 +92,7 @@ class InterpreterLoop {
   //   - https://github.com/sbt/zinc/blob/1.0/internal/compiler-bridge/src/main/scala/xsbt/InteractiveConsoleInterface.scala
   //   - https://github.com/sbt/zinc/blob/1.0/internal/compiler-bridge/src/main/scala/xsbt/ConsoleInterface.scala
   @deprecated("Only here to ensure we don't break the sbt interface.", "2.13.0-M2")
+  @annotation.unused
   private def __SbtConsoleInterface(compilerSettings: Settings, interpreterSettings: Settings, bootClasspathString: String, classpathString: String, initialCommands: String, cleanupCommands: String, loader: ClassLoader, bindNames: Array[String], bindValues: Array[Any]): Unit = {
     import scala.tools.nsc.interpreter.InteractiveReader
     import scala.tools.nsc.reporters.Reporter
@@ -99,14 +112,15 @@ class InterpreterLoop {
             override protected def newCompiler(settings: Settings, reporter: Reporter) =
               super.newCompiler(compilerSettings, reporter)
           }
-          interpreter.setContextClassLoader()
         }
 
         // for 2.8 compatibility
+        @annotation.unused
         final class Compat {
           def bindValue(id: String, value: Any) =
             interpreter.bind(id, value.asInstanceOf[AnyRef].getClass.getName, value)
         }
+        @annotation.unused
         implicit def compat(a: AnyRef): Compat = new Compat
 
         interpreter.beQuietDuring(interpreter.bindValue(??? : String, ??? : Any))

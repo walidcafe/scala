@@ -1,0 +1,10 @@
+> setup; reload
+
+> set scalacOptions ++= Seq("-sourcepath", (sourceDirectory in Compile).value.getAbsolutePath + "/scala")
+
+> compile
+
+$ copy-file changes/B.scala src/main/scala/B.scala
+$ touch src/main/scala/A.scala
+
+> compile

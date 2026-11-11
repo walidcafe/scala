@@ -1,15 +1,27 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package internal
 package tpe
 
-import scala.collection.mutable
+import scala.collection.mutable, mutable.ListBuffer
 import scala.annotation.tailrec
-import scala.reflect.internal.util.StatisticsStatics
+import util.ReusableInstance
 import Variance._
 
-private[internal] trait GlbLubs {
-  self: SymbolTable =>
+final class GlbLubs[U <: SymbolTable with Singleton](val self: U) {
+  import self._
 
   import definitions._
   import statistics._
@@ -46,109 +58,131 @@ private[internal] trait GlbLubs {
     println("** Depth is " + depth + "\n" + formatted)
   }
 
-  /** From a list of types, find any which take type parameters
-    *  where the type parameter bounds contain references to other
-    *  any types in the list (including itself.)
-    *
-    *  @return List of symbol pairs holding the recursive type
-    *    parameter and the parameter which references it.
-    */
-  def findRecursiveBounds(ts: List[Type]): List[(Symbol, Symbol)] = {
-    if (ts.isEmpty) Nil
-    else {
-      val sym = ts.head.typeSymbol
-      require(ts.tail forall (_.typeSymbol == sym), ts)
-      for (p <- sym.typeParams ; in <- sym.typeParams ; if in.info.bounds contains p) yield
-        p -> in
-    }
-  }
-
   /** Given a matrix `tsBts` whose columns are basetype sequences (and the symbols `tsParams` that should be interpreted as type parameters in this matrix),
     * compute its least sorted upwards closed upper bound relative to the following ordering <= between lists of types:
     *
     *    xs <= ys   iff   forall y in ys exists x in xs such that x <: y
     *
-    *  @arg tsParams for each type in the original list of types `ts0`, its list of type parameters (if that type is a type constructor)
+    *  @param tsParams for each type in the original list of types `ts0`, its list of type parameters (if that type is a type constructor)
     *                (these type parameters may be referred to by type arguments in the BTS column of those types,
     *                and must be interpreted as bound variables; i.e., under a type lambda that wraps the types that refer to these type params)
-    *  @arg tsBts    a matrix whose columns are basetype sequences
+    *  @param tsBts    a matrix whose columns are basetype sequences
     *                the first row is the original list of types for which we're computing the lub
     *                  (except that type constructors have been applied to their dummyArgs)
-    *  @See baseTypeSeq  for a definition of sorted and upwards closed.
+    *  @see baseTypeSeq  for a definition of sorted and upwards closed.
     */
-  def lubList(ts: List[Type], depth: Depth): List[Type] = {
+  def lubList(ts: List[Type], depth: Depth): List[Type] = ts match {
+    case Nil => Nil
+    case ty :: Nil => ty.baseTypeSeq.toList
+    case _ => lubList_x(ts, depth)
+  }
+
+  private[this] def lubList_x(ts: List[Type], depth: Depth): List[Type] = {
     var lubListDepth = Depth.Zero
     // This catches some recursive situations which would otherwise
     // befuddle us, e.g. pos/hklub0.scala
-    def isHotForTs(xs: List[Type]) = ts exists (_.typeParams == xs.map(_.typeSymbol))
+    def isHotForT(tyPar: Symbol, x: Type): Boolean = tyPar eq x.typeSymbol
+    def isHotForTs(xs: List[Type]) = ts.exists(_.typeParams.corresponds(xs)(isHotForT(_,_)))
 
     def elimHigherOrderTypeParam(tp: Type) = tp match {
       case TypeRef(_, _, args) if args.nonEmpty && isHotForTs(args) =>
         logResult("Retracting dummies from " + tp + " in lublist")(tp.typeConstructor)
       case _ => tp
     }
-    // pretypes is a tail-recursion-preserving accumulator.
-    @tailrec
-    def loop(pretypes: List[Type], tsBts: List[List[Type]]): List[Type] = {
-      lubListDepth = lubListDepth.incr
 
-      if (tsBts.isEmpty || (tsBts exists typeListIsEmpty)) pretypes.reverse
-      else if (tsBts.tail.isEmpty) pretypes.reverse ++ tsBts.head
-      else {
+    val baseTypeSeqs: Array[BaseTypeSeq] = mapToArray(ts)(_.baseTypeSeq)
+    val ices: Array[Int] = new Array[Int](baseTypeSeqs.length)
+
+    def printLubMatrixAux(depth: Depth): Unit = {
+      val btsMap: Map[Type, List[Type]] = ts.zipWithIndex.map {
+        case (ty, ix) => ty -> baseTypeSeqs(ix).toList.drop(ices(ix))
+      }.toMap
+      printLubMatrix(btsMap, depth)
+    }
+
+    def headOf(ix: Int) = baseTypeSeqs(ix).rawElem(ices(ix))
+
+    val pretypes: ListBuffer[Type] = ListBuffer.empty[Type]
+
+    var isFinished = false
+    while (!isFinished && ices(0) < baseTypeSeqs(0).length) {
+      lubListDepth = lubListDepth.incr
+      // Step 1: run through the List with these variables:
+      // 1) Is there any empty list? Are they equal or are we taking the smallest?
+      // isFinished: tsBts.exists(typeListIsEmpty)
+      // Is the frontier made up of types with the same symbol?
+      var isUniformFrontier = true
+      var sym = headOf(0).typeSymbol
+      // var tsYs = tsBts
+      var ix = 0
+      while (!isFinished && ix < baseTypeSeqs.length) {
+        if (ices(ix) == baseTypeSeqs(ix).length)
+          isFinished = true
+        else {
+          val btySym = headOf(ix).typeSymbol
+          isUniformFrontier = isUniformFrontier && (sym eq btySym)
+          if (btySym isLess sym)
+            sym = btySym
+        }
+        ix += 1
+      }
+      // Produce a single type for this frontier by merging the prefixes and arguments of those
+      // typerefs that share the same symbol: that symbol is the current maximal symbol for which
+      // the invariant holds, i.e., the one that conveys most information regarding subtyping. Before
+      // merging, strip targs that refer to bound tparams (when we're computing the lub of type
+      // constructors.) Also filter out all types that are a subtype of some other type.
+      if (!isFinished) {
         // ts0 is the 1-dimensional frontier of symbols cutting through 2-dimensional tsBts.
         // Invariant: all symbols "under" (closer to the first row) the frontier
         // are smaller (according to _.isLess) than the ones "on and beyond" the frontier
-        val ts0 = tsBts map (_.head)
-
-        // Is the frontier made up of types with the same symbol?
-        val isUniformFrontier = (ts0: @unchecked) match {
-          case t :: ts  => ts forall (_.typeSymbol == t.typeSymbol)
+        val ts0 = {
+          var ys: List[Type] = Nil
+          var kx = baseTypeSeqs.length
+          while (kx > 0){
+            kx -= 1
+            ys = headOf(kx) :: ys
+          }
+          ys
         }
 
-        // Produce a single type for this frontier by merging the prefixes and arguments of those
-        // typerefs that share the same symbol: that symbol is the current maximal symbol for which
-        // the invariant holds, i.e., the one that conveys most information regarding subtyping. Before
-        // merging, strip targs that refer to bound tparams (when we're computing the lub of type
-        // constructors.) Also filter out all types that are a subtype of some other type.
         if (isUniformFrontier) {
-          val tails = tsBts map (_.tail)
-          val ts1   = elimSub(ts0, depth) map elimHigherOrderTypeParam
+          val ts1 = elimSub(ts0, depth).map(elimHigherOrderTypeParam)
           mergePrefixAndArgs(ts1, Covariant, depth) match {
-            case NoType => loop(pretypes, tails)
-            case tp =>
-              loop(tp :: pretypes, tails)
+            case NoType =>
+            case tp => pretypes += tp
+          }
+          var jx = 0
+          while (jx < baseTypeSeqs.length){
+            ices(jx) += 1
+            jx += 1
           }
         } else {
           // frontier is not uniform yet, move it beyond the current minimal symbol;
           // lather, rinse, repeat
-          val sym    = minSym(ts0)
-          val newtps = tsBts map (ts => if (ts.head.typeSymbol == sym) ts.tail else ts)
-          if (printLubs) {
-            val str = (newtps.zipWithIndex map { case (tps, idx) =>
-              tps.map("        " + _ + "\n").mkString("   (" + idx + ")\n", "", "\n")
-            }).mkString("")
-
-            println("Frontier(\n" + str + ")")
-            printLubMatrix((ts zip tsBts).toMap, lubListDepth)
+          var jx = 0
+          while (jx < baseTypeSeqs.length){
+            if (headOf(jx).typeSymbol == sym)
+              ices(jx) += 1
+            jx += 1
           }
-
-          loop(pretypes, newtps)
+          if (printLubs) {
+            println {
+              baseTypeSeqs.zipWithIndex.map { case (tps, idx) =>
+                tps.toList.drop(ices(idx)).map("        " + _).mkString("   (" + idx + ")\n", "\n", "\n")
+              }
+              .mkString("Frontier(\n", "", ")")
+            }
+            printLubMatrixAux(lubListDepth)
+          }
         }
       }
     }
 
-    val initialBTSes = ts map (_.baseTypeSeq.toList)
     if (printLubs)
-      printLubMatrix((ts zip initialBTSes).toMap, depth)
+      printLubMatrixAux(depth)
 
-    loop(Nil, initialBTSes)
+    pretypes.toList
   }
-
-  /** The minimal symbol of a list of types (as determined by `Symbol.isLess`). */
-  private def minSym(tps: List[Type]): Symbol =
-    tps.tail.foldLeft(tps.head.typeSymbol){
-      (sym1, tp2) => if (tp2.typeSymbol isLess sym1) tp2.typeSymbol else sym1
-    }
 
   /** A minimal type list which has a given list of types as its base type sequence */
   def spanningTypes(ts: List[Type]): List[Type] = ts match {
@@ -158,33 +192,69 @@ private[internal] trait GlbLubs {
         rest filter (t => !first.typeSymbol.isSubClass(t.typeSymbol)))
   }
 
-  /** Eliminate from list of types all elements which are a supertype
-    *  of some other element of the list. */
-  private def elimSuper(ts: List[Type]): List[Type] = ts match {
-    case List() | List(_) => ts
-    case t :: ts1 =>
-      val rest = elimSuper(ts1 filter (t1 => !(t <:< t1)))
-      if (rest exists (t1 => t1 <:< t)) rest else t :: rest
+  // OPT: hoist allocation of the collector and lambda out of the loop in partition
+  private[this] val isWildCardOrNonGroundTypeVar: Type => Boolean = {
+    case tv: TypeVar => !tv.isGround
+    case t => t.isWildcard
+  }
+  private[this] val isWildCardOrNonGroundTypeVarCollectorInstance: ReusableInstance[FindTypeCollector] =
+    ReusableInstance(new FindTypeCollector(isWildCardOrNonGroundTypeVar), enabled = isCompilerUniverse)
+
+  /** From a list of types, retain only maximal types as determined by the partial order `po`. */
+  private def maxTypes(ts: List[Type])(po: (Type, Type) => Boolean): List[Type] = {
+    def stacked(ts: List[Type]): List[Type] = ts match {
+      case t :: ts1 =>
+        val ts2 = stacked(ts1.filterNot(po(_, t)))
+        if (ts2.exists(po(t, _))) ts2 else t :: ts2
+      case Nil => Nil
+    }
+
+    // loop thru tails, filtering for survivors of po test with the current element, which is saved for later culling
+    @tailrec
+    def loop(survivors: List[Type], toCull: List[Type]): List[Type] = survivors match {
+      case h :: rest =>
+        loop(rest.filterNot(po(_, h)), h :: toCull)
+      case _ =>
+        // unwind the stack of saved elements, accumulating a result containing elements surviving po (in swapped order)
+        def sieve(res: List[Type], remaining: List[Type]): List[Type] = remaining match {
+          case h :: tail =>
+            val res1 = if (res.exists(po(h, _))) res else h :: res
+            sieve(res1, tail)
+          case _ => res
+        }
+        toCull match {
+          case _ :: Nil => toCull
+          case _ => sieve(Nil, toCull)
+        }
+    }
+
+    // The order here matters because type variables and wildcards can act both as subtypes and supertypes.
+    val sorted = {
+      val (wilds, ts1) = isWildCardOrNonGroundTypeVarCollectorInstance.using { collector =>
+        partitionConserve(ts)(collector.collect(_).isDefined)
+      }
+      ts1 ::: wilds
+    }
+    if (sorted.lengthCompare(5) > 0) loop(sorted, Nil)
+    else stacked(sorted)
   }
 
+  /** Eliminate from list of types all elements which are a supertype
+   *  of some other element of the list. */
+  private def elimSuper(ts: List[Type]): List[Type] =
+    if (ts.lengthCompare(1) <= 0) ts
+    else maxTypes(ts)((t1, t2) => t2 <:< t1)
+
   /** Eliminate from list of types all elements which are a subtype
-    *  of some other element of the list. */
-  private def elimSub(ts: List[Type], depth: Depth): List[Type] = {
-    def elimSub0(ts: List[Type]): List[Type] = ts match {
-      case List() => ts
-      case List(t) => ts
-      case t :: ts1 =>
-        val rest = elimSub0(ts1 filter (t1 => !isSubType(t1, t, depth.decr)))
-        if (rest exists (t1 => isSubType(t, t1, depth.decr))) rest else t :: rest
+   *  of some other element of the list. */
+  @tailrec private def elimSub(ts: List[Type], depth: Depth): List[Type] =
+    if (ts.lengthCompare(1) <= 0) ts else {
+      val ts1 = maxTypes(ts)(isSubType(_, _, depth.decr))
+      if (ts1.lengthCompare(1) <= 0) ts1 else {
+        val ts2 = ts1.mapConserve(t => elimAnonymousClass(t.dealiasWiden))
+        if (ts1 eq ts2) ts1 else elimSub(ts2, depth)
+      }
     }
-    val ts0 = elimSub0(ts)
-    if (ts0.isEmpty || ts0.tail.isEmpty) ts0
-    else {
-      val ts1 = ts0 mapConserve (t => elimAnonymousClass(t.dealiasWiden))
-      if (ts1 eq ts0) ts0
-      else elimSub(ts1, depth)
-    }
-  }
 
   /** Does this set of types have the same weak lub as
    *  it does regular lub? This is exposed so lub callers
@@ -194,8 +264,8 @@ private[internal] trait GlbLubs {
    */
   def sameWeakLubAsLub(tps: List[Type]) = tps match {
     case Nil       => true
-    case tp :: Nil => !typeHasAnnotations(tp)
-    case tps       => !(tps exists typeHasAnnotations) && !(tps forall isNumericValueType)
+    case tp :: Nil => tp.annotations.isEmpty
+    case tps       => tps.forall(_.annotations.isEmpty) && !(tps forall isNumericValueType)
   }
 
   /** If the arguments are all numeric value types, the numeric
@@ -209,8 +279,8 @@ private[internal] trait GlbLubs {
       NothingTpe
     else if (tps forall isNumericValueType)
       numericLub(tps)
-    else if (tps exists typeHasAnnotations)
-      annotationsLub(lub(tps map (_.withoutAnnotations)), tps)
+    else if (tps.exists(!_.annotations.isEmpty))
+      annotationCheckerSupport.annotationsLub(lub(tps map (_.withoutAnnotations)), tps)
     else
       lub(tps)
   )
@@ -224,56 +294,175 @@ private[internal] trait GlbLubs {
       else if (isNumericSubType(t2, t1)) t1.dealiasWiden
       else IntTpe)
 
-  private val _lubResults = new mutable.HashMap[(Depth, List[Type]), Type]
-  def lubResults = _lubResults
+  /** Run a top-level `lub` or `glb` with caches private to it.
+   *
+   *  A top-level `lub`/`glb` can be re-entered while another one is in progress, e.g. when
+   *  forcing the info of a member runs a lazy type completer that typechecks code. The nested
+   *  call must neither observe the outer call's recursion guards (it would return `Any` or
+   *  `Nothing`) nor discard them when it finishes, so it gets fresh caches.
+   *
+   *  A call already in progress twice is taken to be a cycle, e.g. through `solve`, and shares
+   *  the current caches so that their recursion guards stop it.
+   */
+  private def withLubGlbCaches[T](isLub: Boolean, ts: List[Type])(body: => T): T = {
+    // Single-threaded only: `inUse` and the maps are plain fields, so a holder must never be
+    // visible to two threads. The compiler universe is single-threaded; runtime reflection
+    // (`SynchronizedTypes`) overrides `lubGlbCaches` with thread-local storage, so each thread
+    // gets, replaces and restores only its own holder. A universe used concurrently must do
+    // the same; making `inUse` volatile would not help, as the maps would still be shared.
+    val saved = lubGlbCaches
+    if (!saved.inUse) {
+      saved.ownerTs = ts
+      saved.ownerIsLub = isLub
+      try claimLubGlbCaches(saved, body) finally saved.ownerTs = null
+    } else if (saved.inProgress(isLub, ts) >= 2) body
+    else {
+      val fresh = new LubGlbCaches(saved)
+      fresh.inUse = true
+      fresh.ownerTs = ts
+      fresh.ownerIsLub = isLub
+      lubGlbCaches = fresh
+      try body finally lubGlbCaches = saved
+    }
+  }
 
-  private val _glbResults = new mutable.HashMap[(Depth, List[Type]), Type]
-  def glbResults = _glbResults
+  /** Run a `lub` or `glb` with explicit depth in the caches of the enclosing call. Without one,
+   *  it is outermost and must claim the caches, so a nested top-level call gets fresh ones and
+   *  no entries outlive it (scala/bug#6437).
+   *
+   *  `body` gets the caches so that it need not look them up again, which in runtime reflection
+   *  costs a thread-local access. They stay current for the whole call: a nested top-level call
+   *  that installs fresh ones restores them when it finishes.
+   */
+  private def withEnclosingLubGlbCaches[T](body: LubGlbCaches => T): T = {
+    val caches = lubGlbCaches
+    if (caches.inUse) body(caches) else claimLubGlbCaches(caches, body(caches))
+  }
+
+  private def claimLubGlbCaches[T](caches: LubGlbCaches, body: => T): T = {
+    caches.inUse = true
+    try body finally { caches.inUse = false; caches.clear() }
+  }
 
   def lub(ts: List[Type]): Type = ts match {
     case Nil      => NothingTpe
     case t :: Nil => t
     case _        =>
-      if (StatisticsStatics.areSomeColdStatsEnabled) statistics.incCounter(lubCount)
-      val start = if (StatisticsStatics.areSomeColdStatsEnabled) statistics.pushTimer(typeOpsStack, lubNanos) else null
-      try {
+      if (settings.areStatisticsEnabled) statistics.incCounter(lubCount)
+      val start = if (settings.areStatisticsEnabled) statistics.pushTimer(typeOpsStack, lubNanos) else null
+      try withLubGlbCaches(isLub = true, ts) {
         val res = lub(ts, lubDepth(ts))
         // If the number of unapplied type parameters in all incoming
         // types is consistent, and the lub does not match that, return
         // the type constructor of the calculated lub instead.  This
         // is because lubbing type constructors tends to result in types
         // which have been applied to dummies or Nothing.
-        ts.map(_.typeParams.size).distinct match {
-          case x :: Nil if res.typeParams.size != x =>
-            logResult(s"Stripping type args from lub because $res is not consistent with $ts")(res.typeConstructor)
-          case _                                    =>
-            res
-        }
+        val rtps = res.typeParams.size
+        val hs = ts.head.typeParams.size
+        if (hs != rtps && ts.forall(_.typeParams.size == hs))
+          logResult(s"Stripping type args from lub because $res is not consistent with $ts")(res.typeConstructor)
+        else
+          res
       }
       finally {
-        lubResults.clear()
-        glbResults.clear()
-        if (StatisticsStatics.areSomeColdStatsEnabled) statistics.popTimer(typeOpsStack, start)
+        if (settings.areStatisticsEnabled) statistics.popTimer(typeOpsStack, start)
       }
   }
 
+  /** A superset of the names of the members of `lubBase` that could be refined by every type in `ts`,
+   *  or `null` for no restriction.
+   *
+   *  `t` can only refine member `sym` of `lubBase` if `t.nonPrivateMember(sym.name)` finds
+   *  some symbol other than `sym`. That requires one of:
+   *
+   *   - a base class of `t` that is not a base class of `lubBase` declares a member with that name.
+   *   - two distinct base classes shared by `t` and `lubBase` declare a member with that name, and either
+   *     - they are linearized in a different order in `t` and in `lubBase`, or
+   *     - their signatures match (so one overrides the other) as seen from `t` but not as seen from `lubBase`.
+   *       This can happen when `lubBase` has existentially bound type arguments, e.g. `WrappedArray[_ >: Int with Double]`,
+   *       or when a base class of `t` that is not a base class of `lubBase` defines a type member,
+   *       e.g. `type X = Int` makes `def m(x: X)` and `def m(x: Int)` match,
+   *       or implements a val of a shared base class, e.g. `val o: OInt.type` makes `def m(x: o.X)` and `def m(x: Int)` match.
+   *
+   *  Otherwise, both lookups walk the same declarations in the same order and find `sym`.
+   *
+   *  This lets `lub` avoid computing and checking all the members of `lubBase`
+   *  (which typically has many members, few or none of which are refined by all of `ts`).
+   *  Returns `null` (no restriction) if collecting the names looks more expensive than that.
+   */
+  private def lubRefinableNames(lubBase: Type, ts: List[Type]): mutable.Set[Name] = {
+    val lubBaseClasses = lubBase.baseClasses
+    val lubBaseTypeSeq = lubBase.baseTypeSeq
+    def inLubBase(bc: Symbol) = lubBaseTypeSeq.baseTypeIndex(bc) >= 0
+    val lubBaseDecls = lubBaseClasses.foldLeft(0)((n, bc) => n + bc.info.decls.size)
+    // The number of declarations in the base classes of `t` that are not base classes of `lubBase`,
+    // or `Int.MaxValue` if that exceeds `lubBaseDecls`.
+    def ownDecls(t: Type): Int = {
+      var n   = 0
+      var bcs = t.baseClasses
+      while (!bcs.isEmpty && n <= lubBaseDecls) {
+        if (!inLubBase(bcs.head)) n += bcs.head.info.decls.size
+        bcs = bcs.tail
+      }
+      if (n > lubBaseDecls) Int.MaxValue else n
+    }
+    val sized = ts.map(t => (t, ownDecls(t)))
+    // Collecting the names would visit more declarations than considering all members of `lubBase`.
+    if (!sized.exists(_._2 != Int.MaxValue)) return null
+
+    val mayCollapse = containsExistential(lubBase)
+    var result: mutable.Set[Name] = null
+    var remaining = sized.sortBy(_._2) // fewest declarations first, so that the intersection shrinks quickly
+    while (!remaining.isEmpty && ((result eq null) || !result.isEmpty)) {
+      val t = remaining.head._1
+      remaining = remaining.tail
+      val tBaseClasses = t.baseClasses
+      val names = mutable.HashSet.empty[Name]
+      def add(name: Name): Unit = if ((result eq null) || result(name)) names += name
+      var declaresType = false
+      var stableNames: List[Name] = Nil
+      tBaseClasses foreach { bc =>
+        if (!inLubBase(bc)) bc.info.decls foreach { decl =>
+          add(decl.name)
+          if (decl.isType) declaresType = true
+          else if (decl.isStable) stableNames ::= decl.name
+        }
+      }
+      def implementsSharedVal = stableNames.exists(name =>
+        tBaseClasses.exists(bc => inLubBase(bc) && bc.info.decls.lookupAll(name).exists(_.isStable)))
+      val multiplyDeclaredMatters = mayCollapse || declaresType || implementsSharedVal ||
+        !tBaseClasses.filter(inLubBase).corresponds(lubBaseClasses.filter(t.baseTypeIndex(_) >= 0))(_ eq _)
+      if (multiplyDeclaredMatters) {
+        val sharedNames = mutable.HashSet.empty[Name]
+        tBaseClasses foreach { bc =>
+          if (inLubBase(bc)) {
+            val decls = bc.info.decls
+            decls foreach (decl => if (sharedNames(decl.name)) add(decl.name))
+            decls foreach (decl => sharedNames += decl.name)
+          }
+        }
+      }
+      result = names
+    }
+    result
+  }
+
   /** The least upper bound wrt <:< of a list of types */
-  protected[internal] def lub(ts: List[Type], depth: Depth): Type = {
+  protected[internal] def lub(ts0: List[Type], depth: Depth): Type = withEnclosingLubGlbCaches { caches =>
+    val lubResults = caches.lubResults
     def lub0(ts0: List[Type]): Type = elimSub(ts0, depth) match {
       case List() => NothingTpe
       case List(t) => t
-      case ts @ PolyType(tparams, _) :: _ =>
-        val tparams1 = map2(tparams, matchingBounds(ts, tparams).transpose)((tparam, bounds) =>
-          tparam.cloneSymbol.setInfo(glb(bounds, depth)))
-        PolyType(tparams1, lub0(matchingInstTypes(ts, tparams1)))
+      case (pt @ PolyType(_, _)) :: rest =>
+        polyTypeMatch(pt, rest, depth, glb, lub0)
       case ts @ (mt @ MethodType(params, _)) :: rest =>
         MethodType(params, lub0(matchingRestypes(ts, mt.paramTypes)))
       case ts @ NullaryMethodType(_) :: rest =>
         NullaryMethodType(lub0(matchingRestypes(ts, Nil)))
       case ts @ TypeBounds(_, _) :: rest =>
-        TypeBounds(glb(ts map (_.bounds.lo), depth), lub(ts map (_.bounds.hi), depth))
+        TypeBounds(glb(ts map (_.lowerBound), depth), lub(ts map (_.upperBound), depth))
       case ts @ AnnotatedType(annots, tpe) :: rest =>
-        annotationsLub(lub0(ts map (_.withoutAnnotations)), ts)
+        annotationCheckerSupport.annotationsLub(lub0(ts map (_.withoutAnnotations)), ts)
       case ts =>
         lubResults get ((depth, ts)) match {
           case Some(lubType) =>
@@ -289,7 +478,7 @@ private[internal] trait GlbLubs {
       val (ts, tparams)            = stripExistentialsAndTypeVars(ts0)
       val lubBaseTypes: List[Type] = lubList(ts, depth)
       val lubParents               = spanningTypes(lubBaseTypes)
-      val lubOwner                 = commonOwner(ts)
+      val lubOwner                 = commonOwners.commonOwner(ts)
       val lubBase                  = intersectionType(lubParents, lubOwner)
       val lubType =
         if (phase.erasedTypes || depth.isZero ) lubBase
@@ -322,10 +511,12 @@ private[internal] trait GlbLubs {
               else if (symtypes.tail forall (symtypes.head =:= _))
                 proto.cloneSymbol(lubRefined.typeSymbol).setInfoOwnerAdjusted(symtypes.head)
               else {
-                def lubBounds(bnds: List[TypeBounds]): TypeBounds =
-                  TypeBounds(glb(bnds map (_.lo), depth.decr), lub(bnds map (_.hi), depth.decr))
+                val lubBs = TypeBounds(
+                  glb(symtypes.map(_.lowerBound), depth.decr),
+                  lub(symtypes.map(_.upperBound), depth.decr)
+                )
                 lubRefined.typeSymbol.newAbstractType(proto.name.toTypeName, proto.pos)
-                  .setInfoOwnerAdjusted(lubBounds(symtypes map (_.bounds)))
+                  .setInfoOwnerAdjusted(lubBs)
               }
             }
           }
@@ -338,7 +529,14 @@ private[internal] trait GlbLubs {
           }
           // add a refinement symbol for all non-class members of lubBase
           // which are refined by every type in ts.
-          for (sym <- lubBase.nonPrivateMembers ; if !excludeFromLub(sym)) {
+          // `ts` rather than `narrowts`: `t.narrow` only adds a refinement class without decls to the base classes of `t`,
+          // and computing the base classes of the fresh narrowed types would cost more than the members we are trying to avoid.
+          val refinableNames = lubRefinableNames(lubBase, ts)
+          val lubBaseMembers =
+            if (refinableNames eq null) lubBase.nonPrivateMembers
+            else if (refinableNames.isEmpty) EmptyScope
+            else lubBase.nonPrivateMembersNamed(refinableNames)
+          for (sym <- lubBaseMembers ; if !excludeFromLub(sym)) {
             try lubsym(sym) andAlso (addMember(lubThisType, lubRefined, _, depth))
             catch {
               case ex: NoCommonType =>
@@ -351,8 +549,8 @@ private[internal] trait GlbLubs {
             // In theory this should not be necessary, but higher-order type
             // parameters are not handled correctly.
             val ok = ts forall { t =>
-              isSubType(t, lubRefined, depth) || {
-                if (settings.debug || printLubs) {
+              isSubType(t, lubRefined, depth.decr) || {
+                if (settings.isDebug || printLubs) {
                   Console.println(
                     "Malformed lub: " + lubRefined + "\n" +
                       "Argument " + t + " does not conform.  Falling back to " + lubBase
@@ -372,15 +570,15 @@ private[internal] trait GlbLubs {
       existentialAbstraction(tparams, dropIllegalStarTypes(lubType))
     }
     if (printLubs) {
-      println(indent + "lub of " + ts + " at depth "+depth)//debug
+      println(indent + "lub of " + ts0 + " at depth "+depth)//debug
       indent = indent + "  "
-      assert(indent.length <= 100)
+      assert(indent.length <= 100, "LUB is highly indented")
     }
-    if (StatisticsStatics.areSomeColdStatsEnabled) statistics.incCounter(nestedLubCount)
-    val res = lub0(ts)
+    if (settings.areStatisticsEnabled) statistics.incCounter(nestedLubCount)
+    val res = lub0(ts0)
     if (printLubs) {
       indent = indent stripSuffix "  "
-      println(indent + "lub of " + ts + " is " + res)//debug
+      println(indent + "lub of " + ts0 + " is " + res)//debug
     }
     res
   }
@@ -393,47 +591,52 @@ private[internal] trait GlbLubs {
     *  The counter breaks this recursion after two calls.
     *  If the recursion is broken, no member is added to the glb.
     */
-  private var globalGlbDepth = Depth.Zero
   private final val globalGlbLimit = Depth(2)
 
   /** The greatest lower bound of a list of types (as determined by `<:<`). */
-  def glb(ts: List[Type]): Type = elimSuper(ts) match {
-    case List() => AnyTpe
-    case List(t) => t
-    case ts0 =>
-      if (StatisticsStatics.areSomeColdStatsEnabled) statistics.incCounter(lubCount)
-      val start = if (StatisticsStatics.areSomeColdStatsEnabled) statistics.pushTimer(typeOpsStack, lubNanos) else null
-      try {
-        glbNorm(ts0, lubDepth(ts0))
-      } finally {
-        lubResults.clear()
-        glbResults.clear()
-        if (StatisticsStatics.areSomeColdStatsEnabled) statistics.popTimer(typeOpsStack, start)
+  def glb(ts: List[Type]): Type = ts match {
+    case Nil      => AnyTpe
+    case t :: Nil => t
+    case _        =>
+      // `elimSuper` runs subtype checks, which must not see the caches of an enclosing call either.
+      withLubGlbCaches(isLub = false, ts) {
+        elimSuper(ts) match {
+          case List() => AnyTpe
+          case List(t) => t
+          case ts0 =>
+            if (settings.areStatisticsEnabled) statistics.incCounter(lubCount)
+            val start = if (settings.areStatisticsEnabled) statistics.pushTimer(typeOpsStack, lubNanos) else null
+            try glbNorm(ts0, lubDepth(ts0))
+            finally {
+              if (settings.areStatisticsEnabled) statistics.popTimer(typeOpsStack, start)
+            }
+        }
       }
   }
 
-  protected[internal] def glb(ts: List[Type], depth: Depth): Type = elimSuper(ts) match {
-    case List() => AnyTpe
-    case List(t) => t
-    case ts0 => glbNorm(ts0, depth)
+  protected[internal] def glb(ts: List[Type], depth: Depth): Type = withEnclosingLubGlbCaches { _ =>
+    elimSuper(ts) match {
+      case List() => AnyTpe
+      case List(t) => t
+      case ts0 => glbNorm(ts0, depth)
+    }
   }
 
   /** The greatest lower bound of a list of types (as determined by `<:<`), which have been normalized
     *  with regard to `elimSuper`. */
-  protected def glbNorm(ts: List[Type], depth: Depth): Type = {
+  protected def glbNorm(ts0: List[Type], depth: Depth): Type = withEnclosingLubGlbCaches { caches =>
+    val glbResults = caches.glbResults
     def glb0(ts0: List[Type]): Type = ts0 match {
       case List() => AnyTpe
       case List(t) => t
-      case ts @ PolyType(tparams, _) :: _ =>
-        val tparams1 = map2(tparams, matchingBounds(ts, tparams).transpose)((tparam, bounds) =>
-          tparam.cloneSymbol.setInfo(lub(bounds, depth)))
-        PolyType(tparams1, glbNorm(matchingInstTypes(ts, tparams1), depth))
+      case (pt @ PolyType(_, _)) :: rest =>
+        polyTypeMatch(pt, rest, depth, lub, glb0)
       case ts @ (mt @ MethodType(params, _)) :: rest =>
         MethodType(params, glbNorm(matchingRestypes(ts, mt.paramTypes), depth))
       case ts @ NullaryMethodType(_) :: rest =>
         NullaryMethodType(glbNorm(matchingRestypes(ts, Nil), depth))
       case ts @ TypeBounds(_, _) :: rest =>
-        TypeBounds(lub(ts map (_.bounds.lo), depth), glb(ts map (_.bounds.hi), depth))
+        TypeBounds(lub(ts map (_.lowerBound), depth), glb(ts map (_.upperBound), depth))
       case ts =>
         glbResults get ((depth, ts)) match {
           case Some(glbType) =>
@@ -448,32 +651,36 @@ private[internal] trait GlbLubs {
     def glb1(ts0: List[Type]): Type = {
       try {
         val (ts, tparams) = stripExistentialsAndTypeVars(ts0)
-        val glbOwner = commonOwner(ts)
-        def refinedToParents(t: Type): List[Type] = t match {
-          case RefinedType(ps, _) => ps flatMap refinedToParents
-          case _ => List(t)
+        val glbOwner = commonOwners.commonOwner(ts)
+        val ts1 = {
+          val res = ListBuffer.empty[Type]
+          def loop(ty: Type): Unit = ty match {
+            case RefinedType(ps, _) => ps.foreach(loop)
+            case _ => res += ty
+          }
+          ts foreach loop
+          res.toList
         }
-        def refinedToDecls(t: Type): List[Scope] = t match {
-          case RefinedType(ps, decls) =>
-            val dss = ps flatMap refinedToDecls
-            if (decls.isEmpty) dss else decls :: dss
-          case _ => List()
-        }
-        val ts1 = ts flatMap refinedToParents
-        val glbBase = intersectionType(ts1, glbOwner)
         val glbType =
-          if (phase.erasedTypes || depth.isZero) glbBase
+          if (phase.erasedTypes || depth.isZero)
+            intersectionType(ts1, glbOwner)
           else {
             val glbRefined = refinedType(ts1, glbOwner)
             val glbThisType = glbRefined.typeSymbol.thisType
             def glbsym(proto: Symbol): Symbol = {
               val prototp = glbThisType.memberInfo(proto)
-              val syms = for (t <- ts;
-                              alt <- (t.nonPrivateMember(proto.name).alternatives)
-                              if glbThisType.memberInfo(alt) matches prototp
-              ) yield alt
-              val symtypes = syms map glbThisType.memberInfo
-              assert(!symtypes.isEmpty)
+              val symtypes: List[Type] = {
+                val res = ListBuffer.empty[Type]
+                ts foreach { t =>
+                  t.nonPrivateMember(proto.name).alternatives foreach { alt =>
+                    val mi = glbThisType.memberInfo(alt)
+                    if (mi matches prototp)
+                      res += mi
+                  }
+                }
+                res.toList
+              }
+              assert(!symtypes.isEmpty, "No types for GLB")
               proto.cloneSymbol(glbRefined.typeSymbol).setInfoOwnerAdjusted(
                 if (proto.isTerm) glb(symtypes, depth.decr)
                 else {
@@ -482,8 +689,8 @@ private[internal] trait GlbLubs {
                     case _ => false
                   }
                   def glbBounds(bnds: List[Type]): TypeBounds = {
-                    val lo = lub(bnds map (_.bounds.lo), depth.decr)
-                    val hi = glb(bnds map (_.bounds.hi), depth.decr)
+                    val lo = lub(bnds map (_.lowerBound), depth.decr)
+                    val hi = glb(bnds map (_.upperBound), depth.decr)
                     if (lo <:< hi) TypeBounds(lo, hi)
                     else throw GlbFailure
                   }
@@ -500,30 +707,37 @@ private[internal] trait GlbLubs {
             }
             if (globalGlbDepth < globalGlbLimit)
               try {
-                globalGlbDepth = globalGlbDepth.incr
-                val dss = ts flatMap refinedToDecls
-                for (ds <- dss; sym <- ds.iterator)
-                  if (globalGlbDepth < globalGlbLimit && !specializesSym(glbThisType, sym, depth))
-                    try {
-                      addMember(glbThisType, glbRefined, glbsym(sym), depth)
-                    } catch {
-                      case ex: NoCommonType =>
-                    }
+                self.globalGlbDepth = globalGlbDepth.incr
+                def foreachRefinedDecls(ty: Type): Unit = ty match {
+                  case RefinedType(ps, decls) =>
+                    ps foreach foreachRefinedDecls
+                    if (! decls.isEmpty)
+                      decls.iterator.foreach { sym =>
+                        if (globalGlbDepth < globalGlbLimit && !specializesSym(glbThisType, sym, depth))
+                          try {
+                            addMember(glbThisType, glbRefined, glbsym(sym), depth)
+                          } catch {
+                            case ex: NoCommonType =>
+                          }
+                      }
+                  case _ =>
+                }
+                ts foreach foreachRefinedDecls
               } finally {
-                globalGlbDepth = globalGlbDepth.decr
+                self.globalGlbDepth = globalGlbDepth.decr
               }
-            if (glbRefined.decls.isEmpty) glbBase else glbRefined
+            if (glbRefined.decls.isEmpty) intersectionType(ts1, glbOwner) else glbRefined
           }
         existentialAbstraction(tparams, glbType)
       } catch {
         case GlbFailure =>
-          if (ts forall (t => NullTpe <:< t)) NullTpe
+          if (ts0.forall(NullTpe <:< _)) NullTpe
           else NothingTpe
       }
     }
     // if (settings.debug.value) { println(indent + "glb of " + ts + " at depth "+depth); indent = indent + "  " } //DEBUG
-    if (StatisticsStatics.areSomeColdStatsEnabled) statistics.incCounter(nestedLubCount)
-    glb0(ts)
+    if (settings.areStatisticsEnabled) statistics.incCounter(nestedLubCount)
+    glb0(ts0)
     // if (settings.debug.value) { indent = indent.substring(0, indent.length() - 2); log(indent + "glb of " + ts + " is " + res) }//DEBUG
   }
 
@@ -532,31 +746,42 @@ private[internal] trait GlbLubs {
     *  Returns list of list of bounds infos, where corresponding type
     *  parameters are renamed to tparams.
     */
-  private def matchingBounds(tps: List[Type], tparams: List[Symbol]): List[List[Type]] = {
-    def getBounds(tp: Type): List[Type] = tp match {
-      case PolyType(tparams1, _) if sameLength(tparams1, tparams) =>
-        tparams1 map (tparam => tparam.info.substSym(tparams1, tparams))
-      case tp =>
-        if (tp ne tp.normalize) getBounds(tp.normalize)
-        else throw new NoCommonType(tps)
-    }
-    tps map getBounds
-  }
+  private def polyTypeMatch(
+    ptHead: PolyType,
+    ptRest: List[Type],
+    depth: Depth,
+    infoBoundTop: (List[Type], Depth) => Type,
+    resultTypeBottom: List[Type] => Type
+  ): PolyType = {
+    val tparamsHead: List[Symbol] = ptHead.typeParams
 
-  /** All types in list must be polytypes with type parameter lists of
-    *  same length as tparams.
-    *  Returns list of instance types, where corresponding type
-    *  parameters are renamed to tparams.
-    */
-  private def matchingInstTypes(tps: List[Type], tparams: List[Symbol]): List[Type] = {
-    def transformResultType(tp: Type): Type = tp match {
-      case PolyType(tparams1, restpe) if sameLength(tparams1, tparams) =>
-        restpe.substSym(tparams1, tparams)
+    @tailrec
+    def normalizeIter(ty: Type): PolyType = ty match {
+      case pt @ PolyType(typeParams, _) if sameLength(typeParams, tparamsHead) => pt
       case tp =>
-        if (tp ne tp.normalize) transformResultType(tp.normalize)
-        else throw new NoCommonType(tps)
+        val tpn = tp.normalize
+        if (tp ne tpn) normalizeIter(tpn) else throw new NoCommonType(ptHead :: ptRest)
     }
-    tps map transformResultType
+
+    // Since ptHead = PolyType(tparamsHead, _), no need to normalize it or unify tparams
+    val ntps: List[PolyType]   = ptHead :: ptRest.map(normalizeIter)
+
+    val tparams1: List[Symbol] = {
+      def unifyBounds(ntp: PolyType): List[Type] = {
+        val tparams1 = ntp.typeParams
+        tparams1 map (tparam => tparam.info.substSym(tparams1, tparamsHead))
+      }
+      val boundsTts : List[List[Type]] = ntps.tail.map(unifyBounds).transpose
+      map2(tparamsHead, boundsTts){ (tparam, bounds) =>
+        tparam.cloneSymbol.setInfo(infoBoundTop(tparam.info :: bounds, depth))
+      }
+    }
+    // Do we also need to apply substSym(typeParams, tparams1) to ptHead.resultType ??
+    val matchingInstTypes: List[Type] = ntps.map { ntp =>
+      ntp.resultType.substSym(ntp.typeParams, tparams1)
+    }
+
+    PolyType(tparams1, resultTypeBottom(matchingInstTypes))
   }
 
   /** All types in list must be method types with equal parameter types.

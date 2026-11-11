@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2006-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -8,12 +15,13 @@ package tools
 package util
 
 import java.net.URL
-import scala.tools.reflect.WrappedProperties.AccessControl
-import scala.tools.nsc.Settings
-import scala.tools.nsc.util.ClassPath
+
 import scala.reflect.io.{Directory, File, Path}
-import PartialFunction.condOpt
+import scala.tools.reflect.WrappedProperties.AccessControl
+import scala.tools.nsc.{CloseableRegistry, Settings}
 import scala.tools.nsc.classpath._
+import scala.tools.nsc.util.ClassPath
+import PartialFunction.condOpt
 
 // Loosely based on the draft specification at:
 // https://wiki.scala-lang.org/display/SIW/Classpath
@@ -34,7 +42,7 @@ object PathResolver {
   }
   implicit class AsLines(val s: String) extends AnyVal {
     // sm"""...""" could do this in one pass
-    def asLines = s.trim.stripMargin.lines.mkLines
+    def asLines = s.trim.stripMargin.linesIterator.mkLines
   }
 
   /** pretty print class path */
@@ -47,7 +55,7 @@ object PathResolver {
   /** Values found solely by inspecting environment or property variables.
    */
   object Environment {
-    import scala.collection.JavaConverters._
+    import scala.jdk.CollectionConverters._
 
     private def searchForBootClasspath: String = {
       val props = System.getProperties
@@ -182,36 +190,42 @@ object PathResolver {
     } else {
       val settings = new Settings()
       val rest = settings.processArguments(args.toList, processAll = false)._2
-      val pr = new PathResolver(settings)
-      println("COMMAND: 'scala %s'".format(args.mkString(" ")))
-      println("RESIDUAL: 'scala %s'\n".format(rest.mkString(" ")))
+      val registry = new CloseableRegistry
+      try {
+        val pr = new PathResolver(settings, registry)
+        println("COMMAND: 'scala %s'".format(args.mkString(" ")))
+        println("RESIDUAL: 'scala %s'\n".format(rest.mkString(" ")))
 
-      pr.result match {
-        case cp: AggregateClassPath =>
-          println(s"ClassPath has ${cp.aggregates.size} entries and results in:\n${cp.asClassPathStrings}")
+        pr.result match {
+          case cp: AggregateClassPath =>
+            println(s"ClassPath has ${cp.aggregates.size} entries and results in:\n${cp.asClassPathStrings}")
+          case x => throw new MatchError(x)
+        }
+      } finally {
+        registry.close()
       }
     }
 }
 
-final class PathResolver(settings: Settings) {
-  private val classPathFactory = new ClassPathFactory(settings)
+final class PathResolver(settings: Settings, closeableRegistry: CloseableRegistry = new CloseableRegistry) {
 
-  import PathResolver.{ AsLines, Defaults, ppcp }
+  private val classPathFactory = new ClassPathFactory(settings, closeableRegistry)
 
-  private def cmdLineOrElse(name: String, alt: String) = {
-    (commandLineFor(name) match {
-      case Some("") => None
-      case x        => x
-    }) getOrElse alt
-  }
+  import PathResolver.{AsLines, Defaults, ppcp}
+
+  private def cmdLineOrElse(name: String, alt: String) =
+    commandLineFor(name) match {
+      case Some("") | None => alt
+      case Some(x)         => x
+    }
 
   private def commandLineFor(s: String): Option[String] = condOpt(s) {
-    case "javabootclasspath"  => settings.javabootclasspath.value
-    case "javaextdirs"        => settings.javaextdirs.value
-    case "bootclasspath"      => settings.bootclasspath.value
-    case "extdirs"            => settings.extdirs.value
-    case "classpath" | "cp"   => settings.classpath.value
-    case "sourcepath"         => settings.sourcepath.value
+    case "javabootclasspath" => settings.javabootclasspath.value
+    case "javaextdirs"       => settings.javaextdirs.value
+    case "bootclasspath"     => settings.bootclasspath.value
+    case "extdirs"           => settings.extdirs.value
+    case "classpath" | "cp"  => settings.classpath.value
+    case "sourcepath"        => settings.sourcepath.value
   }
 
   /** Calculated values based on any given command line options, falling back on
@@ -232,7 +246,7 @@ final class PathResolver(settings: Settings) {
      * [scaladoc] case class ReificationException(val pos: reflect.api.PositionApi, val msg: String) extends Throwable(msg)
      * [scaladoc]                                              ^
      * because the bootstrapping will look at the sourcepath and create package "reflect" in "<root>"
-     * and then when typing relative names, instead of picking <root>.scala.relect, typedIdentifier will pick up the
+     * and then when typing relative names, instead of picking <root>.scala.reflect, typedIdentifier will pick up the
      * <root>.reflect package created by the bootstrapping. Thus, no bootstrapping for scaladoc!
      * TODO: we should refactor this as a separate -bootstrap option to have a clean implementation, no? */
     def sourcePath          = if (!settings.isScaladoc) cmdLineOrElse("sourcepath", Defaults.scalaSourcePath) else ""
@@ -243,7 +257,9 @@ final class PathResolver(settings: Settings) {
 
     // Assemble the elements!
     def basis = List[Iterable[ClassPath]](
-      JrtClassPath.apply(settings.releaseValue),    // 0. The Java 9 classpath (backed by the jrt:/ virtual system, if available)
+      if (settings.javabootclasspath.isSetByUser)   // respect explicit `-javabootclasspath rt.jar`
+        Nil
+      else jrt,                                     // 0. The Java 9+ classpath (backed by the ct.sym or jrt:/ virtual system, if available)
       classesInPath(javaBootClassPath),             // 1. The Java bootstrap class path.
       contentsOfDirsInPath(javaExtDirs),            // 2. The Java extension class path.
       classesInExpandedPath(javaUserClassPath),     // 3. The Java application class path.
@@ -253,6 +269,8 @@ final class PathResolver(settings: Settings) {
       classesInManifest(useManifestClassPath),      // 8. The Manifest class path.
       sourcesInPath(sourcePath)                     // 7. The Scala source path.
     )
+
+    private def jrt: List[ClassPath] = JrtClassPath.apply(settings.releaseValue, settings.systemPathValue, settings.unsafe.valueSetByUser, closeableRegistry)
 
     lazy val containers = basis.flatten.distinct
 
@@ -276,13 +294,13 @@ final class PathResolver(settings: Settings) {
 
   def result: ClassPath = {
     val cp = computeResult()
-    if (settings.Ylogcp) {
-      Console print f"Classpath built from ${settings.toConciseString} %n"
-      Console print s"Defaults: ${PathResolver.Defaults}"
-      Console print s"Calculated: $Calculated"
+    if (settings.Ylogcp.value) {
+      Console.print(f"Classpath built from ${settings.toConciseString} %n")
+      Console.print(s"Defaults: ${PathResolver.Defaults}")
+      Console.print(s"Calculated: $Calculated")
 
-      val xs = (Calculated.basis drop 2).flatten.distinct
-      Console print (xs mkLines (s"After java boot/extdirs classpath has ${xs.size} entries:", indented = true))
+      val xs = Calculated.basis.drop(2).flatten.distinct
+      Console.print(xs.mkLines(s"After java boot/extdirs classpath has ${xs.size} entries:", indented = true))
     }
     cp
   }

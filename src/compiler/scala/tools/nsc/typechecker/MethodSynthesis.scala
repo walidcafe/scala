@@ -1,20 +1,26 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.tools.nsc
 package typechecker
 
 import scala.reflect.NameTransformer
 import symtab.Flags._
-import scala.reflect.internal.util.StringOps.ojoin
-import scala.reflect.internal.util.ListOfNil
 
 /** Logic related to method synthesis which involves cooperation between
  *  Namer and Typer.
  */
 trait MethodSynthesis {
-  self: Analyzer =>
+  self: AbstractAnalyzer =>
 
   import global._
   import definitions._
@@ -78,10 +84,19 @@ trait MethodSynthesis {
     def forwardMethod(original: Symbol, newMethod: Symbol)(transformArgs: List[Tree] => List[Tree]): Tree =
       createMethod(original)(m => gen.mkMethodCall(newMethod, transformArgs(m.paramss.head map Ident)))
 
-    def createSwitchMethod(name: Name, range: Seq[Int], returnType: Type)(f: Int => Tree) = {
+    def createSwitchMethod(name: Name, range: Seq[Int], returnType: Type)(f: Int => Tree): Tree = {
+      def dflt(arg: Tree) = currentRun.runDefinitions.RuntimeStatics_ioobe match {
+        case NoSymbol =>
+          // Support running the compiler with an older library on the classpath
+          Throw(IndexOutOfBoundsExceptionClass.tpe_*, fn(arg, nme.toString_))
+        case ioobeSym =>
+          val ioobeTypeApply = TypeApply(gen.mkAttributedRef(ioobeSym), List(TypeTree(returnType)))
+          Apply(ioobeTypeApply, List(arg))
+      }
+
       createMethod(name, List(IntTpe), returnType) { m =>
         val arg0    = Ident(m.firstParam)
-        val default = DEFAULT ==> Throw(IndexOutOfBoundsExceptionClass.tpe_*, fn(arg0, nme.toString_))
+        val default = DEFAULT ==> dflt(arg0)
         val cases   = range.map(num => CASE(LIT(num)) ==> f(num)).toList :+ default
 
         Match(arg0, cases)
@@ -123,9 +138,10 @@ trait MethodSynthesis {
     // populate synthetics for this unit with trees that will later be added by the typer
     // we get here when entering the symbol for the valdef, so its rhs has not yet been type checked
     def enterGetterSetter(tree: ValDef): Unit = {
+      val sympos = tree.namePos
       val fieldSym =
         if (noFieldFor(tree, owner)) NoSymbol
-        else owner.newValue(tree.name append NameTransformer.LOCAL_SUFFIX_STRING, tree.pos, tree.mods.flags & FieldFlags | PrivateLocal)
+        else owner.newValue(tree.name append NameTransformer.LOCAL_SUFFIX_STRING, sympos, tree.mods.flags & FieldFlags | PrivateLocal)
 
       val getter = Getter(tree)
       val getterSym = getter.createSym
@@ -135,7 +151,7 @@ trait MethodSynthesis {
       //
       // scala/bug#10009 the tree's modifiers can be temporarily out of sync with the new symbol's flags.
       //          typedValDef corrects this later on.
-      tree.symbol = fieldSym orElse (getterSym setPos tree.pos)
+      tree.symbol = fieldSym orElse getterSym.setPos(sympos)
 
       val namer = namerOf(tree.symbol)
 
@@ -218,23 +234,31 @@ trait MethodSynthesis {
       }
     }
 
+    def implicitWrapperDef(classDef: ClassDef): DefDef =
+      factoryMeth(classDef.mods & (AccessFlags | FINAL) | METHOD | IMPLICIT | SYNTHETIC, classDef.name.toTermName, classDef)
 
     def enterImplicitWrapper(classDef: ClassDef): Unit = {
-      val methDef = factoryMeth(classDef.mods & AccessFlags | METHOD | IMPLICIT | SYNTHETIC, classDef.name.toTermName, classDef)
+      val methDef = implicitWrapperDef(classDef)
       val methSym = enterInScope(assignMemberSymbol(methDef))
       context.unit.synthetics(methSym) = methDef
+
+      treeInfo.firstConstructor(classDef.impl.body) match {
+        case primaryConstructor: DefDef =>
+          if (mexists(primaryConstructor.vparamss)(_.mods.hasDefault))
+            enterDefaultGetters(methSym, primaryConstructor, primaryConstructor.vparamss, primaryConstructor.tparams)
+        case _ =>
+      }
       methSym setInfo implicitFactoryMethodCompleter(methDef, classDef.symbol)
     }
-
 
     trait DerivedAccessor {
       def tree: ValDef
       def derivedName: TermName
       def derivedFlags: Long
       def derivedTree(sym: Symbol): Tree
-
       def derivedPos = tree.pos.focus
-      def createSym = createMethod(tree, derivedName, derivedPos, derivedFlags)
+      def symPos = tree.namePos
+      def createSym = createMethod(tree, derivedName, symPos, derivedFlags)
     }
 
     case class Getter(tree: ValDef) extends DerivedAccessor {
@@ -250,7 +274,7 @@ trait MethodSynthesis {
           if (noFieldFor(tree, owner)) tree.rhs // context.unit.transformed.getOrElse(tree.rhs, tree.rhs)
           else Select(This(tree.symbol.enclClass), tree.symbol)
 
-        newDefDef(derivedSym, rhs)(tparams = Nil, vparamss = Nil, tpt = tpt)
+        newDefDefAt(derivedPos)(derivedSym, rhs)(tparams = Nil, vparamss = Nil, tpt = tpt)
       }
 
 //        derivedSym setPos tree.pos
@@ -281,10 +305,8 @@ trait MethodSynthesis {
           if (noFieldFor(tree, owner)) EmptyTree
           else Assign(Select(This(tree.symbol.enclClass), tree.symbol), Ident(setterParam))
 
-        newDefDef(derivedSym, rhs)(tparams = Nil, vparamss = List(vparams), tpt = tpt)
-
+        newDefDefAt(derivedPos)(derivedSym, rhs)(tparams = Nil, vparamss = List(vparams), tpt = tpt)
       }
     }
-
   }
 }

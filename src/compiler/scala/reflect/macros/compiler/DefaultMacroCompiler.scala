@@ -1,13 +1,26 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.macros
 package compiler
 
 import scala.tools.nsc.Global
+import scala.util.{Failure, Success, Try}
 
 abstract class DefaultMacroCompiler extends Resolvers
                                        with Validators
                                        with Errors {
   val global: Global
-  import global._
+  import global.{Try => _, _}
   import analyzer._
   import treeInfo._
   import definitions._
@@ -26,8 +39,9 @@ abstract class DefaultMacroCompiler extends Resolvers
   /** Resolves a macro impl reference provided in the right-hand side of the given macro definition.
    *
    *  Acceptable shapes of the right-hand side:
-   *    1) [<static object>].<method name>[[<type args>]] // vanilla macro impl ref
-   *    2) [<macro bundle>].<method name>[[<type args>]]  // shiny new macro bundle impl ref
+   *
+   *    1. `[<static object>].<method name>[ [<type args>] ] // vanilla macro impl ref`
+   *    1. `[<macro bundle>].<method name>[ [<type args>] ]  // shiny new macro bundle impl ref`
    *
    *  Produces a tree, which represents a reference to a macro implementation if everything goes well,
    *  otherwise reports found errors and returns EmptyTree. The resulting tree should have the following format:
@@ -38,10 +52,10 @@ abstract class DefaultMacroCompiler extends Resolvers
    *  or be a dummy instance of a macro bundle (e.g. new MyMacro(???).expand).
    */
   def resolveMacroImpl: Tree = {
-    def tryCompile(compiler: MacroImplRefCompiler): scala.util.Try[Tree] = {
-      try { compiler.validateMacroImplRef(); scala.util.Success(compiler.macroImplRef) }
-      catch { case ex: MacroImplResolutionException => scala.util.Failure(ex) }
-    }
+    def tryCompile(compiler: MacroImplRefCompiler): Try[Tree] =
+      try { compiler.validateMacroImplRef(); Success(compiler.macroImplRef) }
+      catch { case ex: MacroImplResolutionException => Failure(ex) }
+    def wrong() = Try(MacroBundleWrongShapeError())
     val vanillaImplRef = MacroImplRefCompiler(macroDdef.rhs.duplicate, isImplBundle = false)
     val (maybeBundleRef, methName, targs) = macroDdef.rhs.duplicate match {
       case Applied(Select(Applied(RefTree(qual, bundleName), _, Nil), methName), targs, Nil) =>
@@ -56,9 +70,16 @@ abstract class DefaultMacroCompiler extends Resolvers
       isImplBundle = true
     )
     val vanillaResult = tryCompile(vanillaImplRef)
-    val bundleResult = tryCompile(bundleImplRef)
+    val bundleResult =
+      typer.silent(_.typedTypeConstructor(maybeBundleRef)) match {
+        case SilentResultValue(result) if looksLikeMacroBundleType(result.tpe) =>
+          val bundle = result.tpe.typeSymbol
+          if (isMacroBundleType(bundle.tpe)) tryCompile(bundleImplRef)
+          else wrong()
+        case _ => wrong()
+      }
 
-    def ensureUnambiguousSuccess() = {
+    def ensureUnambiguousSuccess(): Unit = {
       // we now face a hard choice of whether to report ambiguity:
       //   1) when there are eponymous methods in both bundle and object
       //   2) when both references to eponymous methods are resolved successfully
@@ -74,7 +95,10 @@ abstract class DefaultMacroCompiler extends Resolvers
         case SilentResultValue(result) if looksLikeMacroBundleType(result.tpe) =>
           val bundle = result.tpe.typeSymbol
           if (!isMacroBundleType(bundle.tpe)) MacroBundleWrongShapeError()
-          if (!bundle.owner.isStaticOwner) MacroBundleNonStaticError()
+          if (!bundle.owner.isStaticOwner) {
+            val isReplClassBased = settings.Yreplclassbased.value && bundle.owner.enclosingTopLevelClass.isInterpreterWrapper
+            MacroBundleNonStaticError(isReplClassBased)
+          }
           bundleResult.get
         case _ =>
           vanillaResult.get
@@ -84,6 +108,7 @@ abstract class DefaultMacroCompiler extends Resolvers
     try {
       if (vanillaResult.isSuccess || bundleResult.isSuccess) ensureUnambiguousSuccess()
       if (vanillaResult.isFailure && bundleResult.isFailure) reportMostAppropriateFailure()
+      //else // TODO
       vanillaResult.orElse(bundleResult).get
     } catch {
       case MacroImplResolutionException(pos, msg) =>

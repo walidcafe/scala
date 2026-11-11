@@ -1,3 +1,5 @@
+
+//
 class Foo(val x: Double) extends AnyVal { }
 
 object Pretty {

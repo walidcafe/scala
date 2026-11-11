@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -48,12 +55,6 @@ abstract class TreeBuilder {
   def makeSelfDef(name: TermName, tpt: Tree): ValDef =
     ValDef(Modifiers(PRIVATE), name, tpt, EmptyTree)
 
-  /** Tree for `od op`, start is start0 if od.pos is borked. */
-  def makePostfixSelect(start0: Int, end: Int, od: Tree, op: Name): Tree = {
-    val start = if (od.pos.isDefined) od.pos.start else start0
-    atPos(r2p(start, end, end + op.length)) { new PostfixSelect(od, op.encode) }
-  }
-
   /** Create tree representing a while loop */
   def makeWhile(startPos: Int, cond: Tree, body: Tree): Tree = {
     val lname = freshTermName(nme.WHILE_PREFIX)
@@ -85,15 +86,26 @@ abstract class TreeBuilder {
   /** Create tree for a pattern alternative */
   def makeAlternative(ts: List[Tree]): Tree = {
     def alternatives(t: Tree): List[Tree] = t match {
-      case Alternative(ts)  => ts
-      case _                => List(t)
+      case Alternative(alts) => alts
+      case _                 => List(t)
     }
-    Alternative(ts flatMap alternatives)
+    Alternative(ts.flatMap(alternatives))
   }
 
   /** Create tree for case definition <case pat if guard => rhs> */
   def makeCaseDef(pat: Tree, guard: Tree, rhs: Tree): CaseDef =
     CaseDef(gen.patvarTransformer.transform(pat), guard, rhs)
+
+  /** At parser, rejigger non-case catch expression.
+   *
+   *  Match is eliminated by unwrapping. Other expression
+   *  becomes a single CaseDef with empty pattern and
+   *  expr tree as RHS.
+   */
+  def makeMatchFromExpr(catchExpr: Tree): List[CaseDef] = catchExpr match {
+    case Match(EmptyTree, cases) => cases
+    case _ => CaseDef(EmptyTree, EmptyTree, catchExpr) :: Nil
+  }
 
   /** Creates tree representing:
    *    { case x: Throwable =>
@@ -101,7 +113,7 @@ abstract class TreeBuilder {
    *        if (catchFn isDefinedAt x) catchFn(x) else throw x
    *    }
    */
-  def makeCatchFromExpr(catchExpr: Tree): CaseDef = {
+  def makeCatchFromExpr(catchExpr: Tree)(implicit fresh: FreshNameCreator): CaseDef = {
     val binder   = freshTermName()
     val pat      = Bind(binder, Typed(Ident(nme.WILDCARD), Ident(tpnme.Throwable)))
     val catchDef = ValDef(Modifiers(ARTIFACT), freshTermName("catchExpr$"), TypeTree(), catchExpr)
@@ -117,6 +129,18 @@ abstract class TreeBuilder {
     makeCaseDef(pat, EmptyTree, body)
   }
 
+  /** Creates tree representing:
+   *    { case x: Throwable => catchExpr(x) }
+   */
+  def makeCatchFromFunc(catchFn: Tree)(implicit fresh: FreshNameCreator): CaseDef = {
+    val binder = freshTermName()
+    val pat    = Bind(binder, Typed(Ident(nme.WILDCARD), Ident(tpnme.Throwable)))
+    val body   = atPos(catchFn.pos.makeTransparent)(Block(
+      Apply(Select(catchFn, nme.apply), List(Ident(binder))),
+    ))
+    makeCaseDef(pat, EmptyTree, body)
+  }
+
   /** Create a tree representing the function type (argtpes) => restpe */
   def makeFunctionTypeTree(argtpes: List[Tree], restpe: Tree): Tree = gen.mkFunctionTypeTree(argtpes, restpe)
 
@@ -125,16 +149,17 @@ abstract class TreeBuilder {
     if (contextBounds.isEmpty) vparamss
     else {
       val mods = Modifiers(if (owner.isTypeName) PARAMACCESSOR | LOCAL | PRIVATE else PARAM)
-      def makeEvidenceParam(tpt: Tree) = ValDef(mods | IMPLICIT | SYNTHETIC, freshTermName(nme.EVIDENCE_PARAM_PREFIX), tpt, EmptyTree)
-      val evidenceParams = contextBounds map makeEvidenceParam
+      def makeEvidenceParam(tpt: Tree) = atPos(tpt.pos)(ValDef(mods | IMPLICIT | SYNTHETIC, freshTermName(nme.EVIDENCE_PARAM_PREFIX), tpt, EmptyTree))
+      val evidenceParams = contextBounds.map(makeEvidenceParam)
 
-      val vparamssLast = if(vparamss.nonEmpty) vparamss.last else Nil
-      if(vparamssLast.nonEmpty && vparamssLast.head.mods.hasFlag(IMPLICIT))
+      val vparamssLast = if (vparamss.nonEmpty) vparamss.last else Nil
+      if (vparamssLast.nonEmpty && vparamssLast.head.mods.hasFlag(IMPLICIT))
         vparamss.init ::: List(evidenceParams ::: vparamssLast)
       else
         vparamss ::: List(evidenceParams)
     }
   }
 
-  def makePatDef(mods: Modifiers, pat: Tree, rhs: Tree) = gen.mkPatDef(mods, pat, rhs)
+  final def makePatDef(mods: Modifiers, pat: Tree, rhs: Tree): List[ValDef] = makePatDef(mods, pat, rhs, rhs.pos)
+  def makePatDef(mods: Modifiers, pat: Tree, rhs: Tree, rhsPos: Position) = gen.mkPatDef(mods, pat, rhs, rhsPos)
 }

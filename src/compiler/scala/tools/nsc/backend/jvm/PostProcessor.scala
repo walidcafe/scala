@@ -1,14 +1,28 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package backend.jvm
 
 import java.util.concurrent.ConcurrentHashMap
 
-import scala.reflect.internal.util.{NoPosition, Position, StringContextStripMarginOps}
+import scala.collection.mutable
+import scala.reflect.internal.util.{NoPosition, Position}
 import scala.reflect.io.AbstractFile
-import scala.tools.asm.ClassWriter
+import scala.tools.asm.{ByteVector, ClassVisitor, ClassWriter, MethodVisitor, Opcodes}
 import scala.tools.asm.tree.ClassNode
 import scala.tools.nsc.backend.jvm.analysis.BackendUtils
 import scala.tools.nsc.backend.jvm.opt._
+import scala.util.control.NonFatal
 
 /**
  * Implements late stages of the backend that don't depend on a Global instance, i.e.,
@@ -44,28 +58,27 @@ abstract class PostProcessor extends PerRunInit {
     classfileWriter = classfileWriters.ClassfileWriter(global)
   }
 
-  def sendToDisk(clazz: GeneratedClass, paths: CompilationUnitPaths): Unit = {
+  def sendToDisk(clazz: GeneratedClass, sourceFile: AbstractFile): Unit = {
     val classNode = clazz.classNode
     val internalName = classNode.name
     val bytes = try {
       if (!clazz.isArtifact) {
         localOptimizations(classNode)
-        backendUtils.onIndyLambdaImplMethodIfPresent(internalName) {
-          methods => if (methods.nonEmpty) backendUtils.addLambdaDeserialize(classNode, methods)
-        }
+        val indyLambdaBodyMethods = backendUtils.indyLambdaBodyMethods(internalName)
+        if (indyLambdaBodyMethods.nonEmpty)
+          backendUtils.addLambdaDeserialize(classNode, indyLambdaBodyMethods)
       }
 
       warnCaseInsensitiveOverwrite(clazz)
       setInnerClasses(classNode)
       serializeClass(classNode)
     } catch {
-      case e: java.lang.RuntimeException if e.getMessage != null && (e.getMessage contains "too large!") =>
-        backendReporting.error(NoPosition,
-          s"Could not write class ${internalName} because it exceeds JVM code size limits. ${e.getMessage}")
-        null
+      case ex: InterruptedException => throw ex
       case ex: Throwable =>
-        ex.printStackTrace()
-        backendReporting.error(NoPosition, s"Error while emitting ${internalName}\n${ex.getMessage}")
+        // TODO fail fast rather than continuing to write the rest of the class files?
+        if (frontendAccess.compilerSettings.debug) ex.printStackTrace()
+        backendReporting.error(NoPosition, s"Error while emitting $internalName\n${ex.getMessage}")
+        if (NonFatal(ex)) checkConformance(classNode)
         null
     }
 
@@ -73,8 +86,39 @@ abstract class PostProcessor extends PerRunInit {
       if (AsmUtils.traceSerializedClassEnabled && internalName.contains(AsmUtils.traceSerializedClassPattern))
         AsmUtils.traceClass(bytes)
 
-      classfileWriter.write(internalName, bytes, paths)
+      classfileWriter.writeClass(internalName, bytes, sourceFile)
     }
+  }
+
+  // Provide more useful messaging when class writing fails. -Xverify verifies always.
+  private def checkConformance(classNode: ClassNode): Unit = {
+    val visitor = new ClassVisitor(Opcodes.ASM9) {
+      override def visitMethod(access: Int, name: String, descriptor: String, signature: String, exceptions: Array[String]) = {
+        val site = s"Method $name"
+        checkString(site, "name")(name)
+        checkString(site, "descriptor")(descriptor)
+        checkString(site, "signature")(signature)
+        new MethodVisitor(Opcodes.ASM9) {
+          override def visitLdcInsn(value: Object): Unit = {
+            value match {
+              case value: String =>
+                checkString(site, "String constant")(value)
+              case _ =>
+            }
+          }
+        }
+      }
+      private final val max = 0xFFFF
+      private final val threshold = 0xFFFF / 6 // char never expands to more than 6 bytes
+      private def checkString(site: String, which: String)(s: String): Unit = if (s != null && s.length > threshold) {
+        def fail() = backendReporting.error(NoPosition, s"$site in class ${classNode.name} has a bad $which of length ${s.length}${ if (frontendAccess.compilerSettings.debug) s":\n$s" else "" }")
+        if (s.length > max) fail()
+        else
+          try new ByteVector(s.length).putUTF8(s)
+          catch { case _: IllegalArgumentException => fail() }
+      }
+    }
+    classNode.accept(visitor)
   }
 
   private def warnCaseInsensitiveOverwrite(clazz: GeneratedClass): Unit = {
@@ -109,9 +153,9 @@ abstract class PostProcessor extends PerRunInit {
         callGraph.addClass(c.classNode)
       }
       if (compilerSettings.optInlinerEnabled)
-        inliner.runInliner()
-      if (compilerSettings.optClosureInvocations)
-        closureOptimizer.rewriteClosureApplyInvocations()
+        inliner.runInlinerAndClosureOptimizer()
+      else if (compilerSettings.optClosureInvocations)
+        closureOptimizer.rewriteClosureApplyInvocations(None, mutable.Map.empty)
     }
   }
 
@@ -122,7 +166,8 @@ abstract class PostProcessor extends PerRunInit {
 
   def setInnerClasses(classNode: ClassNode): Unit = {
     classNode.innerClasses.clear()
-    backendUtils.addInnerClasses(classNode, backendUtils.collectNestedClasses(classNode))
+    val (declared, referred) = backendUtils.collectNestedClasses(classNode)
+    backendUtils.addInnerClasses(classNode, declared, referred)
   }
 
   def serializeClass(classNode: ClassNode): Array[Byte] = {
@@ -136,6 +181,9 @@ abstract class PostProcessor extends PerRunInit {
    * types. This operation is used for computing stack map frames.
    */
   final class ClassWriterWithBTypeLub(flags: Int) extends ClassWriter(flags) {
+    // ASM's default limits guard against untrusted class files; we only write our own (see neg/inlineMaxSize)
+    setComputeLimits(Int.MaxValue, Long.MaxValue)
+
     /**
      * This method is invoked by asm during classfile writing when computing stack map frames.
      *
@@ -144,8 +192,8 @@ abstract class PostProcessor extends PerRunInit {
      */
     override def getCommonSuperClass(inameA: String, inameB: String): String = {
       // All types that appear in a class node need to have their ClassBType cached, see [[cachedClassBType]].
-      val a = cachedClassBType(inameA).get
-      val b = cachedClassBType(inameB).get
+      val a = cachedClassBType(inameA)
+      val b = cachedClassBType(inameB)
       val lub = a.jvmWiseLUB(b).get
       val lubName = lub.internalName
       assert(lubName != "scala/Any")

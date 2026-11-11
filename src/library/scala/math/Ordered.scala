@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package math
@@ -19,9 +23,9 @@ import scala.language.implicitConversions
  *  [[scala.util.Sorting]] and can be compared with standard comparison operators
  *  (e.g. > and <).
  *
- *  Ordered should be used for data with a single, natural ordering (like
- *  integers) while Ordering allows for multiple ordering implementations.
- *  An Ordering instance will be implicitly created if necessary.
+ *  `Ordered` should be used for data with a single, natural ordering (like
+ *  integers) while `Ordering` allows for multiple ordering implementations.
+ *  An `Ordering` instance will be implicitly created if necessary.
  *
  *  [[scala.math.Ordering]] is an alternative to this trait that allows multiple orderings to be
  *  defined for the same type.
@@ -40,7 +44,7 @@ import scala.language.implicitConversions
  *  }}}
  *
  *  It is important that the `equals` method for an instance of `Ordered[A]` be consistent with the
- *  compare method. However, due to limitations inherent in the type erasure semantics, there is no
+ *  `compare` method. However, due to limitations inherent in the type erasure semantics, there is no
  *  reasonable way to provide a default implementation of equality for instances of `Ordered[A]`.
  *  Therefore, if you need to be able to use equality on an instance of `Ordered[A]` you must
  *  provide it yourself either when inheriting or instantiating.
@@ -51,13 +55,12 @@ import scala.language.implicitConversions
  *  provide it yourself either when inheriting or instantiating.
  *
  *  @see [[scala.math.Ordering]], [[scala.math.PartiallyOrdered]]
- *  @author  Martin Odersky
  */
 trait Ordered[A] extends Any with java.lang.Comparable[A] {
 
   /** Result of comparing `this` with operand `that`.
    *
-   * Implement this method to determine how instances of A will be sorted.
+   * This method determines how instances of `A` will be sorted.
    *
    * Returns `x` where:
    *
@@ -70,19 +73,19 @@ trait Ordered[A] extends Any with java.lang.Comparable[A] {
    */
   def compare(that: A): Int
 
-  /** Returns true if `this` is less than `that`
+  /** Returns `true` if `this` is less than `that`
     */
   def <  (that: A): Boolean = (this compare that) <  0
 
-  /** Returns true if `this` is greater than `that`.
+  /** Returns `true` if `this` is greater than `that`.
     */
   def >  (that: A): Boolean = (this compare that) >  0
 
-  /** Returns true if `this` is less than or equal to `that`.
+  /** Returns `true` if `this` is less than or equal to `that`.
     */
   def <= (that: A): Boolean = (this compare that) <= 0
 
-  /** Returns true if `this` is greater than or equal to `that`.
+  /** Returns `true` if `this` is greater than or equal to `that`.
     */
   def >= (that: A): Boolean = (this compare that) >= 0
 

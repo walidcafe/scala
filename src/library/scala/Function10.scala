@@ -1,10 +1,15 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 // GENERATED CODE: DO NOT EDIT. See scala.Function0 for timestamp.
 
 package scala
@@ -12,9 +17,31 @@ package scala
 
 /** A function of 10 parameters.
  *
+ *  @tparam T1 the type of the 1st argument
+ *  @tparam T2 the type of the 2nd argument
+ *  @tparam T3 the type of the 3rd argument
+ *  @tparam T4 the type of the 4th argument
+ *  @tparam T5 the type of the 5th argument
+ *  @tparam T6 the type of the 6th argument
+ *  @tparam T7 the type of the 7th argument
+ *  @tparam T8 the type of the 8th argument
+ *  @tparam T9 the type of the 9th argument
+ *  @tparam T10 the type of the 10th argument
+ *  @tparam R the return type of this function
  */
 trait Function10[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, +R] extends AnyRef { self =>
-  /** Apply the body of this function to the arguments.
+  /** Applies the body of this function to the arguments.
+   *
+   *  @param v1 the value of the 1st argument
+   *  @param v2 the value of the 2nd argument
+   *  @param v3 the value of the 3rd argument
+   *  @param v4 the value of the 4th argument
+   *  @param v5 the value of the 5th argument
+   *  @param v6 the value of the 6th argument
+   *  @param v7 the value of the 7th argument
+   *  @param v8 the value of the 8th argument
+   *  @param v9 the value of the 9th argument
+   *  @param v10 the value of the 10th argument
    *  @return   the result of function application.
    */
   def apply(v1: T1, v2: T2, v3: T3, v4: T4, v5: T5, v6: T6, v7: T7, v8: T8, v9: T9, v10: T10): R
@@ -31,8 +58,8 @@ trait Function10[-T1, -T2, -T3, -T4, -T5, -T6, -T7, -T8, -T9, -T10, +R] extends 
    *  @return   a function `f` such that `f((x1, x2, x3, x4, x5, x6, x7, x8, x9, x10)) == f(Tuple10(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10)) == apply(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10)`
    */
 
-  @annotation.unspecialized def tupled: Tuple10[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10] => R = {
-    case Tuple10(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10) => apply(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10)
+  @annotation.unspecialized def tupled: ((T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)) => R = {
+    ({ case ((x1, x2, x3, x4, x5, x6, x7, x8, x9, x10)) => apply(x1, x2, x3, x4, x5, x6, x7, x8, x9, x10) }: ((T1, T2, T3, T4, T5, T6, T7, T8, T9, T10)) => R)
   }
-  override def toString() = "<function10>"
+  override def toString(): String = "<function10>"
 }

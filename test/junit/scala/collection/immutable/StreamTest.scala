@@ -5,10 +5,12 @@ import org.junit.runners.JUnit4
 import org.junit.Test
 import org.junit.Assert._
 
+import scala.annotation.unused
 import scala.ref.WeakReference
 import scala.util.Try
 
 @RunWith(classOf[JUnit4])
+@deprecated("Tests deprecated Stream", since="2.13")
 class StreamTest {
 
   @Test
@@ -57,17 +59,17 @@ class StreamTest {
   }
 
   @Test // scala/bug#8990
-  def withFilter_after_first_foreach_allows_GC: Unit = {
+  def withFilter_after_first_foreach_allows_GC(): Unit = {
     assertStreamOpAllowsGC(_.withFilter(_ > 1).foreach(_), _ => ())
   }
 
   @Test // scala/bug#8990
-  def withFilter_after_first_withFilter_foreach_allows_GC: Unit = {
+  def withFilter_after_first_withFilter_foreach_allows_GC(): Unit = {
     assertStreamOpAllowsGC(_.withFilter(_ > 1).withFilter(_ < 100).foreach(_), _ => ())
   }
 
   @Test // scala/bug#8990
-  def withFilter_can_retry_after_exception_thrown_in_filter: Unit = {
+  def withFilter_can_retry_after_exception_thrown_in_filter(): Unit = {
     // use mutable state to control an intermittent failure in filtering the Stream
     var shouldThrow = true
 
@@ -82,6 +84,12 @@ class StreamTest {
     assertTrue( wf.map(identity).length == 5 )       // success instead of NPE
   }
 
+  // scala/bug#10131
+  @Test
+  def tails_zipWithIndex_foreach_allowsGC(): Unit = {
+    assertStreamOpAllowsGC((stream, check) => stream.tails.zipWithIndex.foreach { case (_, i) => check(i) }, _ => ())
+  }
+
   /** Test helper to verify that the given Stream operation is properly lazy in the tail */
   def assertStreamOpLazyInTail(op: (=> Stream[Int]) => Stream[Int], expectedEvaluated: List[Int]): Unit = {
     // mutable state to record every strict evaluation
@@ -93,23 +101,23 @@ class StreamTest {
     }
 
     // call op on a stream which records every strict evaluation
-    val result = op(trackEffectsOnNaturals)
+    @unused val result = op(trackEffectsOnNaturals)
 
-    assertTrue( evaluated == expectedEvaluated )
+    assertEquals(expectedEvaluated, evaluated)
   }
 
   @Test // scala/bug#9134
-  def filter_map_properly_lazy_in_tail: Unit = {
+  def filter_map_properly_lazy_in_tail(): Unit = {
     assertStreamOpLazyInTail(_.filter(_ % 2 == 0).map(identity), List(1, 2))
   }
 
   @Test // scala/bug#9134
-  def withFilter_map_properly_lazy_in_tail: Unit = {
+  def withFilter_map_properly_lazy_in_tail(): Unit = {
     assertStreamOpLazyInTail(_.withFilter(_ % 2 == 0).map(identity), List(1, 2))
   }
 
   @Test // scala/bug#6881
-  def test_reference_equality: Unit = {
+  def test_reference_equality(): Unit = {
     // Make sure we're tested with reference equality
     val s = Stream.from(0)
     assert(s == s, "Referentially identical streams should be equal (==)")
@@ -119,7 +127,7 @@ class StreamTest {
   }
 
   @Test
-  def t9886: Unit = {
+  def t9886(): Unit = {
     assertEquals(Stream(None, Some(1)), None #:: Stream(Some(1)))
     assertEquals(Stream(None, Some(1)), Stream(None) #::: Stream(Some(1)))
   }
@@ -152,70 +160,70 @@ class StreamTest {
   }
 
   @Test
-  def testStreamToStringWhenHeadAndTailBothAreNotEvaluated = {
+  def testStreamToStringWhenHeadAndTailBothAreNotEvaluated(): Unit = {
     val l = Stream(1, 2, 3, 4, 5)
-    assertEquals("Stream(1, ?)", l.toString)
+    assertEquals("Stream(1, <not computed>)", l.toString)
   }
 
   @Test
-  def testStreamToStringWhenOnlyHeadIsEvaluated = {
+  def testStreamToStringWhenOnlyHeadIsEvaluated(): Unit = {
     val l = Stream(1, 2, 3, 4, 5)
     l.head
-    assertEquals("Stream(1, ?)", l.toString)
+    assertEquals("Stream(1, <not computed>)", l.toString)
   }
 
   @Test
-  def testStreamToStringWhenHeadAndTailIsEvaluated = {
+  def testStreamToStringWhenHeadAndTailIsEvaluated(): Unit = {
     val l = Stream(1, 2, 3, 4, 5)
     l.head
     l.tail
-    assertEquals("Stream(1, 2, ?)", l.toString)
+    assertEquals("Stream(1, 2, <not computed>)", l.toString)
   }
 
   @Test
-  def testStreamToStringWhenHeadAndTailHeadIsEvaluated = {
+  def testStreamToStringWhenHeadAndTailHeadIsEvaluated(): Unit = {
     val l = Stream(1, 2, 3, 4, 5)
     l.head
     l.tail.head
-    assertEquals("Stream(1, 2, ?)", l.toString)
+    assertEquals("Stream(1, 2, <not computed>)", l.toString)
   }
 
   @Test
-  def testStreamToStringWhenHeadIsNotEvaluatedAndOnlyTailIsEvaluated = {
+  def testStreamToStringWhenHeadIsNotEvaluatedAndOnlyTailIsEvaluated(): Unit = {
     val l = Stream(1, 2, 3, 4, 5)
     l.tail
-    assertEquals("Stream(1, 2, ?)", l.toString)
+    assertEquals("Stream(1, 2, <not computed>)", l.toString)
   }
 
   @Test
-  def testStreamToStringWhedHeadIsNotEvaluatedAndTailHeadIsEvaluated = {
+  def testStreamToStringWhedHeadIsNotEvaluatedAndTailHeadIsEvaluated(): Unit = {
     val l = Stream(1, 2, 3, 4, 5)
     l.tail.head
-    assertEquals("Stream(1, 2, ?)", l.toString)
+    assertEquals("Stream(1, 2, <not computed>)", l.toString)
   }
 
   @Test
-  def testStreamToStringWhenStreamIsForcedToList: Unit = {
+  def testStreamToStringWhenStreamIsForcedToList(): Unit = {
     val l = 1 #:: 2 #:: 3 #:: 4 #:: Stream.empty
     l.toList
     assertEquals("Stream(1, 2, 3, 4)", l.toString)
   }
 
   @Test
-  def testStreamToStringWhenStreamIsEmpty: Unit = {
+  def testStreamToStringWhenStreamIsEmpty(): Unit = {
     val l = Stream.empty
     assertEquals("Stream()", l.toString)
   }
 
   @Test
-  def testStreamToStringWhenStreamHasCyclicReference: Unit = {
+  def testStreamToStringWhenStreamHasCyclicReference(): Unit = {
     lazy val cyc: Stream[Int] = 1 #:: 2 #:: 3 #:: 4 #:: cyc
     cyc.tail.tail.tail.tail
-    assertEquals("Stream(1, 2, 3, 4, ...)", cyc.toString)
+    assertEquals("Stream(1, 2, 3, 4, <cycle>)", cyc.toString)
   }
 
   @Test
-  def testAppendAliasToLazyAppendedAll: Unit = {
+  def testAppendAliasToLazyAppendedAll(): Unit = {
     val l = 1 #:: 2 #:: 3 #:: Stream.Empty
     assertEquals(l.append(l), l.lazyAppendedAll(l))
   }
@@ -227,14 +235,61 @@ class StreamTest {
   }
 
   @Test
-  def testLazyListIterator: Unit = {
+  def testLazyListIterator(): Unit = {
     val it1 = new CountingIt
     val s2 = it1.toStream
     s2.iterator.next()
     assertEquals(1, it1.current)
-    s2.flatMap { i => (if(i < 3) None else Some(i)): Option[Int] }.iterator.next
+    s2.flatMap { i => (if(i < 3) None else Some(i)): Option[Int] }.iterator.next()
     assertEquals(3, it1.current)
     s2.flatMap { i => (if(i < 5) None else Some(i)): Option[Int] }.headOption
     assertEquals(5, it1.current)
+  }
+
+  @Test
+  def t10883(): Unit = {
+    var value: Int = -1
+    Stream.iterate(0){ a =>
+      val next = a + 1
+      value = next
+      next
+    }.take(3).toList
+    assertEquals(2, value)
+    value = -1
+    Stream.iterate(0){ a =>
+      val next = a + 1
+      value = next
+      next
+    }.iterator.take(3).toList
+    assertEquals(2, value)
+  }
+
+  @Test
+  def t09791(): Unit = {
+    // updated tests
+    val x = Stream.continually("*").updated(0, "new value")
+    assertEquals(List("new value", "*", "*", "*", "*", "*", "*", "*", "*", "*"), x.take(10).toList)
+
+    val y = Stream.continually("*").updated(4, "new value")
+    assertEquals(List("*", "*", "*", "*", "new value", "*", "*", "*", "*", "*"), y.take(10).toList)
+
+    // patch tests
+
+    // doesn't matter what we put for 'replaced' arg, since the stream is infinite
+    assertEquals(List("new", "value", "!", "*", "*", "*", "*", "*", "*", "*"),
+      Stream.continually("*").patch(0, List("new", "value", "!"), 0).take(10).toList)
+
+    assertEquals(List("new", "value", "!", "*", "*", "*", "*", "*", "*", "*"),
+      Stream.continually("*").patch(0, List("new", "value", "!"), 2).take(10).toList)
+
+    assertEquals(List("*", "new", "value", "!", "*", "*", "*", "*", "*", "*"),
+      Stream.continually("*").patch(1, List("new", "value", "!"), 2).take(10).toList)
+
+    // actually test 'replaced'
+    assertEquals(List("*", "new", "_", "_", "_", "!", "*", "*", "*", "*"),
+      Stream.continually("*")
+        .patch(1, List("new", "value", "!"), 2)
+        .patch(2, List("_", "_", "_"), 1)
+        .take(10).toList)
   }
 }

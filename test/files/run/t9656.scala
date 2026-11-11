@@ -1,3 +1,5 @@
+//> using options -deprecation
+//
 
 import scala.math.BigDecimal
 

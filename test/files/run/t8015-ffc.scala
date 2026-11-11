@@ -1,7 +1,7 @@
 
 object Test extends App {
-  val ms = """This is a long multiline string
+  val ms = s"""This is a long multiline interpolation
   with \u000d\u000a CRLF embedded."""
-  assert(ms.lines.size == 3, s"lines.size ${ms.lines.size}")
+  assert(ms.linesIterator.size == 3, s"lines.size ${ms.linesIterator.size}")
   assert(ms contains "\r\n CRLF", "no CRLF")
 }

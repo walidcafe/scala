@@ -1,0 +1,342 @@
+package scala.tools.xsbt
+
+import org.junit.Test
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+
+import xsbti.api.DependencyContext.DependencyByMacroExpansion
+
+import scala.tools.xsbt.TestCallback.ExtractedClassDependencies
+import xsbti.NameKind
+import xsbti.api.DependencyContext.{DependencyByInheritance, DependencyByMemberRef}
+
+class DependencyTest extends BridgeTesting {
+
+  @Test
+  def `Dependency phase should extract class dependencies from public members`(): Unit = {
+    val classDependencies = extractClassDependenciesPublic
+    val memberRef = classDependencies.memberRef
+    val inheritance = classDependencies.inheritance
+    assertEquals(memberRef("A"), Set.empty)
+    assertEquals(inheritance("A"), Set.empty)
+    assertEquals(memberRef("B"), Set("A", "D"))
+    assertEquals(inheritance("B"), Set("D"))
+    assertEquals(memberRef("C"), Set("A"))
+    assertEquals(inheritance("C"), Set.empty)
+    assertEquals(memberRef("D"), Set.empty)
+    assertEquals(inheritance("D"), Set.empty)
+    assertEquals(memberRef("E"), Set.empty)
+    assertEquals(inheritance("E"), Set.empty)
+    assertEquals(memberRef("F"), Set("A", "B", "D", "E", "G", "C")) // C is the underlying type of MyC
+    assertEquals(inheritance("F"), Set("A", "E"))
+    assertEquals(memberRef("H"), Set("B", "E", "G"))
+    // aliases and applied type constructors are expanded so we have inheritance dependency on B
+    assertEquals(inheritance("H"), Set("B", "E"))
+  }
+
+  @Test
+  def `Dependency phase should qualify each endpoint of a class dependency with its namespace`(): Unit =
+    withTemporaryDirectory { tempDir =>
+      val srcA = "trait A"
+      val srcB = "trait B\nobject B extends A"
+      val srcC = "class C extends B"
+      val (_, callback) = compileSrcs(tempDir, srcA, srcB, srcC)
+      val inheritance = callback.classRefDependencies.collect {
+        case (on, from, DependencyByInheritance) => (on.name, from.name, from.kind)
+      }.toSet
+      // `object B extends A` and `trait B extends A` are the same edge in the relations
+      assertEquals(Set(("A", "B", NameKind.Term), ("B", "C", NameKind.Type)), inheritance)
+    }
+
+  @Test
+  def `Dependency phase should extract class dependencies from local members`(): Unit = {
+    val classDependencies = extractClassDependenciesLocal
+    val memberRef = classDependencies.memberRef
+    val inheritance = classDependencies.inheritance
+    val localInheritance = classDependencies.localInheritance
+    assertEquals(memberRef("A"), Set.empty)
+    assertEquals(inheritance("A"), Set.empty)
+    assertEquals(memberRef("B"), Set.empty)
+    assertEquals(inheritance("B"), Set.empty)
+    assertEquals(memberRef("C.Inner1"), Set("A"))
+    assertEquals(inheritance("C.Inner1"), Set("A"))
+    assertEquals(memberRef("D"), Set("B"))
+    assertEquals(inheritance("D"), Set.empty)
+    assertEquals(localInheritance("D"), Set("B"))
+    assertEquals(memberRef("E"), Set("B"))
+    assertEquals(inheritance("E"), Set.empty)
+    assertEquals(localInheritance("E"), Set("B"))
+  }
+
+  @Test
+  def `Dependency phase should extract class dependencies from annotations of definitions`(): Unit = {
+    val srcConsts = "object Consts { final val Uid = 1L; final val I = 1 }"
+    val srcAnn = "class MyAnn(x: Int) extends scala.annotation.StaticAnnotation"
+    val srcFoo = "@SerialVersionUID(Consts.Uid) class Foo extends Serializable"
+    val srcOnClass = "@MyAnn(Consts.I) class OnClass"
+    val srcOnMethod = "class OnMethod { @MyAnn(Consts.I) def f: Int = 1 }"
+    val srcOnParam = "class OnParam { def f(@MyAnn(Consts.I) x: Int): Int = x }"
+    val memberRef =
+      extractDependenciesFromSrcs(srcConsts, srcAnn, srcFoo, srcOnClass, srcOnMethod, srcOnParam).memberRef
+    def includes(name: String, expected: Set[String]): Unit =
+      assertTrue(s"memberRef($name) = ${memberRef(name)}", expected.subsetOf(memberRef(name)))
+    includes("Foo", Set("Consts"))
+    includes("OnClass", Set("MyAnn", "Consts"))
+    includes("OnMethod", Set("MyAnn", "Consts"))
+    includes("OnParam", Set("MyAnn", "Consts"))
+  }
+
+  @Test
+  def `Dependency phase should extract class dependencies from annotations without an original tree`(): Unit =
+    withTemporaryDirectory { tempDir =>
+      val (_, callback) = compileSrcss(tempDir, mkReporter, AnnotationWithoutOriginal.groupedSrcs)
+      val memberRef = callback.classDependencies.toList.collect {
+        case (target, "C", DependencyByMemberRef) => target
+      }.toSet
+      assertTrue(memberRef.toString, Set("MyAnn", "Consts").subsetOf(memberRef))
+    }
+
+  @Test
+  def `Dependency phase should extract class dependencies with trait as first parent`(): Unit = {
+    val classDependencies = extractClassDependenciesTraitAsFirstPatent
+    val memberRef = classDependencies.memberRef
+    val inheritance = classDependencies.inheritance
+    assertEquals(memberRef("A"), Set.empty)
+    assertEquals(inheritance("A"), Set.empty)
+    assertEquals(memberRef("B"), Set("A"))
+    assertEquals(inheritance("B"), Set("A"))
+    // verify that memberRef captures the oddity described in documentation of `Relations.inheritance`
+    // we are mainly interested whether dependency on A is captured in `memberRef` relation so
+    // the invariant that says that memberRef is superset of inheritance relation is preserved
+    assertEquals(memberRef("C"), Set("A", "B"))
+    assertEquals(inheritance("C"), Set("A", "B"))
+    // same as above but indirect (C -> B -> A), note that only A is visible here
+    assertEquals(memberRef("D"), Set("A", "C"))
+    assertEquals(inheritance("D"), Set("A", "C"))
+  }
+
+  @Test
+  def `Dependency phase should extract class dependencies from macro arguments`(): Unit = {
+    val binaryDependencies = extractBinaryDependenciesFromMacroArgument
+    val memberRef = binaryDependencies.memberRef
+    Set("B$", "C$").foreach(k => assertTrue(k, memberRef("A").contains(k)))
+  }
+
+  @Test
+  def `Dependency phase should extract class dependencies from a refinement`(): Unit = {
+    val srcFoo =
+      "object Outer {\n  class Inner { type Xyz }\n\n  type TypeInner = Inner { type Xyz = Int }\n}"
+    val srcBar = "object Bar {\n  def bar: Outer.TypeInner = null\n}"
+    val classDependencies = extractDependenciesFromSrcs(srcFoo, srcBar)
+
+    val memberRef = classDependencies.memberRef
+    val inheritance = classDependencies.inheritance
+    assertEquals(memberRef("Outer"), Set.empty)
+    assertEquals(inheritance("Outer"), Set.empty)
+    assertEquals(memberRef("Bar"), Set("Outer", "Outer.Inner"))
+    assertEquals(inheritance("Bar"), Set.empty)
+  }
+
+  @Test
+  def `Dependency phase should not record compound types in members as inheritance`(): Unit = {
+    val srcA =
+      """trait A[T <: B with C] { self: B with C =>
+        |  def result: B with C = ???
+        |  def parameter(value: B with C): Unit = ()
+        |  def generic[U <: B with C]: Unit = ()
+        |  def cast(value: AnyRef) = value.asInstanceOf[B with C]
+        |  type Alias = B with C
+        |  type Bound <: B with C
+        |  type EmptyRefined = B {}
+        |  type Refined = B { type X = C }
+        |  type Nested = Box[B with C]
+        |  type Existential = (Box[T] forSome { type T <: B }) with C
+        |  type Annotated = (B @unchecked) with C
+        |}""".stripMargin
+    val deps = extractDependenciesFromSrcs(srcA, "trait B", "trait C", "trait Box[T]")
+    assertEquals(deps.memberRef("A"), Set("B", "C", "Box"))
+    assertEquals(deps.inheritance("A"), Set.empty)
+  }
+
+  @Test
+  def `Dependency phase should not record dependencies on anonymous classes`(): Unit = {
+    // Adapted from zinc's scripted test source-dependencies/anon-class-dep (sbt/zinc#1517)
+    val srcRefined =
+      """class SRC[_]
+        |class Refined {
+        |  def select() = new {
+        |    def using(opt: Option[SRC[_]] => Some[SRC[_]]) = opt
+        |  }
+        |}""".stripMargin
+    val srcClient =
+      """class Client {
+        |  def temp = new Refined().select().using(null)
+        |}""".stripMargin
+    val deps = extractDependenciesFromSrcs(srcRefined, srcClient)
+    val memberRef = deps.memberRef
+    assertTrue(memberRef("Client").contains("Refined"))
+    assertFalse(memberRef("Client").exists(_.contains("anon")))
+  }
+
+  @Test
+  def `Dependency phase should record type arguments of a macro call as macro expansion dependencies`(): Unit = {
+    val srcMacros =
+      """import scala.language.experimental.macros
+        |import scala.reflect.macros.blackbox
+        |object Macros {
+        |  def foo[T]: Unit = macro impl[T]
+        |  def bar[T](x: Int)(implicit d: DummyImplicit): Unit = macro implBar[T]
+        |  def impl[T: c.WeakTypeTag](c: blackbox.Context): c.Tree = { import c.universe._; q"()" }
+        |  def implBar[T: c.WeakTypeTag](c: blackbox.Context)(x: c.Tree)(d: c.Tree): c.Tree = impl[T](c)
+        |}
+        |class A
+        |class B""".stripMargin
+    val srcApp =
+      """class App { def x = Macros.foo[A] }
+        |class App2 { def x = Macros.foo[A] }
+        |class App3 { def x = Macros.bar[B](1) }""".stripMargin
+    val deps = withTemporaryDirectory { tmpDir =>
+      val (_, testCallback) = compileSrcss(tmpDir, mkReporter, List(List(srcMacros), List(srcApp)))
+      testCallback.binaryDependencies.toList.collect { case (_, on, from, context) => (on, from, context) }
+    }
+    assertTrue(deps.toString, deps.contains(("A", "App", DependencyByMacroExpansion)))
+    assertTrue(deps.toString, deps.contains(("A", "App2", DependencyByMacroExpansion)))
+    assertTrue(deps.toString, deps.contains(("B", "App3", DependencyByMacroExpansion)))
+  }
+
+  @Test
+  def `Dependency phase should extract class dependency on a object correctly`(): Unit = {
+    val srcA =
+      """object A {
+        |   def foo = { B; () }
+        |}""".stripMargin
+    val srcB = "object B"
+
+    val classDependencies = extractDependenciesFromSrcs(srcA, srcB)
+
+    val memberRef = classDependencies.memberRef
+    val inheritance = classDependencies.inheritance
+    assertEquals(memberRef("A"), Set("B"))
+    assertEquals(inheritance("A"), Set.empty)
+    assertEquals(memberRef("B"), Set.empty)
+    assertEquals(inheritance("B"), Set.empty)
+  }
+
+  @Test
+  def `Dependency phase should extract class dependency from 'classOf' literal`(): Unit = {
+    val srcA =
+      """object A {
+        |   print(classOf[B])
+        |}""".stripMargin
+    val srcB = "class B"
+
+    val classDependencies = extractDependenciesFromSrcs(srcA, srcB)
+
+    val memberRef = classDependencies.memberRef
+    val inheritance = classDependencies.inheritance
+    assertEquals(memberRef("A"), Set("B"))
+    assertEquals(inheritance("A"), Set.empty)
+    assertEquals(memberRef("B"), Set.empty)
+    assertEquals(inheritance("B"), Set.empty)
+  }
+
+  @Test
+  def `Dependency phase should handle top level import dependencies`(): Unit = {
+    val srcA =
+      """
+        |package abc
+        |object A {
+        |  class Inner
+        |}
+        |class A2""".stripMargin
+    val srcB = "import abc.A; import abc.A.Inner; class B"
+    val srcC = "import abc.{A, A2}; class C"
+    val srcD = "import abc.{A2 => Foo}; class D"
+    val srcE = "import abc.A._; class E"
+    val srcF = "import abc._; class F"
+    val srcG =
+      """|package foo {
+         |  package bar {
+         |    import abc.A
+         |    class G
+         |  }
+         |}
+    """.stripMargin
+    val srcH = "class H { import abc.A }"
+
+    val deps = extractDependenciesFromSrcs(srcA, srcB, srcC, srcD, srcE, srcF, srcG, srcH).memberRef
+
+    assertEquals(deps("A"), Set.empty)
+    assertEquals(deps("B"), Set("abc.A", "abc.A.Inner"))
+    assertEquals(deps("C"), Set("abc.A", "abc.A2"))
+    assertEquals(deps("D"), Set("abc.A2"))
+    assertEquals(deps("E"), Set("abc.A"))
+    assertEquals(deps("F"), Set.empty)
+    assertEquals(deps("foo.bar.G"), Set("abc.A"))
+    assertEquals(deps("H"), Set("abc.A"))
+  }
+
+  private def extractClassDependenciesPublic: ExtractedClassDependencies = {
+    val srcA = "class A"
+    val srcB = "class B extends D[A]"
+    val srcC =
+      """|class C {
+         |  def a: A = null
+         |}""".stripMargin
+    val srcD = "class D[T]"
+    val srcE = "trait E[T]"
+    val srcF = "trait F extends A with E[D[B]] { self: G.MyC => }"
+    val srcG = "object G { type T[x] = B ; type MyC = C }"
+    // T is a type constructor [x]B
+    // B extends D
+    // E verifies the core type gets pulled out
+    val srcH = "trait H extends G.T[Int] with (E[Int] @unchecked)"
+
+    val classDependencies =
+      extractDependenciesFromSrcs(srcA, srcB, srcC, srcD, srcE, srcF, srcG, srcH)
+    classDependencies
+  }
+
+  private def extractClassDependenciesLocal: ExtractedClassDependencies = {
+    val srcA = "class A"
+    val srcB = "class B"
+    val srcC = "class C { private class Inner1 extends A }"
+    val srcD = "class D { def foo: Unit = { class Inner2 extends B } }"
+    val srcE = "class E { def foo: Unit = { new B {} } }"
+
+    val classDependencies =
+      extractDependenciesFromSrcs(srcA, srcB, srcC, srcD, srcE)
+    classDependencies
+  }
+
+  private def extractClassDependenciesTraitAsFirstPatent: ExtractedClassDependencies = {
+    val srcA = "class A"
+    val srcB = "trait B extends A"
+    val srcC = "trait C extends B"
+    val srcD = "class D extends C"
+
+    val classDependencies =
+      extractDependenciesFromSrcs(srcA, srcB, srcC, srcD)
+    classDependencies
+  }
+
+  private def extractBinaryDependenciesFromMacroArgument: ExtractedClassDependencies = {
+    val srcA = "class A { println(B.printTree(C.foo)) }"
+    val srcB =
+      """
+        |import scala.language.experimental.macros
+        |import scala.reflect.macros.blackbox._
+        |object B {
+        |  def printTree(arg: Any): String = macro printTreeImpl
+        |  def printTreeImpl(c: Context)(arg: c.Expr[Any]): c.Expr[String] = {
+        |    val argStr = arg.tree.toString
+        |    val literalStr = c.universe.Literal(c.universe.Constant(argStr))
+        |    c.Expr[String](literalStr)
+        |  }
+        |}""".stripMargin
+    val srcC = "object C { val foo = 1 }"
+
+    val binaryDependencies =
+      extractBinaryDependenciesFromSrcss(List(List(srcB, srcC), List(srcA)))
+    binaryDependencies
+  }
+}

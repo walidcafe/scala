@@ -14,11 +14,9 @@ object Dingus
 }
 
 val x = (new Dingus).y
-
-// Exiting paste mode, now interpreting.
-
-defined class Dingus
-defined object Dingus
-x: Int = 110
+// Exiting paste mode... now interpreting.
+class Dingus
+object Dingus
+val x: Int = 110
 
 scala> :quit

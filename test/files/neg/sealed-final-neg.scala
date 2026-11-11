@@ -1,3 +1,5 @@
+//> using options -Werror -opt:inline:** -Wopt
+//
 package neg1 {
   sealed abstract class Foo {
     @inline def bar(x: Int) = x + 1

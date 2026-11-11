@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author  David Bernard, Manohar Jonnalagedda
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -13,10 +20,13 @@ import base._
 import base.comment._
 import model._
 import scala.reflect.internal.Reporter
-import scala.collection._
+import scala.collection.{immutable, _}
 import java.io.Writer
 import java.net.URI
+
 import javax.xml.stream.XMLOutputFactory
+
+import scala.annotation.nowarn
 
 /** An html page that is part of a Scaladoc site.
   * @author David Bernard
@@ -66,7 +76,7 @@ abstract class HtmlPage extends Page { thisPage =>
   def writeFor(site: HtmlFactory): Unit = {
     writeFile(site)(writeHtml(site.encoding))
 
-    if (site.universe.settings.docRawOutput)
+    if (site.universe.settings.docRawOutput.value)
       writeFile(site, ".raw") {
         // we're only interested in the body, as this will go into the diff
         _.write(textOf(body))
@@ -96,6 +106,7 @@ abstract class HtmlPage extends Page { thisPage =>
     case OrderedList(items, listStyle) => Ol(`class`= listStyle, elems= listItemsToHtml(items))
     case DefinitionList(items)         => Dl(items.toList flatMap { case (t, d) => Dt(inlineToHtml(t)) :: Dd(blockToHtml(d)) :: NoElems })
     case HorizontalRule()              => Hr
+    case tbl: comment.Table                    => tableToHtml(tbl)
   }) :: NoElems
 
   def listItemsToHtml(items: Seq[Block]) =
@@ -142,6 +153,32 @@ abstract class HtmlPage extends Page { thisPage =>
       inlineToHtml(text)
   }
 
+  private def tableToHtml(table: comment.Table): Elem = {
+
+    val comment.Table(header, columnOptions, rows) = table
+
+    val colClass = Map(
+      ColumnOption.ColumnOptionLeft -> "doctbl-left",
+      ColumnOption.ColumnOptionCenter -> "doctbl-center",
+      ColumnOption.ColumnOptionRight -> "doctbl-right"
+    )
+    val cc = columnOptions.map(colClass)
+    Table(
+      thead = THead(
+        Tr(
+          (header.cells zip cc).toList.map{ case (cell, cls) => Th(cell.blocks.flatMap(blockToHtml).toList, `class` = cls)}
+        ) :: immutable.Nil
+      ),
+      tbody = if (rows.nonEmpty) {
+        TBody(
+          rows.toList.map {
+            row => Tr((row.cells zip cc).toList.map{ case (cell, cls) => Td(elems = cell.blocks.flatMap(blockToHtml).toList, `class`=cls) })
+          }
+        )
+      } else null,
+      `class` = "doctbl")
+  }
+
   def typeToHtml(tpes: List[model.TypeEntity], hasLinks: Boolean): Elems = tpes match {
     case Nil         => NoElems
     case List(tpe)   => typeToHtml(tpe, hasLinks)
@@ -179,7 +216,7 @@ abstract class HtmlPage extends Page { thisPage =>
   }
 
   def hasPage(e: DocTemplateEntity) = {
-    e.isPackage || e.isTrait || e.isClass || e.isObject || e.isCaseClass
+    e.isPackage || e.isTrait || e.isClass || e.isObject || e.isCase
   }
 
   /** Returns the HTML code that represents the template in `tpl` as a hyperlinked name. */
@@ -202,10 +239,21 @@ abstract class HtmlPage extends Page { thisPage =>
     val Trait, Class, Type, Object, Package = Value
   }
 
+  /** Small inline SVG icons, used in place of icon-font glyphs so that no
+    * font needs to be bundled just to draw a handful of UI icons. */
+  object Icons {
+    private def svg(inner: String): String =
+      s"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">$inner</svg>"""
+
+    val search: String = svg("""<circle cx="10" cy="10" r="6"/><line x1="20" y1="20" x2="14.5" y2="14.5"/>""")
+    val clear: String  = svg("""<line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/>""")
+    val arrow: String  = svg("""<polyline points="9 6 15 12 9 18"/>""")
+  }
+
   def permalink(template: Entity, isSelf: Boolean = true): Elem =
     Span(`class`= "permalink", elems=
-      A(href=memberToUrl(template, isSelf), title="Permalink", elems =
-        I(`class`="material-icons", elems=Txt("\uE157"))
+      A(href=memberToUrl(template), title="Permalink", elems =
+        I(elems=Txt("\u00b6"))
         ))
 
   def docEntityImageClass(tpl: DocTemplateEntity): String =
@@ -235,16 +283,17 @@ abstract class HtmlPage extends Page { thisPage =>
         case None => NoElems
       })
 
-  private def memberToUrl(template: Entity, isSelf: Boolean = true): String = {
-    val (signature: Option[String], containingTemplate: TemplateEntity) = template match {
-      case dte: DocTemplateEntity if (!isSelf) => (Some(dte.signature), dte.inTemplate)
-      case dte: DocTemplateEntity => (None, dte)
-      case me: MemberEntity => (Some(me.signature), me.inTemplate)
-      case tpl => (None, tpl)
-    }
+  private def memberToUrl(template: Entity): String = {
+    val (signature: Option[String], containingTemplate: TemplateEntity) = {
+      template match {
+        case dte: DocTemplateEntity => (None, dte)
+        case me: MemberEntity => (Some(me.signature), me.inTemplate)
+        case tpl => (None, tpl)
+      }
+    }: @nowarn("msg=match may not be exhaustive")
 
     val templatePath = templateToPath(containingTemplate)
-    val url = "../" * (templatePath.size - 1) + templatePath.reverse.mkString("/")
+    val url = "../" * (thisPage.path.size - 1) + templatePath.reverse.mkString("/")
     url + signature.map("#" + _).getOrElse("")
   }
 }

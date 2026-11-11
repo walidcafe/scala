@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2006-2013 LAMP/EPFL
- * @author  Lex Spoon
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -8,13 +15,13 @@ package scala.tools.nsc
 import interpreter.shell.{ILoop, ShellConfig}
 
 object JarRunner extends CommonRunner {
-  def runJar(settings: GenericRunnerSettings, jarPath: String, arguments: Seq[String]): Either[Throwable, Boolean] = {
+  def runJar(settings: GenericRunnerSettings, jarPath: String, arguments: Seq[String]): Option[Throwable] = {
     val jar       = new io.Jar(jarPath)
     val mainClass = jar.mainClass getOrElse (throw new IllegalArgumentException(s"Cannot find main class for jar: $jarPath"))
     val jarURLs   = util.ClassPath expandManifestPath jarPath
     val urls      = if (jarURLs.isEmpty) io.File(jarPath).toURL +: settings.classpathURLs else jarURLs
 
-    if (settings.Ylogcp) {
+    if (settings.Ylogcp.value) {
       Console.err.println("Running jar with these URLs as the classpath:")
       urls foreach println
     }
@@ -29,14 +36,15 @@ object JarRunner extends CommonRunner {
  */
 class MainGenericRunner {
   def errorFn(str: String, e: Option[Throwable] = None, isFailure: Boolean = true): Boolean = {
-    if (str.nonEmpty) Console.err println str
-    e foreach (_.printStackTrace())
+    if (str.nonEmpty) Console.err.println(str)
+    e.foreach(_.printStackTrace())
     !isFailure
   }
 
   def process(args: Array[String]): Boolean = {
     val command = new GenericRunnerCommand(args.toList, (x: String) => errorFn(x))
     import command.{settings, howToRun, thingToRun, shortUsageMsg}
+    import MainGenericRunner.CommandFailure
 
     // only created for info message
     def sampleCompiler = new Global(settings)
@@ -58,31 +66,34 @@ class MainGenericRunner {
       }
 
       import GenericRunnerCommand.{AsObject, AsScript, AsJar, Error}
-      def runTarget(): Either[Throwable, Boolean] = howToRun match {
+      def runTarget(): Option[Throwable] = howToRun match {
         case AsObject =>
           ObjectRunner.runAndCatch(settings.classpathURLs, thingToRun, command.arguments)
         case AsScript if isE =>
-          Right(ScriptRunner.runCommand(settings, combinedCode, thingToRun +: command.arguments))
+          ScriptRunner(settings).runScriptText(combinedCode, thingToRun +: command.arguments)
         case AsScript =>
-          ScriptRunner.runScriptAndCatch(settings, thingToRun, command.arguments)
+          ScriptRunner(settings).runScript(thingToRun, command.arguments)
         case AsJar    =>
           JarRunner.runJar(settings, thingToRun, command.arguments)
         case Error =>
-          Right(false)
+          Some(CommandFailure)
         case _  =>
           // We start the repl when no arguments are given.
-          // If user is agnostic about both -feature and -deprecation, turn them on.
-          if (settings.deprecation.isDefault && settings.feature.isDefault) {
+          if (settings.Wconf.isDefault && settings.lint.isDefault) {
+            // If user is agnostic about -Wconf and -Xlint, enable -deprecation and -feature
             settings.deprecation.value = true
             settings.feature.value = true
           }
           val config = ShellConfig(settings)
-          Right(new ILoop(config).run(settings))
+          new ILoop(config).run(settings)
+          None
       }
 
       runTarget() match {
-        case Left(ex) => errorFn("", Some(ex))  // there must be a useful message of hope to offer here
-        case Right(b) => b
+        case Some(ScriptCompileError) => false
+        case Some(CommandFailure) => false
+        case e @ Some(ex) => errorFn("", e)
+        case _            => true
       }
     }
 
@@ -96,5 +107,8 @@ class MainGenericRunner {
 }
 
 object MainGenericRunner extends MainGenericRunner {
+  // control indicating command ran but non-zero exit
+  object CommandFailure extends scala.util.control.ControlThrowable("Command failed")
+
   def main(args: Array[String]): Unit = if (!process(args)) System.exit(1)
 }

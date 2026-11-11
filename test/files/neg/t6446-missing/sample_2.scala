@@ -1,4 +1,4 @@
-
+//> using options -Xplugin:. -Vphases
 package sample
 
 // just a sample that is compiled with the sample plugin enabled

@@ -1,3 +1,5 @@
+//> using options -Xlint:serial
+//
 @SerialVersionUID(0L) // should have no effect
 trait T
 

@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -23,18 +27,18 @@ trait AnyRef extends Any {
    */
   def equals(that: Any): Boolean = this eq that
 
-  /** The hashCode method for reference types.  See hashCode in [[scala.Any]].
+  /** The hashCode method for reference types.  See `hashCode` in [[scala.Any]].
    *
    *  @return   the hash code value for this object.
    */
   def hashCode: Int = sys.error("hashCode")
 
-  /** Creates a String representation of this object.  The default
+  /** Creates a `String` representation of this object.  The default
    *  representation is platform dependent.  On the java platform it
    *  is the concatenation of the class name, "@", and the object's
    *  hashcode in hexadecimal.
    *
-   *  @return     a String representation of the object.
+   *  @return     a `String` representation of the object.
    */
   def toString: String = sys.error("toString")
 
@@ -43,11 +47,11 @@ trait AnyRef extends Any {
    *  @param    body    the code to execute
    *  @return           the result of `body`
    */
-  def synchronized[T](body: => T): T
+  def synchronized[T](body: => T): T = sys.error("synchronized")
 
   /** Tests whether the argument (`that`) is a reference to the receiver object (`this`).
    *
-   *  The `eq` method implements an [[http://en.wikipedia.org/wiki/Equivalence_relation equivalence relation]] on
+   *  The `eq` method implements an [[https://en.wikipedia.org/wiki/Equivalence_relation equivalence relation]] on
    *  non-null instances of `AnyRef`, and has three additional properties:
    *
    *   - It is consistent: for any non-null instances `x` and `y` of type `AnyRef`, multiple invocations of
@@ -80,11 +84,11 @@ trait AnyRef extends Any {
     if (this eq null) that.asInstanceOf[AnyRef] eq null
     else this equals that
 
-  /** Create a copy of the receiver object.
+  /** Creates a copy of the receiver object.
    *
    *  The default implementation of the `clone` method is platform dependent.
    *
-   *  @note   not specified by SLS as a member of AnyRef
+   *  @note   not specified by SLS as a member of `AnyRef`
    *  @return a copy of the receiver object.
    */
   protected def clone(): AnyRef
@@ -96,28 +100,40 @@ trait AnyRef extends Any {
    *  well as the interaction between `finalize` and non-local returns
    *  and exceptions, are all platform dependent.
    *
-   *  @note   not specified by SLS as a member of AnyRef
+   *  @note   not specified by SLS as a member of `AnyRef`
    */
   protected def finalize(): Unit
 
   /** Wakes up a single thread that is waiting on the receiver object's monitor.
    *
-   *  @note   not specified by SLS as a member of AnyRef
+   *  @note   not specified by SLS as a member of `AnyRef`
    */
   final def notify(): Unit
 
   /** Wakes up all threads that are waiting on the receiver object's monitor.
    *
-   *  @note   not specified by SLS as a member of AnyRef
+   *  @note   not specified by SLS as a member of `AnyRef`
    */
   final def notifyAll(): Unit
 
-  /** Causes the current Thread to wait until another Thread invokes
-   *  the notify() or notifyAll() methods.
+  /** See [[https://docs.oracle.com/javase/8/docs/api/java/lang/Object.html#wait--]].
    *
-   *  @note   not specified by SLS as a member of AnyRef
+   *  @note   not specified by SLS as a member of `AnyRef`
    */
   final def wait (): Unit
+
+  /** See [[https://docs.oracle.com/javase/8/docs/api/java/lang/Object.html#wait-long-int-]].
+   *
+   * @param timeout the maximum time to wait in milliseconds.
+   * @param nanos   additional time, in nanoseconds range 0-999999.
+   * @note not specified by SLS as a member of AnyRef
+   */
   final def wait (timeout: Long, nanos: Int): Unit
+
+  /** See [[https://docs.oracle.com/javase/8/docs/api/java/lang/Object.html#wait-long-]].
+   *
+   * @param timeout the maximum time to wait in milliseconds.
+   * @note not specified by SLS as a member of AnyRef
+   */
   final def wait (timeout: Long): Unit
 }

@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.annotation
 
@@ -13,7 +17,7 @@ package scala.annotation
  * between versions.  This is intended for methods which for one
  * reason or another retain the same name and type signature,
  * but some aspect of their behavior is different.  An illustrative
- * examples is Stack.iterator, which reversed from LIFO to FIFO
+ * examples is `Stack.iterator`, which reversed from LIFO to FIFO
  * order between Scala 2.7 and 2.8.
  *
  * @param message A message describing the change, which is emitted
@@ -22,7 +26,5 @@ package scala.annotation
  *
  * @param changedIn The version, in which the behaviour change was
  * introduced.
- *
- * @since 2.8
  */
- private[scala] final class migration(message: String, changedIn: String) extends scala.annotation.StaticAnnotation
+private[scala] final class migration(message: String, changedIn: String) extends scala.annotation.ConstantAnnotation

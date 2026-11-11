@@ -1,3 +1,5 @@
+//
+//
 
 case class A(a: Int, index: Int) {
   def apply(i: Int)(implicit ev: Int): A = new A(ev, i)

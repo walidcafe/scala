@@ -1,0 +1,4 @@
+t11607.scala:2: error: not found: type migration
+@migration("", "") class C
+ ^
+1 error

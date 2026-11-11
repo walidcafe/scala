@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 class C {
   // not a compile-time constant due to return type
   final val K: Int = 20

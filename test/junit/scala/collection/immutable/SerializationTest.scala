@@ -5,6 +5,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 
+import scala.runtime.ModuleSerializationProxy
+
 @RunWith(classOf[JUnit4])
 class SerializationTest {
 
@@ -26,8 +28,8 @@ class SerializationTest {
   def hashMap(): Unit = {
     assertEqualsAfterDeserialization(HashMap.empty[Int, String], classOf[HashMap[_, _]])
     assertEqualsAfterDeserialization(HashMap(1 -> "one", 2 -> "two", 3 -> "three"), classOf[HashMap[_, _]])
-    assertEquals(HashMap(1 -> 1, 2 -> 2, 3 -> 3), serializeDeserialize(HashMap(1 -> "1", 2 -> "2", 3 -> "3").mapValues(_.toInt)).toMap)
-    assertEquals(HashMap(2 -> "2", 3 -> "3"), serializeDeserialize(HashMap(1 -> "1", 2 -> "2", 3 -> "3").filterKeys(_ > 1)).toMap)
+    assertEquals(HashMap(1 -> 1, 2 -> 2, 3 -> 3), serializeDeserialize(HashMap(1 -> "1", 2 -> "2", 3 -> "3").view.mapValues(_.toInt)).toMap)
+    assertEquals(HashMap(2 -> "2", 3 -> "3"), serializeDeserialize(HashMap(1 -> "1", 2 -> "2", 3 -> "3").view.filterKeys(_ > 1)).toMap)
   }
 
   @Test
@@ -86,6 +88,7 @@ class SerializationTest {
     assertEqualsAfterDeserialization(LazyList.from(1).take(10000).force, classOf[LazyList[_]])
   }
 
+  @deprecated("Tests deprecated API", since="2.13")
   @Test
   def stream(): Unit = {
     assertEqualsAfterDeserialization(Stream.empty, classOf[Stream[_]])
@@ -126,6 +129,14 @@ class SerializationTest {
   def vector(): Unit = {
     assertEqualsAfterDeserialization(Vector.empty[Int], classOf[Vector[_]])
     assertEqualsAfterDeserialization(Vector(1, 2, 3), classOf[Vector[_]])
+  }
+
+  @Test def t12553(): Unit = {
+    import scala.tools.testkit.AssertUtil.assertThrown
+    val p = new ModuleSerializationProxy(classOf[Object])
+    assertThrown[RuntimeException](_.getCause match {
+      case nsf: NoSuchFieldException => nsf.getMessage.contains("MODULE$")
+    })(serializeDeserialize(p))
   }
 
   private def assertEqualsAfterDeserialization[A](original: Iterable[A], expectedClass: Class[_] = null): Unit = {

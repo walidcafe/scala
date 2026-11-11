@@ -1,3 +1,4 @@
+//> using options -Ystop-after:typer -Ymacro-expand:discard -nowarn
 object Test {
   "" match {
     case Unapply(a, b) =>

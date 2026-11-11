@@ -1,3 +1,4 @@
+//
 import scala.reflect.runtime.universe._
 
 class A {

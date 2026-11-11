@@ -1,3 +1,4 @@
+// was: -Yrecursion 1
 object Comp extends App {
 
    trait Family {

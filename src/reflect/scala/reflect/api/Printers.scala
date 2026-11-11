@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package api
@@ -131,7 +143,7 @@ import java.io.{ PrintWriter, StringWriter }
  * }}}
  *
  * For more details about `Printer`s and other aspects of Scala reflection, see the
- * [[http://docs.scala-lang.org/overviews/reflection/overview.html Reflection Guide]]
+ * [[https://docs.scala-lang.org/overviews/reflection/overview.html Reflection Guide]]
  *
  *  @group ReflectionAPI
  */
@@ -176,12 +188,14 @@ trait Printers { self: Universe =>
     val buffer = new StringWriter()
     val writer = new PrintWriter(buffer)
     val printer = mkPrinter(writer)
-    printTypes.value.map(printTypes => if (printTypes) printer.withTypes else printer.withoutTypes)
-    printIds.value.map(printIds => if (printIds) printer.withIds else printer.withoutIds)
-    printOwners.value.map(printOwners => if (printOwners) printer.withOwners else printer.withoutOwners)
-    printKinds.value.map(printKinds => if (printKinds) printer.withKinds else printer.withoutKinds)
-    printMirrors.value.map(printMirrors => if (printMirrors) printer.withMirrors else printer.withoutMirrors)
-    printPositions.value.map(printPositions => if (printPositions) printer.withPositions else printer.withoutPositions)
+
+    printTypes.value.foreach(if (_) printer.withTypes else printer.withoutTypes)
+    printIds.value.foreach(if (_) printer.withIds else printer.withoutIds)
+    printOwners.value.foreach(if (_) printer.withOwners else printer.withoutOwners)
+    printKinds.value.foreach(if (_) printer.withKinds else printer.withoutKinds)
+    printMirrors.value.foreach(if (_) printer.withMirrors else printer.withoutMirrors)
+    printPositions.value.foreach(if (_) printer.withPositions else printer.withoutPositions)
+
     printer.print(what)
     writer.flush()
     buffer.toString

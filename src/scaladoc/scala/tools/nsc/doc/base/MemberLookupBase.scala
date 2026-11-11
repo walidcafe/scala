@@ -1,8 +1,21 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package doc
 package base
 
 import comment._
+import scala.tools.nsc.Reporting.WarningCategory
 
 /** This trait extracts all required information for documentation from compilation units.
  *  The base trait has been extracted to allow getting light-weight documentation
@@ -30,19 +43,9 @@ trait MemberLookupBase {
   private def explanation: String =
     if (showExplanation) {
       showExplanation = false
-      """
-      |Quick crash course on using Scaladoc links
-      |==========================================
-      |Disambiguating terms and types: Prefix terms with '$' and types with '!' in case both names are in use:
-      | - [[scala.collection.immutable.List!.apply class List's apply method]] and
-      | - [[scala.collection.immutable.List$.apply object List's apply method]]
-      |Disambiguating overloaded members: If a term is overloaded, you can indicate the first part of its signature followed by *:
-      | - [[[scala.collection.immutable.List$.fill[A](Int)(⇒A):List[A]* Fill with a single parameter]]]
-      | - [[[scala.collection.immutable.List$.fill[A](Int,Int)(⇒A):List[List[A]]* Fill with a two parameters]]]
-      |Notes:
-      | - you can use any number of matching square brackets to avoid interference with the signature
-      | - you can use \\. to escape dots in prefixes (don't forget to use * at the end to match the signature!)
-      | - you can use \\# to escape hashes, otherwise they will be considered as delimiters, like dots.""".stripMargin
+      """For an explanation of how to resolve ambiguous links,
+        |see "Resolving Ambiguous Links within Scaladoc Comments" in the Scaladoc for Library Authors guide
+        |(https://docs.scala-lang.org/overviews/scaladoc/for-library-authors.html)""".stripMargin
     } else ""
 
   def memberLookup(pos: Position, query: String, site: Symbol): LinkTo = {
@@ -60,14 +63,6 @@ trait MemberLookupBase {
       case Nil =>
         // (3) Look at external links
         syms.flatMap { case (sym, owner) =>
-          // reconstruct the original link
-          def linkName(sym: Symbol) = {
-            def nameString(s: Symbol) = s.nameString + (if ((s.isModule || s.isModuleClass) && !s.hasPackageFlag) "$" else "")
-            val packageSuffix = if (sym.hasPackageFlag) ".package" else ""
-
-            sym.ownerChain.reverse.filterNot(isRoot(_)).map(nameString(_)).mkString(".") + packageSuffix
-          }
-
           if (sym.isClass || sym.isModule || sym.isTrait || sym.hasPackageFlag)
             findExternalLink(sym, "")
           else if (owner.isClass || owner.isModule || owner.isTrait || owner.hasPackageFlag)
@@ -80,7 +75,7 @@ trait MemberLookupBase {
     links match {
       case Nil =>
         if (warnNoLink)
-          reporter.warning(pos, "Could not find any member to link for \"" + query + "\".")
+          runReporting.warning(pos, "Could not find any member to link for \"" + query + "\".", WarningCategory.Scaladoc, site)
         // (4) if we still haven't found anything, create a tooltip
         Tooltip(query)
       case List(l) => l
@@ -93,10 +88,12 @@ trait MemberLookupBase {
         }
         if (warnNoLink) {
           val allLinks = links.map(linkToString).mkString
-          reporter.warning(pos,
+          runReporting.warning(pos,
             s"""The link target \"$query\" is ambiguous. Several members fit the target:
             |$allLinks
-            |$explanation""".stripMargin)
+            |$explanation""".stripMargin,
+            WarningCategory.Scaladoc,
+            site)
         }
         chosen
     }
@@ -139,8 +136,13 @@ trait MemberLookupBase {
     result
   }
 
+  private def removeBackticks(member: String): String =
+    if (member.matches("(`).+\\1"))
+      member.substring(1, member.length() - 1)
+    else member
+
   private def lookupInTemplate(pos: Position, member: String, container: Symbol, strategy: SearchStrategy): List[Symbol] = {
-    val name = member.stripSuffix("$").stripSuffix("!").stripSuffix("*")
+    val name = removeBackticks(member.stripSuffix("$").stripSuffix("!").stripSuffix("*"))
     def signatureMatch(sym: Symbol): Boolean = externalSignature(sym).startsWith(name)
 
     // We need to cleanup the bogus classes created by the .class file parser. For example, [[scala.Predef]] resolves
@@ -156,9 +158,14 @@ trait MemberLookupBase {
       termSyms
     else if (member.endsWith("!"))
       typeSyms
-    else if (member.endsWith("*"))
-      cleanupBogusClasses(container.info.nonPrivateDecls) filter signatureMatch
-    else
+    else if (member.endsWith("*")) {
+      val declOnlyResults = cleanupBogusClasses(container.info.nonPrivateDecls) filter signatureMatch
+      if (declOnlyResults.nonEmpty) {
+        declOnlyResults
+      } else {
+        cleanupBogusClasses(container.info.nonPrivateMembers.toList) filter signatureMatch
+      }
+    } else
       strategy match {
         case BothTypeAndTerm => termSyms ::: typeSyms
         case OnlyType => typeSyms

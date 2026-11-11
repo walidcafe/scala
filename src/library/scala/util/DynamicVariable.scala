@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2006-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package util
@@ -15,7 +19,7 @@ import java.lang.InheritableThreadLocal
  *  value is found through dynamic scope, but where access to the
  *  variable itself is resolved through static scope.
  *
- *  The current value can be retrieved with the value method. New values
+ *  The current value can be retrieved with the `value` method. New values
  *  should be pushed using the `withValue` method. Values pushed via
  *  `withValue` only stay valid while the `withValue`'s second argument, a
  *  parameterless closure, executes. When the second argument finishes,
@@ -33,19 +37,16 @@ import java.lang.InheritableThreadLocal
  *  of the stack of bindings from the parent thread, and
  *  from then on the bindings for the new thread
  *  are independent of those for the original thread.
- *
- *  @author  Lex Spoon
- *  @since   2.6
  */
 class DynamicVariable[T](init: T) {
   private[this] val tl = new InheritableThreadLocal[T] {
-    override def initialValue = init.asInstanceOf[T with AnyRef]
+    override def initialValue: T with AnyRef = init.asInstanceOf[T with AnyRef]
   }
 
-  /** Retrieve the current value */
+  /** Retrieves the current value */
   def value: T = tl.get.asInstanceOf[T]
 
-  /** Set the value of the variable while executing the specified
+  /** Sets the value of the variable while executing the specified
     * thunk.
     *
     * @param newval The value to which to set the variable
@@ -59,8 +60,8 @@ class DynamicVariable[T](init: T) {
     finally tl set oldval
   }
 
-  /** Change the currently bound value, discarding the old value.
-    * Usually withValue() gives better semantics.
+  /** Changes the currently bound value, discarding the old value.
+    * Usually `withValue()` gives better semantics.
     */
   def value_=(newval: T) = tl set newval
 

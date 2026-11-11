@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 package test
 
 class F1() {

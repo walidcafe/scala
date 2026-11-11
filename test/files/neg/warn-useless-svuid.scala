@@ -1,3 +1,5 @@
+//> using options -Xlint:serial -Xfatal-warnings
+//
 @SerialVersionUID(1L)
 class X
 

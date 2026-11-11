@@ -1,3 +1,6 @@
+
+//> using options -opt:inline:** -Wopt
+//
 class Crashy {
   def g(): Option[Any] = None
 

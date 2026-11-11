@@ -1,7 +1,7 @@
 package scala.reflect.quasiquotes
 
 import org.scalacheck._, Prop._, Gen._, Arbitrary._
-import scala.reflect.runtime.universe._, Flag._
+import scala.reflect.runtime.universe._
 
 object TermConstructionProps extends QuasiquoteProperties("term construction") {
   property("unquote single tree return tree itself") = forAll { (t: Tree) =>
@@ -12,7 +12,7 @@ object TermConstructionProps extends QuasiquoteProperties("term construction") {
     q"if($t1) $t2 else $t3" ≈ If(t1, t2, t3)
   }
 
-  property("unquote trees into ascriptiopn") = forAll { (t1: Tree, t2: Tree) =>
+  property("unquote trees into ascription") = forAll { (t1: Tree, t2: Tree) =>
     q"$t1 : $t2" ≈ Typed(t1, t2)
   }
 
@@ -99,10 +99,10 @@ object TermConstructionProps extends QuasiquoteProperties("term construction") {
 
   def blockInvariant(quote: Tree, trees: List[Tree]) =
     quote ≈ (trees match {
-      case Nil => q"{}"
       case _ :+ last if !last.isTerm => Block(trees, q"()")
-      case head :: Nil => head
-      case init :+ last => Block(init, last)
+      case head :: Nil               => head
+      case init :+ last              => Block(init, last)
+      case _                         => q"{}"
     })
 
   property("unquote list of trees into block (1)") = forAll { (trees: List[Tree]) =>
@@ -232,13 +232,14 @@ object TermConstructionProps extends QuasiquoteProperties("term construction") {
     object O
     implicit val liftO = Liftable[O.type] { _ => q"foo; bar" }
     assertEqAst(q"f(..$O)", "f(foo, bar)")
-  }
+  }: @annotation.nowarn("cat=unused-locals")
+
 
   property("scala/bug#7275 c2") = test {
     object O
     implicit val liftO = Liftable[O.type] { _ => q"{ foo; bar }; { baz; bax }" }
     assertEqAst(q"f(...$O)", "f(foo, bar)(baz, bax)")
-  }
+  }: @annotation.nowarn("cat=unused-locals")
 
   property("scala/bug#7275 d") = test {
     val l = q"a; b" :: q"c; d" :: Nil

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -10,9 +17,10 @@ import scala.tools.nsc.util.JavaCharArrayReader
 import scala.reflect.internal.util._
 import scala.reflect.internal.Chars._
 import JavaTokens._
-import scala.annotation.{ switch, tailrec }
+import scala.annotation.{switch, tailrec}
 import scala.language.implicitConversions
 import scala.collection.immutable.ArraySeq
+import scala.tools.nsc.Reporting.WarningCategory
 
 // Todo merge these better with Scanners
 trait JavaScanners extends ast.parser.ScannersCommon {
@@ -46,12 +54,13 @@ trait JavaScanners extends ast.parser.ScannersCommon {
     /** the base of a number */
     var base: Int = 0
 
-    def copyFrom(td: JavaTokenData) = {
+    def copyFrom(td: JavaTokenData): this.type = {
       this.token = td.token
       this.pos = td.pos
       this.lastPos = td.lastPos
       this.name = td.name
       this.base = td.base
+      this
     }
   }
 
@@ -155,61 +164,59 @@ trait JavaScanners extends ast.parser.ScannersCommon {
       case STRINGLIT  => "string literal"
       case EOF        => "eof"
       case ERROR      => "something"
-      case AMP        => "`&'"
-      case AMPAMP     => "`&&'"
-      case AMPEQ      => "`&='"
-      case ASTERISK   => "`*'"
-      case ASTERISKEQ => "`*='"
-      case AT         => "`@'"
-      case BANG       => "`!'"
-      case BANGEQ     => "`!='"
-      case BAR        => "`|'"
-      case BARBAR     => "`||'"
-      case BAREQ      => "`|='"
-      case COLON      => "`:'"
-      case COMMA      => "`,'"
-      case DOT        => "`.'"
-      case DOTDOTDOT  => "`...'"
-      case EQEQ       => "`=='"
-      case EQUALS     => "`='"
-      case GT         => "`>'"
-      case GTEQ       => "`>='"
-      case GTGT       => "`>>'"
-      case GTGTEQ     => "`>>='"
-      case GTGTGT     => "`>>>'"
-      case GTGTGTEQ   => "`>>>='"
-      case HAT        => "`^'"
-      case HATEQ      => "`^='"
-      case LBRACE     => "`{'"
-      case LBRACKET   => "`['"
-      case LPAREN     => "`('"
-      case LT         => "`<'"
-      case LTEQ       => "`<='"
-      case LTLT       => "`<<'"
-      case LTLTEQ     => "`<<='"
-      case MINUS      => "`-'"
-      case MINUSEQ    => "`-='"
-      case MINUSMINUS => "`--'"
-      case PERCENT    => "`%'"
-      case PERCENTEQ  => "`%='"
-      case PLUS       => "`+'"
-      case PLUSEQ     => "`+='"
-      case PLUSPLUS   => "`++'"
-      case QMARK      => "`?'"
-      case RBRACE     => "`}'"
-      case RBRACKET   => "`]'"
-      case RPAREN     => "`)'"
-      case SEMI       => "`;'"
-      case SLASH      => "`/'"
-      case SLASHEQ    => "`/='"
-      case TILDE      => "`~'"
+      case AMP        => "`&`"
+      case AMPAMP     => "`&&`"
+      case AMPEQ      => "`&=`"
+      case ASTERISK   => "`*`"
+      case ASTERISKEQ => "`*=`"
+      case AT         => "`@`"
+      case BANG       => "`!`"
+      case BANGEQ     => "`!=`"
+      case BAR        => "`|`"
+      case BARBAR     => "`||`"
+      case BAREQ      => "`|=`"
+      case COLON      => "`:`"
+      case COMMA      => "`,`"
+      case DOT        => "`.`"
+      case DOTDOTDOT  => "`...`"
+      case EQEQ       => "`==`"
+      case EQUALS     => "`=`"
+      case GT         => "`>`"
+      case GTEQ       => "`>=`"
+      case GTGT       => "`>>`"
+      case GTGTEQ     => "`>>=`"
+      case GTGTGT     => "`>>>`"
+      case GTGTGTEQ   => "`>>>=`"
+      case HAT        => "`^`"
+      case HATEQ      => "`^=`"
+      case LBRACE     => "`{`"
+      case LBRACKET   => "`[`"
+      case LPAREN     => "`(`"
+      case LT         => "`<`"
+      case LTEQ       => "`<=`"
+      case LTLT       => "`<<`"
+      case LTLTEQ     => "`<<=`"
+      case MINUS      => "`-`"
+      case MINUSEQ    => "`-=`"
+      case MINUSMINUS => "`--`"
+      case PERCENT    => "`%`"
+      case PERCENTEQ  => "`%=`"
+      case PLUS       => "`+`"
+      case PLUSEQ     => "`+=`"
+      case PLUSPLUS   => "`++`"
+      case QMARK      => "`?`"
+      case RBRACE     => "`}`"
+      case RBRACKET   => "`]`"
+      case RPAREN     => "`)`"
+      case SEMI       => "`;`"
+      case SLASH      => "`/`"
+      case SLASHEQ    => "`/=`"
+      case TILDE      => "`~`"
       case _ =>
-        try ("`" + tokenName(token) + "'")
+        try s"`${tokenName(token)}`"
         catch {
-          case _: ArrayIndexOutOfBoundsException =>
-            "`<" + token + ">'"
-          case _: NullPointerException =>
-            "`<(" + token + ")>'"
+          case _: ArrayIndexOutOfBoundsException => s"`<$token>`"
+          case _: NullPointerException           => s"`<($token)>`"
         }
     }
   }
@@ -231,6 +238,9 @@ trait JavaScanners extends ast.parser.ScannersCommon {
     /** append Unicode character to "lit" buffer
     */
     protected def putChar(c: Char): Unit = { cbuf.append(c) }
+
+    /** Remove the last N characters from the buffer */
+    private def popNChars(n: Int): Unit = if (n > 0) cbuf.setLength(cbuf.length - n)
 
     /** Clear buffer and set name */
     private def setName(): Unit = {
@@ -301,6 +311,9 @@ trait JavaScanners extends ast.parser.ScannersCommon {
                 if (in.ch == 'x' || in.ch == 'X') {
                   in.next()
                   base = 16
+                } else if (in.ch == 'b' || in.ch == 'B') {
+                  in.next()
+                  base = 2
                 } else {
                   base = 8
                 }
@@ -315,15 +328,26 @@ trait JavaScanners extends ast.parser.ScannersCommon {
 
               case '\"' =>
                 in.next()
-                while (in.ch != '\"' && (in.isUnicode || in.ch != CR && in.ch != LF && in.ch != SU)) {
-                  getlitch()
-                }
-                if (in.ch == '\"') {
-                  token = STRINGLIT
-                  setName()
-                  in.next()
+                if (in.ch != '\"') { // "..." non-empty string literal
+                  while (in.ch != '\"' && (in.isUnicode || in.ch != CR && in.ch != LF && in.ch != SU)) {
+                    getlitch()
+                  }
+                  if (in.ch == '\"') {
+                    token = STRINGLIT
+                    setName()
+                    in.next()
+                  } else {
+                    syntaxError("unclosed string literal")
+                  }
                 } else {
-                  syntaxError("unclosed string literal")
+                  in.next()
+                  if (in.ch != '\"') { // "" empty string literal
+                    token = STRINGLIT
+                    setName()
+                  } else {
+                    in.next()
+                    getTextBlock()
+                  }
                 }
                 return
 
@@ -513,7 +537,7 @@ trait JavaScanners extends ast.parser.ScannersCommon {
                   if (in.ch == '.') {
                     in.next()
                     token = DOTDOTDOT
-                  } else syntaxError("`.' character expected")
+                  } else syntaxError("`.` character expected")
                 }
                 return
 
@@ -657,53 +681,183 @@ trait JavaScanners extends ast.parser.ScannersCommon {
 // Literals -----------------------------------------------------------------
 
     /** read next character in character or string literal:
-    */
-    protected def getlitch() =
-      if (in.ch == '\\') {
+      *
+      * @param scanOnly skip emitting errors or adding to the literal buffer
+      * @param inTextBlock is this for a text block?
+      */
+    protected def getlitch(scanOnly: Boolean = false, inTextBlock: Boolean = false): Unit =
+      getlitch(in = in, scanOnly = scanOnly, inTextBlock = inTextBlock)
+
+    private def getlitch(in: JavaCharArrayReader, scanOnly: Boolean, inTextBlock: Boolean): Unit = {
+      def octal: Char = {
+        val leadch: Char = in.ch
+        var oct: Int = digit2int(in.ch, 8)
         in.next()
         if ('0' <= in.ch && in.ch <= '7') {
-          val leadch: Char = in.ch
-          var oct: Int = digit2int(in.ch, 8)
+          oct = oct * 8 + digit2int(in.ch, 8)
           in.next()
-          if ('0' <= in.ch && in.ch <= '7') {
+          if (leadch <= '3' && '0' <= in.ch && in.ch <= '7') {
             oct = oct * 8 + digit2int(in.ch, 8)
             in.next()
-            if (leadch <= '3' && '0' <= in.ch && in.ch <= '7') {
-              oct = oct * 8 + digit2int(in.ch, 8)
-              in.next()
-            }
           }
-          putChar(oct.asInstanceOf[Char])
-        } else {
-          in.ch match {
-            case 'b'  => putChar('\b')
-            case 't'  => putChar('\t')
-            case 'n'  => putChar('\n')
-            case 'f'  => putChar('\f')
-            case 'r'  => putChar('\r')
-            case '\"' => putChar('\"')
-            case '\'' => putChar('\'')
-            case '\\' => putChar('\\')
-            case _    =>
-              syntaxError(in.cpos - 1, "invalid escape character")
-              putChar(in.ch)
-          }
-          in.next()
         }
-      } else  {
-        putChar(in.ch)
+        oct.asInstanceOf[Char]
+      } // end octal
+      // -1 for an escaped line terminator in a text block, which contributes no character
+      def greatEscape: Int = {
+        in.next()
+        if ('0' <= in.ch && in.ch <= '7') octal
+        else {
+          val x: Int = in.ch match {
+            case 'b'  => '\b'
+            case 's'  => ' '
+            case 't'  => '\t'
+            case 'n'  => '\n'
+            case 'f'  => '\f'
+            case 'r'  => '\r'
+            case '\"' => '\"'
+            case '\'' => '\''
+            case '\\' => '\\'
+            case CR | LF if inTextBlock =>
+              if (!scanOnly) in.next()
+              -1
+            case _    =>
+              if (!scanOnly) syntaxError(in.cpos - 1, "invalid escape character")
+              in.ch
+          }
+          if (x != -1) in.next()
+          x
+        }
+      } // end greatEscape
+      // begin getlitch
+      val c: Int =
+        if (in.ch == '\\') greatEscape
+        else {
+          val res = in.ch
+          in.next()
+          res
+        }
+      if (c != -1 && !scanOnly) putChar(c.toChar)
+    } // end getlitch
+
+    /** read a triple-quote delimited text block, starting after the first three
+      * double quotes
+      */
+    private def getTextBlock(): Unit = {
+      // Open delimiter is followed by optional space, then a newline
+      while (in.ch == ' ' || in.ch == '\t' || in.ch == FF) {
         in.next()
       }
+      if (in.ch != LF && in.ch != CR) { // CR-LF is already normalized into LF by `JavaCharArrayReader`
+        syntaxError("illegal text block open delimiter sequence, missing line terminator")
+        return
+      }
+      in.next()
+
+      /* Do a lookahead scan over the full text block to:
+       *   - compute common white space prefix
+       *   - find the offset where the text block ends
+       */
+      var commonWhiteSpacePrefix = Int.MaxValue
+      var blockEndOffset = 0
+      var blockClosed = false
+      var lineWhiteSpacePrefix = 0
+      var lineIsOnlyWhitespace = true
+      val lookahead = in.lookahead
+      while (!blockClosed && (lookahead.isUnicode || lookahead.ch != SU)) {
+        if (lookahead.ch == '\"') { // Potential end of the block
+          lookahead.next()
+          if (lookahead.ch == '\"') {
+            lookahead.next()
+            if (lookahead.ch == '\"') {
+              blockClosed = true
+              commonWhiteSpacePrefix = commonWhiteSpacePrefix min lineWhiteSpacePrefix
+              blockEndOffset = lookahead.cpos - 2
+            }
+          }
+
+          // Not the end of the block - just a single or double " character
+          if (!blockClosed) {
+            lineIsOnlyWhitespace = false
+          }
+        } else if (lookahead.ch == CR || lookahead.ch == LF) { // new line in the block
+          lookahead.next()
+          if (!lineIsOnlyWhitespace) {
+            commonWhiteSpacePrefix = commonWhiteSpacePrefix min lineWhiteSpacePrefix
+          }
+          lineWhiteSpacePrefix = 0
+          lineIsOnlyWhitespace = true
+        } else if (lineIsOnlyWhitespace && Character.isWhitespace(lookahead.ch)) { // extend white space prefix
+          lookahead.next()
+          lineWhiteSpacePrefix += 1
+        } else {
+          lineIsOnlyWhitespace = false
+          getlitch(lookahead, scanOnly = true, inTextBlock = true)
+        }
+      }
+
+      // Bail out if the block never did have an end
+      if (!blockClosed) {
+        syntaxError("unclosed text block")
+        return
+      }
+
+      // Second pass: construct the literal string value this time
+      while (in.cpos < blockEndOffset) {
+        // Drop the line's leading whitespace
+        var remainingPrefix = commonWhiteSpacePrefix
+        while (remainingPrefix > 0 && in.ch != CR && in.ch != LF && in.cpos < blockEndOffset) {
+          in.next()
+          remainingPrefix -= 1
+        }
+
+        var trailingWhitespaceLength = 0
+        var escapedNewline = false         // Does the line end with `\`?
+        while (in.ch != CR && in.ch != LF && in.cpos < blockEndOffset && !escapedNewline) {
+          if (Character.isWhitespace(in.ch)) {
+            trailingWhitespaceLength += 1
+          } else {
+            trailingWhitespaceLength = 0
+          }
+
+          // Detect if the line is about to end with `\`
+          if (in.ch == '\\' && {
+            val lookahead = in.copy
+            lookahead.next()
+            lookahead.ch == CR || lookahead.ch == LF
+          }) {
+            escapedNewline = true
+          }
+
+          getlitch(scanOnly = false, inTextBlock = true)
+        }
+
+        // Drop the line's trailing whitespace
+        popNChars(trailingWhitespaceLength)
+
+        // Normalize line terminators
+        if ((in.ch == CR || in.ch == LF) && !escapedNewline) {
+          in.next()
+          putChar('\n')
+        }
+      }
+
+      token = STRINGLIT
+      setName()
+
+      // Trailing """
+      in.next()
+      in.next()
+      in.next()
+    }
 
     /** read fractional part and exponent of floating point number
      *  if one is present.
      */
     protected def getFraction(): Unit = {
       token = DOUBLELIT
-      while ('0' <= in.ch && in.ch <= '9') {
-        putChar(in.ch)
-        in.next()
-      }
+      base = 10 // also for a literal like `09.5`, or one starting with `.`
+      getDigits(10)
       if (in.ch == 'e' || in.ch == 'E') {
         val lookahead = in.copy
         lookahead.next()
@@ -717,13 +871,34 @@ trait JavaScanners extends ast.parser.ScannersCommon {
             putChar(in.ch)
             in.next()
           }
-          while ('0' <= in.ch && in.ch <= '9') {
-            putChar(in.ch)
-            in.next()
-          }
+          getDigits(10)
         }
         token = DOUBLELIT
       }
+      getFloatSuffix()
+    }
+
+    /** read the fraction and binary exponent of a hexadecimal floating point number */
+    protected def getHexFraction(): Unit = {
+      token = DOUBLELIT
+      if (in.ch == '.') {
+        putChar(in.ch)
+        in.next()
+        getDigits(16)
+      }
+      if (in.ch == 'p' || in.ch == 'P') {
+        putChar(in.ch)
+        in.next()
+        if (in.ch == '+' || in.ch == '-') {
+          putChar(in.ch)
+          in.next()
+        }
+        getDigits(10)
+      }
+      getFloatSuffix()
+    }
+
+    private def getFloatSuffix(): Unit = {
       if (in.ch == 'd' || in.ch == 'D') {
         putChar(in.ch)
         in.next()
@@ -775,7 +950,11 @@ trait JavaScanners extends ast.parser.ScannersCommon {
       val limit: Double =
         if (token == DOUBLELIT) Double.MaxValue else Float.MaxValue
       try {
-        val value: Double = java.lang.Double.valueOf(name.toString).doubleValue()
+        val literal = if (base == 16) "0x" + name else name.toString
+        // a float literal is rounded to float directly, not via double (JLS 3.10.2)
+        val value: Double =
+          if (token == FLOATLIT) java.lang.Float.parseFloat(literal).toDouble
+          else java.lang.Double.parseDouble(literal)
         if (value > limit)
           syntaxError("floating point number too large")
         if (negated) -value else value
@@ -785,14 +964,20 @@ trait JavaScanners extends ast.parser.ScannersCommon {
           0.0
       }
     }
+    /** read digits, skipping the underscores that may separate them */
+    private def getDigits(base: Int): Unit =
+      while (digit2int(in.ch, base) >= 0 || in.ch == '_') {
+        if (in.ch != '_') putChar(in.ch)
+        in.next()
+      }
+
     /** read a number into name and set base
     */
     protected def getNumber(): Unit = {
-      while (digit2int(in.ch, if (base < 10) 10 else base) >= 0) {
-        putChar(in.ch)
-        in.next()
-      }
+      getDigits(if (base < 10) 10 else base)
       token = INTLIT
+      if (base == 16 && (in.ch == '.' || in.ch == 'p' || in.ch == 'P'))
+        return getHexFraction()
       if (base <= 10 && in.ch == '.') {
         val lookahead = in.copy
         lookahead.next()
@@ -874,11 +1059,12 @@ trait JavaScanners extends ast.parser.ScannersCommon {
   }
 
   class JavaUnitScanner(unit: CompilationUnit) extends JavaScanner {
-    in = new JavaCharArrayReader(new ArraySeq.ofChar(unit.source.content), !settings.nouescape.value, syntaxError)
+    in = new JavaCharArrayReader(new ArraySeq.ofChar(unit.source.content), decodeUni = true, syntaxError)
     init()
     def error(pos: Int, msg: String) = reporter.error(pos, msg)
     def incompleteInputError(pos: Int, msg: String) = currentRun.parsing.incompleteInputError(pos, msg)
-    def deprecationWarning(pos: Int, msg: String, since: String) = currentRun.reporting.deprecationWarning(pos, msg, since)
+    def warning(pos: Int, msg: String, category: WarningCategory) = runReporting.warning(pos, msg, category, site = "")
+    def deprecationWarning(pos: Int, msg: String, since: String, actions: List[CodeAction]) = runReporting.deprecationWarning(pos, msg, since, site = "", origin = "", actions)
     implicit def g2p(pos: Int): Position = Position.offset(unit.source, pos)
   }
 }

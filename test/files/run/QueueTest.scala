@@ -3,14 +3,14 @@ import scala.collection.mutable.Queue
 object Test {
 
   def main(args: Array[String]): Unit = {
-    testEmpty
-    testEnqueue
-    testTwoEnqueues
-    testFewEnqueues
-    testMoreEnqueues
+    testEmpty()
+    testEnqueue()
+    testTwoEnqueues()
+    testFewEnqueues()
+    testMoreEnqueues()
   }
 
-  def testEmpty: Unit = {
+  def testEmpty(): Unit = {
     val queue = new Queue[Int]
 
     assert(queue.isEmpty)
@@ -19,7 +19,7 @@ object Test {
     assert(queue.dequeueFirst(_ > 500) == None)
     assert(queue.dequeueAll(_ > 500).isEmpty)
 
-    queue.clear
+    queue.clear()
     assert(queue.isEmpty)
     assert(queue.size == 0)
     assert(queue.length == 0)
@@ -27,7 +27,7 @@ object Test {
     assert(queue.dequeueAll(_ > 500).isEmpty)
   }
 
-  def testEnqueue: Unit = {
+  def testEnqueue(): Unit = {
     val queue = new Queue[Int]
 
     queue.enqueue(10)
@@ -39,7 +39,7 @@ object Test {
     assert(queue.init.isEmpty)
     assert(queue.tail.isEmpty)
 
-    queue.clear
+    queue.clear()
     assert(queue.isEmpty)
     assert(queue.length == 0)
 
@@ -49,7 +49,7 @@ object Test {
     assert(queue.head == 11)
     assert(queue.front == 11)
 
-    val deq = queue.dequeue
+    val deq = queue.dequeue()
     assert(deq == 11)
     assert(queue.isEmpty)
     assert(queue.length == 0)
@@ -64,7 +64,7 @@ object Test {
     assert(queue.isEmpty && queue.length == 0)
   }
 
-  def testTwoEnqueues: Unit = {
+  def testTwoEnqueues(): Unit = {
     val queue = new Queue[Int]
     queue.enqueue(30)
     queue.enqueue(40)
@@ -82,7 +82,7 @@ object Test {
     assert(queue.isEmpty)
   }
 
-  def testFewEnqueues: Unit = {
+  def testFewEnqueues(): Unit = {
     val queue = new Queue[Int]
     queue.enqueue(10)
     queue.enqueue(20)
@@ -93,7 +93,7 @@ object Test {
     assert(queue.last == 20)
     assert(queue.front == 10)
 
-    val ten = queue.dequeue
+    val ten = queue.dequeue()
     assert(ten == 10)
     assert(queue.length == 1)
 
@@ -138,12 +138,12 @@ object Test {
     assert(queue.front == 80)
   }
 
-  def testMoreEnqueues: Unit = {
+  def testMoreEnqueues(): Unit = {
     val queue = new Queue[Int]
     for (i <- 0 until 10) queue.enqueue(i * 2)
 
     for (i <- 0 until 10) {
-      val top = queue.dequeue
+      val top = queue.dequeue()
       assert(top == i * 2)
       assert(queue.length == 10 - i - 1)
     }
@@ -159,7 +159,7 @@ object Test {
     assert(queue.length == 3)
     assert(queue.nonEmpty)
 
-    queue.clear
+    queue.clear()
     assert(queue.length == 0)
     assert(queue.isEmpty)
 
@@ -223,7 +223,7 @@ object Test {
     assert(queue.head == 0)
     assert(queue.last == 3)
 
-    queue.dequeue
+    queue.dequeue()
     assert(queue.head == 3)
 
     queue.enqueue(9)
@@ -232,7 +232,7 @@ object Test {
     assert(queue.length == 1)
     assert(queue.head == 9)
 
-    queue.clear
+    queue.clear()
     for (i <- -100 until 100) queue.enqueue(i * i + i % 7 + 5)
     assert(queue.length == 200)
 

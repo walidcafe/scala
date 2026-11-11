@@ -1,10 +1,10 @@
 package scala.reflect.internal
 
-import scala.tools.testing.AssertUtil._
+import scala.tools.testkit.AssertUtil._
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
 import org.junit.Test
-import org.junit.Assert._
+import org.junit.Assert.{ assertThrows => _, _ }
 import scala.tools.nsc.symtab.SymbolTableForUnitTesting
 
 @RunWith(classOf[JUnit4])
@@ -12,15 +12,15 @@ class NamesTest {
   object symbolTable extends SymbolTableForUnitTesting
   import symbolTable._
 
-  val h1 = newTermName("hai")
-  val h2 = newTermName("hai")
-  val f  = newTermName("fisch")
+  val h1 = TermName("hai")
+  val h2 = TermName("hai")
+  val f  = TermName("fisch")
 
   val h1y = h1.toTypeName
-  val h2y = newTypeName("hai")
-  val fy  = newTypeName("fisch")
+  val h2y = TypeName("hai")
+  val fy  = TypeName("fisch")
 
-  val uy = newTypeName("uhu")
+  val uy = TypeName("uhu")
   val u  = uy.toTermName // calling toTermName after constructing a typeName. This tests the fact
                          // that creating a typeName always also first creates a termName. There is
                          // an assertion for that in toTermName.
@@ -35,62 +35,62 @@ class NamesTest {
 
   @Test
   def termNamesNotEqualsTypeNames(): Unit = {
-    assert(h1 ne h1y)
-    assert(h1 != h1y)
-    assert(h2 ne h2y)
-    assert(h2 != h2y)
+    assertTrue((h1: AnyRef) ne h1y)
+    assertTrue((h1: AnyRef) != h1y)
+    assertTrue((h2: AnyRef) ne h2y)
+    assertTrue((h2: AnyRef) != h2y)
   }
 
   @Test
   def termNamesTypeNamesSameRange(): Unit = {
-    assert(h1.start == h1y.start && h1.length == h1y.length)
-    assert(h2.start == h2y.start && h2.length == h2y.length)
-    assert(u.start == uy.start && u.length == uy.length)
+    assertTrue(h1.start == h1y.start && h1.length == h1y.length)
+    assertTrue(h2.start == h2y.start && h2.length == h2y.length)
+    assertTrue(u.start == uy.start && u.length == uy.length)
   }
 
   @Test
   def testLookupTypeName(): Unit = {
-    assert(lookupTypeName("hai".toCharArray) eq h1y)
-    assert(lookupTypeName("fisch".toCharArray) eq fy)
-    assert(lookupTypeName("uhu".toCharArray) eq uy)
+    assertTrue(lookupTypeName("hai".toCharArray) eq h1y)
+    assertTrue(lookupTypeName("fisch".toCharArray) eq fy)
+    assertTrue(lookupTypeName("uhu".toCharArray) eq uy)
 
     assertThrows[AssertionError](lookupTypeName("dog".toCharArray), _ contains "not yet created")
-    val d = newTermName("dog")
+    val d = TermName("dog")
     assertThrows[AssertionError](lookupTypeName("dog".toCharArray), _ contains "not yet created")
     val dy = d.toTypeName
-    assert(lookupTypeName("dog".toCharArray) eq dy)
+    assertTrue(lookupTypeName("dog".toCharArray) eq dy)
   }
 
   @Test
   def emptyName(): Unit = {
-    val z = newTermName("")
+    val z = TermName("")
     val zy = z.toTypeName
     assertEquals(z.toString, "")
     assertEquals(zy.toString, "")
-    assert(z eq newTermName(""))
-    assert(zy eq newTypeName(""))
+    assertTrue(z eq TermName(""))
+    assertTrue(zy eq TypeName(""))
   }
 
   @Test
   def subNameTest(): Unit = {
     val i = f.subName(1, f.length)
-    assert(i.start == (f.start + 1) && i.length == (f.length - 1))
-    assert(f.subName(0, f.length) eq f)
+    assertTrue(i.start == (f.start + 1) && i.length == (f.length - 1))
+    assertTrue(f.subName(0, f.length) eq f)
 
     val iy = fy.subName(1, fy.length)
-    assert(iy.start == (fy.start + 1) && iy.length == (fy.length - 1))
-    assert(fy.subName(0, fy.length) eq fy)
+    assertTrue(iy.start == (fy.start + 1) && iy.length == (fy.length - 1))
+    assertTrue(fy.subName(0, fy.length) eq fy)
 
-    assert(f.subName(1,1) eq newTermName(""))
-    assert(f.subName(1, 0) eq newTermName(""))
+    assertTrue(f.subName(1,1) eq TermName(""))
+    assertTrue(f.subName(1, 0) eq TermName(""))
 
     assertThrows[IllegalArgumentException](f.subName(0 - f.start - 1, 1))
   }
 
   @Test
   def stringEqualsTest(): Unit = {
-    assert(h1 string_== h2)
-    assert(h1 string_== h1y)
+    assertTrue(h1 string_== h2)
+    assertTrue(h1 string_== h1y)
   }
 
   @Test
@@ -116,5 +116,28 @@ class NamesTest {
     check("ab", "ba")
     check("", "x")
     check("", "xy")
+  }
+
+  @Test
+  def `name.lastIndexOf is name.toString.lastIndexOf`(): Unit = {
+    def check(name: Name, sub: String): Unit = {
+      val javaResult = name.toString.lastIndexOf(sub)
+      val nameResult = name.lastIndexOf(sub)
+      assertEquals(s""""$name".lastIndexOf("$sub")""", javaResult, nameResult)
+    }
+    val d = TermName("x$default$42")
+    val e = TermName("")
+    check(f,  "isch")  // the isch in fisch
+    check(fy, "isch")
+    check(f,  "")
+    check(e,  "")
+    check(e,  "abc")
+    check(f,  "ischbiisch")
+    check(fy, "ischbiisch")
+    check(fy, "fyou")
+    check(f,  "disch")
+    check(fy, "disch")
+    check(f,  "hai")   // happens to be earlier in name array
+    check(d,  "$$")    // likely to be earlier in name array
   }
 }

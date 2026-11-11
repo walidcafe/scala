@@ -1,3 +1,5 @@
+//> using options -Xlint -Xfatal-warnings
+//
 package object foo {
   implicit class Bar[T](val x: T) extends AnyVal {
     def bippy = 1

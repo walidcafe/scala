@@ -1,6 +1,18 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.partest
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 import scala.tools.asm
 import asm._
 import asm.tree._
@@ -18,6 +30,7 @@ sealed trait AsmNode[+T] {
   def characteristics = f"$name%15s $desc%-30s$accessString$sigString"
   def erasedCharacteristics = f"$name%15s $desc%-30s$accessString"
 
+  @annotation.nowarn("cat=deprecation") // deprecated on JDK 27
   private def accessString     = if (access == 0) "" else " " + Modifier.toString(access)
   private def sigString        = if (signature == null) "" else " " + signature
   override def toString        = characteristics

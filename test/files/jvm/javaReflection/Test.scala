@@ -7,7 +7,7 @@ getSimpleName / getCanonicalName / isAnonymousClass / isLocalClass / isSynthetic
     therefore give surprising answers or may even throw an exception.
 
     In particular, the method "getSimpleName" assumes that classes are named after the Java spec
-      http://docs.oracle.com/javase/specs/jls/se8/html/jls-13.html#jls-13.1
+      https://docs.oracle.com/javase/specs/jls/se8/html/jls-13.html#jls-13.1
 
     Consider the following Scala example:
       class A { object B { class C } }
@@ -58,15 +58,21 @@ object Test {
     else r.toString
   } catch { case e: InternalError => e.getMessage }
 
-  def assertNotAnonymous(c: Class[_]) = {
-    val an = try {
+  /** Assert on Java 8, but on later versions, just print if assert would fail. */
+  def assert8(b: => Boolean, msg: => Any) =
+    if (!scala.util.Properties.isJavaAtLeast(9))
+      assert(b, msg)
+    else if (!b)
+      println(s"assert not $msg")
+
+  def assertNotAnonymous(c: Class[_]) = assert8(!isAnonymous(c), s"$c is anonymous")
+  def isAnonymous(c: Class[_]) =
+    try {
       c.isAnonymousClass
     } catch {
       // isAnonymousClass is implemented using getSimpleName, which may throw.
       case e: InternalError => false
     }
-    assert(!an, c)
-  }
 
   def ruleMemberOrLocal(c: Class[_]) = {
     // if it throws, then it's because of the call from isLocalClass to isAnonymousClass.
@@ -85,7 +91,7 @@ object Test {
 
   def ruleScalaAnonClassIsLocal(c: Class[_]) = {
     if (c.getName contains "$anon$")
-      assert(c.isLocalClass, c)
+      assert8(c.isLocalClass, c)
   }
 
   def ruleScalaAnonFunInlineIsLocal(c: Class[_]) = {

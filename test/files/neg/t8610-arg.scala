@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings -Xlint nullary-unit
+//
 
 class Named(var name: String)
 

@@ -1,18 +1,22 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package runtime
 
 /**
- * Dummy class which exist only to satisfy the JVM. It corresponds to
+ * Dummy class which exists only to satisfy the JVM. It corresponds to
  * `scala.Null`. If such type appears in method signatures, it is erased
  * to this one. A private constructor ensures that Java code can't create
- * subclasses. The only value of type Null$ should be null
+ * subclasses. The only value of type `Null$` should be `null`
  */
 sealed abstract class Null$ private ()

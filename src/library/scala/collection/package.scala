@@ -1,6 +1,16 @@
-package scala
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
-import scala.language.higherKinds
+package scala
 
 package object collection {
   @deprecated("Use Iterable instead of Traversable", "2.13.0")
@@ -46,12 +56,12 @@ package object collection {
    *  In Scalac, we can provide `Any`, as `Any` is kind-polymorphic. In dotty this is not allowed.
    *  In dotty, we can provide `[X] => Any`. But Scalac does not know lambda syntax.
    */
-  type AnyConstr[X] = Any
+  private[scala] type AnyConstr[X] = Any
 
   /** An extractor used to head/tail deconstruct sequences. */
   object +: {
-    /** Splits a sequence into head :+ tail.
-      * @return Some((head, tail)) if sequence is non-empty. None otherwise.
+    /** Splits a sequence into head +: tail.
+      * @return `Some((head, tail))` if sequence is non-empty. `None` otherwise.
       */
     def unapply[A, CC[_] <: Seq[_], C <: SeqOps[A, CC, C]](t: C with SeqOps[A, CC, C]): Option[(A, C)] =
       if(t.isEmpty) None
@@ -61,7 +71,7 @@ package object collection {
   /** An extractor used to init/last deconstruct sequences. */
   object :+ {
     /** Splits a sequence into init :+ last.
-      * @return Some((init, last)) if sequence is non-empty. None otherwise.
+      * @return `Some((init, last))` if sequence is non-empty. `None` otherwise.
       */
     def unapply[A, CC[_] <: Seq[_], C <: SeqOps[A, CC, C]](t: C with SeqOps[A, CC, C]): Option[(C, A)] =
       if(t.isEmpty) None

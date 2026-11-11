@@ -1,11 +1,11 @@
-view-bounds-deprecation.scala:2: warning: view bounds are deprecated; use an implicit parameter instead.
+view-bounds-deprecation.scala:4: warning: view bounds are deprecated; use an implicit parameter instead.
   example: instead of `def f[A <% Int](a: A)` use `def f[A](a: A)(implicit ev: A => Int)`
   def f[A <% Int](a: A) = null
           ^
-view-bounds-deprecation.scala:3: warning: view bounds are deprecated; use an implicit parameter instead.
+view-bounds-deprecation.scala:5: warning: view bounds are deprecated; use an implicit parameter instead.
   example: instead of `def f[A <% Int](a: A)` use `def f[A](a: A)(implicit ev: A => Int)`
   def g[C, B <: C, A <% B : Numeric](a: A) = null
                      ^
-error: No warnings can be incurred under -Xfatal-warnings.
-two warnings found
-one error found
+error: No warnings can be incurred under -Werror.
+2 warnings
+1 error

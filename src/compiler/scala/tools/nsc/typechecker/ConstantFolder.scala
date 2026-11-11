@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -9,23 +16,28 @@ package typechecker
 
 import java.lang.ArithmeticException
 
+import scala.tools.nsc.Reporting.WarningCategory
+import scala.util.control.ControlThrowable
+
 /** This class ...
  *
  *  @author Martin Odersky
- *  @version 1.0
  */
 abstract class ConstantFolder {
 
   val global: Global
   import global._
 
+  val foldableUnaryOps: Set[Name] = nme.isEncodedUnary ++ List(nme.toChar, nme.toInt, nme.toLong, nme.toFloat, nme.toDouble)
+
   // We can fold side effect free terms and their types
   object FoldableTerm {
+    @inline private def effectless(sym: Symbol): Boolean = sym != null && !sym.isLazy && (sym.isVal || sym.isGetter && sym.accessed.isVal)
+
     def unapply(tree: Tree): Option[Constant] = tree match {
-      case Literal(x) => Some(x)
-      case term if term.symbol != null && !term.symbol.isLazy && (term.symbol.isVal || (term.symbol.isGetter && term.symbol.accessed.isVal)) =>
-        extractConstant(term.tpe)
-      case _ => None
+      case Literal(x)                      => Some(x)
+      case term if effectless(term.symbol) => extractConstant(term.tpe)
+      case _                               => None
     }
   }
 
@@ -46,60 +58,79 @@ abstract class ConstantFolder {
     }
 
   /** If tree is a constant operation, replace with result. */
-  def apply(tree: Tree): Tree = {
+  def apply(tree: Tree, site: Symbol): Tree = if (isPastTyper) tree else
     try {
       tree match {
-        case Apply(Select(FoldableTerm(x), op), List(FoldableTerm(y))) => fold(tree, foldBinop(op, x, y), true)
-        case Apply(Select(ConstantTerm(x), op), List(ConstantTerm(y))) => fold(tree, foldBinop(op, x, y), false)
-        case Select(FoldableTerm(x), op) => fold(tree, foldUnop(op, x), true)
-        case Select(ConstantTerm(x), op) => fold(tree, foldUnop(op, x), false)
+        case Apply(Select(FoldableTerm(x), op), List(FoldableTerm(y))) => fold(tree, safelyFoldBinop(tree, site)(op, x, y), foldable = true)
+        case Apply(Select(ConstantTerm(x), op), List(ConstantTerm(y))) => fold(tree, safelyFoldBinop(tree, site)(op, x, y), foldable = false)
+        case Select(FoldableTerm(x), op) => fold(tree, foldUnop(op, x), foldable = true)
+        case Select(ConstantTerm(x), op) => fold(tree, foldUnop(op, x), foldable = false)
         case _ => tree
       }
     } catch {
       case e: ArithmeticException =>
         if (settings.warnConstant)
-          warning(tree.pos, s"Evaluation of a constant expression results in an arithmetic error: ${e.getMessage}")
+          runReporting.warning(tree.pos, s"Evaluation of a constant expression results in an arithmetic error: ${e.getMessage}", WarningCategory.LintConstant, site)
         tree
     }
-  }
 
-  /** If tree is a constant value that can be converted to type `pt`, perform
-   *  the conversion.
+  /** If tree is a constant value that can be converted to type `pt`, perform the conversion.
    */
-  def apply(tree: Tree, pt: Type): Tree = {
-    val orig = apply(tree)
+  def apply(tree: Tree, pt: Type, site: Symbol): Tree = {
+    val orig = apply(tree, site)
     orig.tpe match {
-      case tp@ConstantType(x) => fold(orig, x convertTo pt, isConstantType(tp))
+      case tp@ConstantType(x) => fold(orig, x.convertTo(pt), foldable = isConstantType(tp))
       case _ => orig
     }
   }
 
+  /** Set the computed constant type.
+   */
   private def fold(orig: Tree, folded: Constant, foldable: Boolean): Tree =
-    if ((folded eq null) || folded.tag == UnitTag) orig
-    else if(foldable) orig setType FoldableConstantType(folded)
-    else orig setType LiteralType(folded)
+    if (folded == null || folded.tag == UnitTag) orig
+    else orig.setType {
+      if (foldable) FoldableConstantType(folded)
+      else LiteralType(folded)
+    }
 
-  private def foldUnop(op: Name, x: Constant): Constant = (op, x.tag) match {
-    case (nme.UNARY_!, BooleanTag) => Constant(!x.booleanValue)
-
-    case (nme.UNARY_~ , IntTag    ) => Constant(~x.intValue)
-    case (nme.UNARY_~ , LongTag   ) => Constant(~x.longValue)
-
-    case (nme.UNARY_+ , IntTag    ) => Constant(+x.intValue)
-    case (nme.UNARY_+ , LongTag   ) => Constant(+x.longValue)
-    case (nme.UNARY_+ , FloatTag  ) => Constant(+x.floatValue)
-    case (nme.UNARY_+ , DoubleTag ) => Constant(+x.doubleValue)
-
-    case (nme.UNARY_- , IntTag    ) => Constant(-x.intValue)
-    case (nme.UNARY_- , LongTag   ) => Constant(-x.longValue)
-    case (nme.UNARY_- , FloatTag  ) => Constant(-x.floatValue)
-    case (nme.UNARY_- , DoubleTag ) => Constant(-x.doubleValue)
-
-    case _ => null
+  private[nsc] def foldUnop(op: Name, x: Constant): Constant = {
+    val N = nme
+    import N._
+    val value: Any = op match {
+      case UNARY_! => if (x.tag == BooleanTag) !x.booleanValue else null
+      case UNARY_~ => x.tag match {
+        case IntTag  => ~x.intValue
+        case LongTag => ~x.longValue
+        case _ => null
+      }
+      case UNARY_+ => x.tag match {
+        case IntTag    => +x.intValue
+        case LongTag   => +x.longValue
+        case FloatTag  => +x.floatValue
+        case DoubleTag => +x.doubleValue
+        case _ => null
+      }
+      case UNARY_- => x.tag match {
+        case IntTag    => -x.intValue
+        case LongTag   => -x.longValue
+        case FloatTag  => -x.floatValue
+        case DoubleTag => -x.doubleValue
+        case _ => null
+      }
+      case _ if x.isNumeric => op match {
+        case `toChar`   => x.charValue
+        case `toInt`    => x.intValue
+        case `toLong`   => x.longValue
+        case `toFloat`  => x.floatValue
+        case `toDouble` => x.doubleValue
+        case _ => null
+      }
+      case _ => null
+    }
+    if (value != null) Constant(value) else null
   }
 
-  /** These are local helpers to keep foldBinop from overly taxing the
-   *  optimizer.
+  /** These are local helpers to keep foldBinop from overly taxing the optimizer.
    */
   private def foldBooleanOp(op: Name, x: Constant, y: Constant): Constant = op match {
     case nme.ZOR  => Constant(x.booleanValue | y.booleanValue)
@@ -124,10 +155,18 @@ abstract class ConstantFolder {
     case nme.GT  => Constant(x.intValue > y.intValue)
     case nme.LE  => Constant(x.intValue <= y.intValue)
     case nme.GE  => Constant(x.intValue >= y.intValue)
-    case nme.ADD => Constant(x.intValue + y.intValue)
-    case nme.SUB => Constant(x.intValue - y.intValue)
-    case nme.MUL => Constant(x.intValue * y.intValue)
-    case nme.DIV => Constant(x.intValue / y.intValue)
+    case nme.ADD => Constant(safely(Math.addExact(x.intValue, y.intValue), x.intValue + y.intValue))
+    case nme.SUB => Constant(safely(Math.subtractExact(x.intValue, y.intValue), x.intValue - y.intValue))
+    case nme.MUL => Constant(safely(Math.multiplyExact(x.intValue, y.intValue), x.intValue * y.intValue))
+    case nme.DIV =>
+      val xd = x.intValue
+      val yd = y.intValue
+      val value =
+        if (yd == 0) xd / yd // Math.divideExact(xd, yd) // de-optimize
+        else if (yd == -1 && xd == Int.MinValue)
+          safely(throw new ArithmeticException("integer overflow"), xd / yd)
+        else xd / yd
+      Constant(value)
     case nme.MOD => Constant(x.intValue % y.intValue)
     case _       => null
   }
@@ -136,13 +175,13 @@ abstract class ConstantFolder {
     case nme.XOR => Constant(x.longValue ^ y.longValue)
     case nme.AND => Constant(x.longValue & y.longValue)
     case nme.LSL if x.tag <= IntTag
-                 => Constant(x.intValue << y.longValue)
+                 => Constant(x.intValue << y.longValue.toInt)
     case nme.LSL => Constant(x.longValue <<  y.longValue)
     case nme.LSR if x.tag <= IntTag
-                 => Constant(x.intValue >>> y.longValue)
+                 => Constant(x.intValue >>> y.longValue.toInt)
     case nme.LSR => Constant(x.longValue >>> y.longValue)
     case nme.ASR if x.tag <= IntTag
-                 => Constant(x.intValue >> y.longValue)
+                 => Constant(x.intValue >> y.longValue.toInt)
     case nme.ASR => Constant(x.longValue >> y.longValue)
     case nme.EQ  => Constant(x.longValue == y.longValue)
     case nme.NE  => Constant(x.longValue != y.longValue)
@@ -150,10 +189,18 @@ abstract class ConstantFolder {
     case nme.GT  => Constant(x.longValue > y.longValue)
     case nme.LE  => Constant(x.longValue <= y.longValue)
     case nme.GE  => Constant(x.longValue >= y.longValue)
-    case nme.ADD => Constant(x.longValue + y.longValue)
-    case nme.SUB => Constant(x.longValue - y.longValue)
-    case nme.MUL => Constant(x.longValue * y.longValue)
-    case nme.DIV => Constant(x.longValue / y.longValue)
+    case nme.ADD => Constant(safely(Math.addExact(x.longValue, y.longValue), x.longValue + y.longValue))
+    case nme.SUB => Constant(safely(Math.subtractExact(x.longValue, y.longValue), x.longValue - y.longValue))
+    case nme.MUL => Constant(safely(Math.multiplyExact(x.longValue, y.longValue), x.longValue * y.longValue))
+    case nme.DIV =>
+      val xd = x.longValue
+      val yd = y.longValue
+      val value =
+        if (yd == 0) xd / yd // Math.divideExact(xd, yd) // de-optimize
+        else if (yd == -1 && xd == Long.MinValue)
+          safely(throw new ArithmeticException("long overflow"), xd / yd)
+        else xd / yd
+      Constant(value)
     case nme.MOD => Constant(x.longValue % y.longValue)
     case _       => null
   }
@@ -202,4 +249,22 @@ abstract class ConstantFolder {
       case _                                        => null
     }
   }
+  /** Folds a binary operation as the JVM evaluates it: integer overflow wraps around silently.
+   *  Division by zero throws an `ArithmeticException`.
+   */
+  private[nsc] def foldBinopUnchecked(op: Name, x: Constant, y: Constant): Constant =
+    try foldBinop(op, x, y)
+    catch { case e: ConstFoldException => Constant(e.value) }
+  private def safelyFoldBinop(tree: Tree, site: Symbol)(op: Name, x: Constant, y: Constant): Constant =
+    try foldBinop(op, x, y)
+    catch {
+      case e: ConstFoldException =>
+        if (settings.warnConstant)
+          runReporting.warning(tree.pos, s"Evaluation of a constant expression results in an arithmetic error: ${e.getMessage}, using ${e.value}", WarningCategory.LintConstant, site)
+        Constant(e.value)
+    }
+  private def safely[A](exact: => A, inexact: A): A =
+    try exact
+    catch { case e: ArithmeticException => throw new ConstFoldException(e.getMessage, inexact) }
+  private class ConstFoldException(msg: String, val value: Any) extends ControlThrowable(msg)
 }

@@ -1,0 +1,11 @@
+@media print {
+  * {
+    text-decoration: none;
+    font-family: system-ui, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
+    border-width: 0px;
+    margin: 0px;
+  }
+  #textfilter, #package, #subpackage-spacer, #memberfilter, #filterby, div#definition .big-circle {
+    display: none !important;
+  }
+}

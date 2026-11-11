@@ -1,11 +1,21 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.collection
 
-import java.io.{ObjectInputStream, ObjectOutputStream}
-import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
-
-import scala.collection.mutable.{ArrayBuffer, Builder, ImmutableBuilder, StringBuilder}
+import scala.collection.mutable.{ArrayBuffer, ArrayBuilder, Builder, ImmutableBuilder}
 import scala.annotation.tailrec
 import scala.annotation.unchecked.uncheckedVariance
+import scala.runtime.Statics
 
 /** Iterators are data structures that allow to iterate over a sequence
   * of elements. They have a `hasNext` method for checking
@@ -30,55 +40,60 @@ import scala.annotation.unchecked.uncheckedVariance
   * {{{
   * def f[A](it: Iterator[A]) = {
   *   if (it.hasNext) {            // Safe to reuse "it" after "hasNext"
-  *     it.next                    // Safe to reuse "it" after "next"
+  *     it.next()                  // Safe to reuse "it" after "next"
   *     val remainder = it.drop(2) // it is *not* safe to use "it" again after this line!
   *     remainder.take(2)          // it is *not* safe to use "remainder" after this line!
   *   } else it
   * }
   * }}}
   *
-  * @define consumesIterator
-  * After calling this method, one should discard the iterator it was called
-  * on. Using it is undefined and subject to change.
-  *
-  *  @define willNotTerminateInf
-  *  Note: will not terminate for infinite iterators.
-  *  @define mayNotTerminateInf
+  * @define mayNotTerminateInf
   *  Note: may not terminate for infinite iterators.
-  *  @define preservesIterator
+  * @define preservesIterator
   *  The iterator remains valid for further use whatever result is returned.
-  *  @define consumesIterator
+  * @define consumesIterator
   *  After calling this method, one should discard the iterator it was called
   *  on. Using it is undefined and subject to change.
-  *  @define consumesAndProducesIterator
+  * @define consumesAndProducesIterator
   *  After calling this method, one should discard the iterator it was called
   *  on, and use only the iterator that was returned. Using the old iterator
   *  is undefined, subject to change, and may result in changes to the new
   *  iterator as well.
-  *  @define consumesTwoAndProducesOneIterator
+  * @define consumesTwoAndProducesOneIterator
   *  After calling this method, one should discard the iterator it was called
   *  on, as well as the one passed as a parameter, and use only the iterator
   *  that was returned. Using the old iterators is undefined, subject to change,
   *  and may result in changes to the new iterator as well.
-  *  @define consumesOneAndProducesTwoIterators
+  * @define consumesOneAndProducesTwoIterators
   *  After calling this method, one should discard the iterator it was called
   *  on, and use only the iterators that were returned. Using the old iterator
   *  is undefined, subject to change, and may result in changes to the new
   *  iterators as well.
-  *  @define consumesTwoIterators
-  *  After calling this method, one should discard the iterator it was called
-  *  on, as well as the one passed as parameter. Using the old iterators is
-  *  undefined and subject to change.
-  *  @define undefinedorder
-  *  The order in which operations are performed on elements is unspecified
-  *  and may be nondeterministic.
-  *  @define coll iterator
+  * @define coll iterator
   */
 trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Iterator[A]] { self =>
+
+  /** Checks if there is a next element available.
+    *
+    * @return `true` if there is a next element, `false` otherwise
+    * @note   Reuse: $preservesIterator
+    */
   def hasNext: Boolean
+
+  @deprecated("hasDefiniteSize on Iterator is the same as isEmpty", "2.13.0")
+  @`inline` override final def hasDefiniteSize = isEmpty
+
+  /** Returns the next element and advances the iterator.
+    *
+    * @throws NoSuchElementException if there is no next element.
+    * @return the next element.
+    * @note   Reuse: Advances the iterator, which may exhaust the elements. It is valid to
+    *         make additional calls on the iterator.
+    */
   @throws[NoSuchElementException]
   def next(): A
-  def iterator = this
+
+  @inline final def iterator = this
 
   /** Wraps the value of `next()` in an option.
     *
@@ -114,6 +129,12 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
       hd
     }
 
+    override def knownSize = {
+      val thisSize = self.knownSize
+      if (thisSize >= 0 && hdDefined) thisSize + 1
+      else thisSize
+    }
+
     def hasNext =
       hdDefined || self.hasNext
 
@@ -125,133 +146,184 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
   }
 
   /** A flexible iterator for transforming an `Iterator[A]` into an
-   *  Iterator[Seq[A]], with configurable sequence size, step, and
-   *  strategy for dealing with elements which don't fit evenly.
+   *  `Iterator[Seq[A]]`, with configurable sequence size, step, and
+   *  strategy for dealing with remainder elements which don't fit evenly
+   *  into the last group.
    *
-   *  Typical uses can be achieved via methods `grouped` and `sliding`.
+   *  A `GroupedIterator` is yielded by `grouped` and by `sliding`,
+   *  where the `step` may differ from the group `size`.
    */
   class GroupedIterator[B >: A](self: Iterator[B], size: Int, step: Int) extends AbstractIterator[immutable.Seq[B]] {
 
-    require(size >= 1 && step >= 1, f"size=$size%d and step=$step%d, but both must be positive")
+    require(size >= 1 && step >= 1, s"size=$size and step=$step, but both must be positive")
 
-    private[this] var buffer: ArrayBuffer[B] = ArrayBuffer()  // the buffer
+    private[this] var buffer: Array[B] = null                 // current result
+    private[this] var prev: Array[B] = null                   // if sliding, overlap from previous result
+    private[this] var first = true                            // if !first, advancing may skip ahead
     private[this] var filled = false                          // whether the buffer is "hot"
-    private[this] var _partial = true                         // whether we deliver short sequences
-    private[this] var pad: Option[() => B] = None             // what to pad short sequences with
+    private[this] var partial = true                          // whether to emit partial sequence
+    private[this] var padding: () => B = null                 // what to pad short sequences with
+    private[this] def pad = padding != null                   // irrespective of partial flag
+    private[this] def newBuilder = {
+      val b = ArrayBuilder.make[Any]
+      val k = self.knownSize
+      if (k > 0) b.sizeHint(k min size)                       // if k < size && !partial, buffer will grow on padding
+      b
+    }
 
-    /** Public functions which can be used to configure the iterator before use.
+    /** Specifies a fill element used to pad a partial segment
+     *  so that all segments have the same size.
      *
-     *  Pads the last segment if necessary so that all segments will
-     *  have the same size.
+     *  Any previous setting of `withPartial` is ignored,
+     *  as the last group will always be padded to `size` elements.
+     *
+     *  The by-name argument is evaluated for each fill element.
      *
      *  @param x The element that will be appended to the last segment, if necessary.
      *  @return  The same iterator, and ''not'' a new iterator.
      *  @note    This method mutates the iterator it is called on, which can be safely used afterwards.
-     *  @note    This method is mutually exclusive with `withPartial(true)`.
+     *  @note    This method is mutually exclusive with `withPartial`.
+     *  @group Configuration
      */
     def withPadding(x: => B): this.type = {
-      pad = Some(() => x)
+      padding = () => x
+      partial = true        // redundant, as padding always results in complete segment
       this
     }
-    /** Public functions which can be used to configure the iterator before use.
+    /** Specify whether to drop the last segment if it has less than `size` elements.
      *
-     *  Select whether the last segment may be returned with less than `size`
-     *  elements. If not, some elements of the original iterator may not be
-     *  returned at all.
+     *  If this flag is `false`, elements of a partial segment at the end of the iterator
+     *  are not returned.
+     *
+     *  The flag defaults to `true`.
+     *
+     *  Any previous setting of `withPadding` is ignored,
+     *  as the last group will never be padded.
+     *  A partial segment is either retained or dropped, per the flag.
      *
      *  @param x `true` if partial segments may be returned, `false` otherwise.
      *  @return  The same iterator, and ''not'' a new iterator.
      *  @note    This method mutates the iterator it is called on, which can be safely used afterwards.
      *  @note    This method is mutually exclusive with `withPadding`.
+     *  @group Configuration
      */
     def withPartial(x: Boolean): this.type = {
-      _partial = x
-      if (_partial == true) // reset pad since otherwise it will take precedence
-        pad = None
-
+      partial = x
+      padding = null
       this
     }
 
-    /** For reasons which remain to be determined, calling
-     *  self.take(n).toSeq cause an infinite loop, so we have
-     *  a slight variation on take for local usage.
-     *  NB: self.take.toSeq is slice.toStream, lazily built on self,
-     *  so a subsequent self.hasNext would not test self after the
-     *  group was consumed.
+    /** Eagerly fetch `size` elements to buffer.
+     *
+     *  If buffer is dirty and stepping, copy prefix.
+     *  If skipping, skip ahead.
+     *  Fetch remaining elements.
+     *  If unable to deliver size, then pad if padding enabled, otherwise drop segment.
+     *  Returns true if successful in delivering `count` elements,
+     *  or padded segment, or partial segment.
      */
-    private def takeDestructively(size: Int): Seq[B] = {
-      val buf = new ArrayBuffer[B]
-      var i = 0
-      // The order of terms in the following condition is important
-      // here as self.hasNext could be blocking
-      while (i < size && self.hasNext) {
-        buf += self.next()
-        i += 1
+    private def fulfill(): Boolean = {
+      val builder = newBuilder
+      var done = false
+      // keep prefix of previous buffer if stepping
+      if (prev != null) builder.addAll(prev)
+      // skip ahead
+      if (!first && step > size) {
+        var dropping = step - size
+        while (dropping > 0 && self.hasNext) {
+          self.next(): Unit
+          dropping -= 1
+        }
+        done = dropping > 0   // skip failed
       }
-      buf
-    }
-
-    private def padding(x: Int) = immutable.ArraySeq.untagged.fill(x)(pad.get())
-    private def gap = (step - size) max 0
-
-    private def go(count: Int) = {
-      val prevSize = buffer.size
-      def isFirst = prevSize == 0
-      // If there is padding defined we insert it immediately
-      // so the rest of the code can be oblivious
-      val xs: Seq[B] = {
-        val res = takeDestructively(count)
-        // was: extra checks so we don't calculate length unless there's reason
-        // but since we took the group eagerly, just use the fast length
-        val shortBy = count - res.length
-        if (shortBy > 0 && pad.isDefined) res ++ padding(shortBy) else res
-      }
-      lazy val len = xs.length
-      lazy val incomplete = len < count
-
-      // if 0 elements are requested, or if the number of newly obtained
-      // elements is less than the gap between sequences, we are done.
-      def deliver(howMany: Int) = {
-        (howMany > 0 && (isFirst || len > gap)) && {
-          if (!isFirst)
-            buffer dropInPlace (step min prevSize)
-
-          val available =
-            if (isFirst) len
-            else howMany min (len - gap)
-
-          buffer ++= (xs takeRight available)
-          filled = true
-          true
+      var index = builder.length
+      if (!done) {
+        // advance to rest of segment if possible
+        while (index < size && self.hasNext) {
+          builder.addOne(self.next())
+          index += 1
+        }
+        // if unable to complete segment, pad if possible
+        if (index < size && pad) {
+          builder.sizeHint(size)
+          while (index < size) {
+            builder.addOne(padding())
+            index += 1
+          }
         }
       }
-
-      if (xs.isEmpty) false                         // self ran out of elements
-      else if (_partial) deliver(len min size)      // if _partial is true, we deliver regardless
-      else if (incomplete) false                    // !_partial && incomplete means no more seqs
-      else if (isFirst) deliver(len)                // first element
-      else deliver(step min size)                   // the typical case
+      // segment must have data, and must be complete unless they allow partial
+      val ok = index > 0 && (partial || index == size)
+      if (ok) buffer = builder.result().asInstanceOf[Array[B]]
+      else prev = null
+      ok
     }
 
     // fill() returns false if no more sequences can be produced
-    private def fill(): Boolean = {
-      if (!self.hasNext) false
-      // the first time we grab size, but after that we grab step
-      else if (buffer.isEmpty) go(size)
-      else go(step)
-    }
+    private def fill(): Boolean = filled || { filled = self.hasNext && fulfill() ; filled }
 
-    def hasNext = filled || fill()
+    def hasNext = fill()
+
     @throws[NoSuchElementException]
-    def next(): immutable.Seq[B] = {
-      if (!filled)
-        fill()
+    def next(): immutable.Seq[B] =
+      if (!fill()) Iterator.empty.next()
+      else {
+        filled = false
+        // if stepping, retain overlap in prev
+        if (step < size) {
+          if (first) prev = buffer.drop(step)
+          else if (buffer.length == size) Array.copy(src = buffer, srcPos = step, dest = prev, destPos = 0, length = size - step)
+          else prev = null
+        }
+        val res = immutable.ArraySeq.unsafeWrapArray(buffer).asInstanceOf[immutable.ArraySeq[B]]
+        buffer = null
+        first = false
+        res
+      }
+  }
 
-      if (!filled)
-        throw new NoSuchElementException("next on empty iterator")
-      filled = false
-      immutable.ArraySeq.unsafeWrapArray(buffer.toArray[Any]).asInstanceOf[immutable.ArraySeq[B]]
+  /** A copy of this $coll with an element value appended until a given target length is reached.
+   *
+   *  @param   len   the target length
+   *  @param   elem  the padding value
+   *  @tparam B      the element type of the returned $coll.
+   *  @return a new $coll consisting of
+   *          all elements of this $coll followed by the minimal number of occurrences of `elem` so
+   *          that the resulting collection has a length of at least `len`.
+   */
+  def padTo[B >: A](len: Int, elem: B): Iterator[B] = new AbstractIterator[B] {
+    private[this] var i = 0
+
+    override def knownSize: Int = {
+      val thisSize = self.knownSize
+      if (thisSize < 0) -1
+      else thisSize max (len - i)
     }
+
+    def next(): B = {
+      val b =
+        if (self.hasNext) self.next()
+        else if (i < len) elem
+        else Iterator.empty.next()
+      i += 1
+      b
+    }
+
+    def hasNext: Boolean = self.hasNext || i < len
+  }
+
+  /** Partitions this iterator in two iterators according to a predicate.
+   *
+   *  @param p the predicate on which to partition
+   *  @return  a pair of iterators: the iterator that satisfies the predicate
+   *           `p` and the iterator that does not.
+   *           The relative order of the elements in the resulting iterators
+   *           is the same as in the original iterator.
+   *  @note    Reuse: $consumesOneAndProducesTwoIterators
+   */
+  def partition(p: A => Boolean): (Iterator[A], Iterator[A]) = {
+    val (a, b) = duplicate
+    (a filter p, b filterNot p)
   }
 
   /** Returns an iterator which groups this iterator into fixed size
@@ -277,25 +349,28 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
    *  the second argument `step` is how far to advance the window
    *  on each iteration. The `step` defaults to `1`.
    *
-   *  The default `GroupedIterator` can be configured to either
+   *  The returned `GroupedIterator` can be configured to either
    *  pad a partial result to size `size` or suppress the partial
    *  result entirely.
    *
    *  Example usages:
    *  {{{
-   *    // Returns List(List(1, 2, 3), List(2, 3, 4), List(3, 4, 5))
+   *    // Returns List(ArraySeq(1, 2, 3), ArraySeq(2, 3, 4), ArraySeq(3, 4, 5))
    *    (1 to 5).iterator.sliding(3).toList
-   *    // Returns List(List(1, 2, 3, 4), List(4, 5))
+   *    // Returns List(ArraySeq(1, 2, 3, 4), ArraySeq(4, 5))
    *    (1 to 5).iterator.sliding(4, 3).toList
-   *    // Returns List(List(1, 2, 3, 4))
+   *    // Returns List(ArraySeq(1, 2, 3, 4))
    *    (1 to 5).iterator.sliding(4, 3).withPartial(false).toList
-   *    // Returns List(List(1, 2, 3, 4), List(4, 5, 20, 25))
+   *    // Returns List(ArraySeq(1, 2, 3, 4), ArraySeq(4, 5, 20, 25))
    *    // Illustrating that withPadding's argument is by-name.
    *    val it2 = Iterator.iterate(20)(_ + 5)
    *    (1 to 5).iterator.sliding(4, 3).withPadding(it2.next).toList
    *  }}}
    *
-   *  @return An iterator producing `Seq[B]`s of size `size`, except the
+   *  @param size the number of elements per group
+   *  @param step the distance between the first elements of successive
+   *         groups
+   *  @return A `GroupedIterator` producing `Seq[B]`s of size `size`, except the
    *          last element (which may be the only element) will be truncated
    *          if there are fewer than `size` elements remaining to be grouped.
    *          This behavior can be configured.
@@ -310,6 +385,12 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     // and then that will be modified to iterate through the collection
     private[this] var current: Iterator[B] =
       new AbstractIterator[B] {
+        override def knownSize = {
+          val thisSize = self.knownSize
+
+          if (thisSize < 0) -1
+          else thisSize + 1
+        }
         def hasNext: Boolean = true
         def next(): B = {
           // Here we change our self-reference to a new iterator that iterates through `self`
@@ -320,19 +401,34 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
               acc
             }
             def hasNext: Boolean = self.hasNext
+            override def knownSize = self.knownSize
           }
           z
         }
       }
+    override def knownSize = current.knownSize
     def next(): B = current.next()
     def hasNext: Boolean = current.hasNext
   }
 
+  @deprecated("Call scanRight on an Iterable instead.", "2.13.0")
+  def scanRight[B](z: B)(op: (A, B) => B): Iterator[B] = ArrayBuffer.from(this).scanRight(z)(op).iterator
+ 
+  /** Finds index of the first element satisfying some predicate after or at some start index.
+    *
+    *  $mayNotTerminateInf
+    *
+    *  @param  p     the predicate used to test elements.
+    *  @param  from   the start index
+    *  @return the index `>= from` of the first element of this $coll that satisfies the predicate `p`,
+    *           or `-1`, if none exists.
+    *  @note   Reuse: $consumesIterator
+    */
   def indexWhere(p: A => Boolean, from: Int = 0): Int = {
     var i = math.max(from, 0)
-    drop(from)
-    while (hasNext) {
-      if (p(next())) return i
+    val dropped = drop(from)
+    while (dropped.hasNext) {
+      if (p(dropped.next())) return i
       i += 1
     }
     -1
@@ -374,7 +470,10 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     -1
   }
 
-  final def length: Int = size
+  @inline final def length: Int = size
+
+  @deprecatedOverriding("isEmpty is defined as !hasNext; override hasNext instead", "2.13.0")
+  override def isEmpty: Boolean = !hasNext
 
   def filter(p: A => Boolean): Iterator[A] = filterImpl(p, isFlipped = false)
 
@@ -385,12 +484,14 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     private[this] var hdDefined: Boolean = false
 
     def hasNext: Boolean = hdDefined || {
-      do {
+      if (!self.hasNext) return false
+      hd = self.next()
+      while (p(hd) == isFlipped) {
         if (!self.hasNext) return false
         hd = self.next()
-      } while (p(hd) == isFlipped)
+      } 
       hdDefined = true
-      true
+      true 
     }
 
     def next() =
@@ -414,9 +515,9 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     */
   def withFilter(p: A => Boolean): Iterator[A] = filter(p)
 
-  def collect[B](pf: PartialFunction[A, B]): Iterator[B] = new AbstractIterator[B] {
+  def collect[B](pf: PartialFunction[A, B]): Iterator[B] = new AbstractIterator[B] with (A => B) {
     // Manually buffer to avoid extra layer of wrapping with buffered
-    private[this] var hd: A = _
+    private[this] var hd: B = _
 
     // Little state machine to keep track of where we are
     // Seek = 0; Found = 1; Empty = -1
@@ -424,17 +525,24 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     // BE REALLY CAREFUL TO KEEP COMMENTS AND NUMBERS IN SYNC!
     private[this] var status = 0/*Seek*/
 
+    def apply(value: A): B = Statics.pfMarker.asInstanceOf[B]
+
     def hasNext = {
+      val marker = Statics.pfMarker
       while (status == 0/*Seek*/) {
         if (self.hasNext) {
-          hd = self.next()
-          if (pf.isDefinedAt(hd)) status = 1/*Found*/
+          val x = self.next()
+          val v = pf.applyOrElse(x, this)
+          if (marker ne v.asInstanceOf[AnyRef]) {
+            hd = v
+            status = 1/*Found*/
+          }
         }
         else status = -1/*Empty*/
       }
       status == 1/*Found*/
     }
-    def next() = if (hasNext) { status = 0/*Seek*/; pf(hd) } else Iterator.empty.next()
+    def next() = if (hasNext) { status = 0/*Seek*/; hd } else Iterator.empty.next()
   }
 
   /**
@@ -461,25 +569,15 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     private[this] var nextElementDefined: Boolean = false
     private[this] var nextElement: A = _
 
-    def hasNext: Boolean = {
-      @tailrec
-      def loop(): Boolean = {
-        if (!self.hasNext) false
-        else {
-          nextElement = self.next()
-          val y = f(nextElement)
-          if (traversedValues.contains(y)) {
-            loop()
-          } else {
-            traversedValues += y
-            nextElementDefined = true
-            true
-          }
-        }
+    def hasNext: Boolean = nextElementDefined || (self.hasNext && {
+      val a = self.next()
+      if (traversedValues.add(f(a))) {
+        nextElement = a
+        nextElementDefined = true
+        true
       }
-
-      nextElementDefined || loop()
-    }
+      else hasNext
+    })
 
     def next(): A =
       if (hasNext) {
@@ -491,19 +589,44 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
   }
 
   def map[B](f: A => B): Iterator[B] = new AbstractIterator[B] {
+    override def knownSize = self.knownSize
     def hasNext = self.hasNext
     def next() = f(self.next())
   }
 
   def flatMap[B](f: A => IterableOnce[B]): Iterator[B] = new AbstractIterator[B] {
-    private[this] var myCurrent: Iterator[B] = Iterator.empty
-    private def current = {
-      while (!myCurrent.hasNext && self.hasNext)
-        myCurrent = f(self.next()).iterator
-      myCurrent
+    private[this] var cur: Iterator[B] = Iterator.empty
+    /** Trillium logic boolean: -1 = unknown, 0 = false, 1 = true */
+    private[this] var _hasNext: Int = -1
+
+    def nextCur(): Unit = {
+      cur = Iterator.empty
+      cur = f(self.next()).iterator
+      _hasNext = -1
     }
-    def hasNext = current.hasNext
-    def next() = current.next()
+
+    def hasNext: Boolean = {
+      if (_hasNext == -1) {
+        while (!cur.hasNext) {
+          if (!self.hasNext) {
+            _hasNext = 0
+            // since we know we are exhausted, we can release cur for gc, and as well replace with
+            // static Iterator.empty which will support efficient subsequent `hasNext`/`next` calls
+            cur = Iterator.empty
+            return false
+          }
+          nextCur()
+        }
+        _hasNext = 1
+        true
+      } else _hasNext == 1
+    }
+    def next(): B = {
+      if (hasNext) {
+        _hasNext = -1
+      }
+      cur.next()
+    }
   }
 
   def flatten[B](implicit ev: A => IterableOnce[B]): Iterator[B] =
@@ -513,16 +636,7 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
 
   @`inline` final def ++ [B >: A](xs: => IterableOnce[B]): Iterator[B] = concat(xs)
 
-  def take(n: Int): Iterator[A] = new AbstractIterator[A] {
-    private[this] var i = 0
-    def hasNext = self.hasNext && i < n
-    def next() =
-      if (hasNext) {
-        i += 1
-        self.next()
-      }
-      else Iterator.empty.next()
-  }
+  def take(n: Int): Iterator[A] = sliceIterator(0, n max 0)
 
   def takeWhile(p: A => Boolean): Iterator[A] = new AbstractIterator[A] {
     private[this] var hd: A = _
@@ -538,14 +652,7 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     def next() = if (hasNext) { hdDefined = false; hd } else Iterator.empty.next()
   }
 
-  def drop(n: Int): Iterator[A] = {
-    var i = 0
-    while (i < n && hasNext) {
-      next()
-      i += 1
-    }
-    this
-  }
+  def drop(n: Int): Iterator[A] = sliceIterator(n, -1)
 
   def dropWhile(p: A => Boolean): Iterator[A] = new AbstractIterator[A] {
     // Magic value: -1 = hasn't dropped, 0 = found first, 1 = defer to parent iterator
@@ -578,6 +685,11 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
       else Iterator.empty.next()
   }
 
+  /**
+    * @inheritdoc
+    *
+    * @note    Reuse: $consumesOneAndProducesTwoIterators
+    */
   def span(p: A => Boolean): (Iterator[A], Iterator[A]) = {
     /*
      * Giving a name to following iterator (as opposed to trailing) because
@@ -585,7 +697,7 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
      * iterator is referring (the finish() method) and thus triggering
      * handling of structural calls. It's not what's intended here.
      */
-    class Leading extends AbstractIterator[A] {
+    final class Leading extends AbstractIterator[A] {
       private[this] var lookahead: mutable.Queue[A] = null
       private[this] var hd: A = _
       /* Status is kept with magic numbers
@@ -618,6 +730,7 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
         }
         else Iterator.empty.next()
       }
+      @tailrec
       def finish(): Boolean = status match {
         case -2 => status = -1 ; true
         case -1 => false
@@ -692,12 +805,19 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
 
   def zip[B](that: IterableOnce[B]): Iterator[(A, B)] = new AbstractIterator[(A, B)] {
     val thatIterator = that.iterator
+    override def knownSize = self.knownSize min thatIterator.knownSize
     def hasNext = self.hasNext && thatIterator.hasNext
     def next() = (self.next(), thatIterator.next())
   }
 
   def zipAll[A1 >: A, B](that: IterableOnce[B], thisElem: A1, thatElem: B): Iterator[(A1, B)] = new AbstractIterator[(A1, B)] {
     val thatIterator = that.iterator
+    override def knownSize = {
+      val thisSize = self.knownSize
+      val thatSize = thatIterator.knownSize
+      if (thisSize < 0 || thatSize < 0) -1
+      else thisSize max thatSize
+    }
     def hasNext = self.hasNext || thatIterator.hasNext
     def next(): (A1, B) = {
       val next1 = self.hasNext
@@ -709,6 +829,7 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
 
   def zipWithIndex: Iterator[(A, Int)] = new AbstractIterator[(A, Int)] {
     var idx = 0
+    override def knownSize = self.knownSize
     def hasNext = self.hasNext
     def next() = {
       val ret = (self.next(), idx)
@@ -717,14 +838,20 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     }
   }
 
+  /** Checks whether corresponding elements of the given iterable collection
+   *  compare equal (with respect to `==`) to elements of this $coll.
+   *
+   *  @param that  the collection to compare
+   *  @tparam B    the type of the elements of collection `that`.
+   *  @return `true` if both collections contain equal elements in the same order, `false` otherwise.
+   */
   def sameElements[B >: A](that: IterableOnce[B]): Boolean = {
     val those = that.iterator
-    while (hasNext && those.hasNext)
-      if (next() != those.next())
-        return false
-    // At that point we know that *at least one* iterator has no next element
-    // If *both* of them have no elements then the collections are the same
-    hasNext == those.hasNext
+    while (hasNext) {
+      if (!those.hasNext) return false
+      if (next() != those.next()) return false
+    }
+    !those.hasNext
   }
 
   /** Creates two new iterators that both iterate over the same elements
@@ -744,6 +871,13 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
     val gap = new scala.collection.mutable.Queue[A]
     var ahead: Iterator[A] = null
     class Partner extends AbstractIterator[A] {
+      override def knownSize: Int = self.synchronized {
+        val thisSize = self.knownSize
+
+        if (this eq ahead) thisSize
+        else if (thisSize < 0 || gap.knownSize < 0) -1
+        else thisSize + gap.knownSize
+      }
       def hasNext: Boolean = self.synchronized {
         (this ne ahead) && !gap.isEmpty || self.hasNext
       }
@@ -780,36 +914,52 @@ trait Iterator[+A] extends IterableOnce[A] with IterableOnceOps[A, Iterator, Ite
   def patch[B >: A](from: Int, patchElems: Iterator[B], replaced: Int): Iterator[B] =
     new AbstractIterator[B] {
       private[this] var origElems = self
-      private[this] var i = if (from > 0) from else 0 // Counts down, switch to patch on 0, -1 means use patch first
-      def hasNext: Boolean = {
-        if (i == 0) {
+      // > 0  => that many more elems from `origElems` before switching to `patchElems`
+      //   0  => need to drop elems from `origElems` and start using `patchElems`
+      //  -1  => have dropped elems from `origElems`, will be using `patchElems` until it's empty
+      //         and then using what's left of `origElems` after the drop
+      private[this] var state = if (from > 0) from else 0
+
+      // checks state and handles 0 => -1
+      @inline private[this] def switchToPatchIfNeeded(): Unit =
+        if (state == 0) {
           origElems = origElems drop replaced
-          i = -1
+          state = -1
         }
+
+      def hasNext: Boolean = {
+        switchToPatchIfNeeded()
         origElems.hasNext || patchElems.hasNext
       }
 
       def next(): B = {
-        if (i == 0) {
-          origElems = origElems drop replaced
-          i = -1
-        }
-        if (i < 0) {
+        switchToPatchIfNeeded()
+        if (state < 0 /* == -1 */) {
           if (patchElems.hasNext) patchElems.next()
           else origElems.next()
         }
         else {
           if (origElems.hasNext) {
-            i -= 1
+            state -= 1
             origElems.next()
           }
           else {
-            i = -1
+            state = -1
             patchElems.next()
           }
         }
       }
     }
+
+  override def tapEach[U](f: A => U): Iterator[A] = new AbstractIterator[A] {
+    override def knownSize = self.knownSize
+    override def hasNext = self.hasNext
+    override def next() = {
+      val _next = self.next()
+      f(_next)
+      _next
+    }
+  }
 
   /** Converts this iterator to a string.
    *
@@ -828,6 +978,8 @@ object Iterator extends IterableFactory[Iterator] {
   private[this] val _empty: Iterator[Nothing] = new AbstractIterator[Nothing] {
     def hasNext = false
     def next() = throw new NoSuchElementException("next on empty iterator")
+    override def knownSize: Int = 0
+    override protected def sliceIterator(from: Int, until: Int): AbstractIterator[Nothing] = this
   }
 
   /** Creates a target $coll from an existing source collection
@@ -845,6 +997,9 @@ object Iterator extends IterableFactory[Iterator] {
     private[this] var consumed: Boolean = false
     def hasNext = !consumed
     def next() = if (consumed) empty.next() else { consumed = true; a }
+    override protected def sliceIterator(from: Int, until: Int) =
+      if (consumed || from > 0 || until == 0) empty
+      else this
   }
 
   override def apply[A](xs: A*): Iterator[A] = xs.iterator
@@ -866,6 +1021,7 @@ object Iterator extends IterableFactory[Iterator] {
     */
   override def fill[A](len: Int)(elem: => A): Iterator[A] = new AbstractIterator[A] {
     private[this] var i = 0
+    override def knownSize: Int = (len - i) max 0
     def hasNext: Boolean = i < len
     def next(): A =
       if (hasNext) { i += 1; elem }
@@ -880,6 +1036,7 @@ object Iterator extends IterableFactory[Iterator] {
     */
   override def tabulate[A](end: Int)(f: Int => A): Iterator[A] = new AbstractIterator[A] {
     private[this] var i = 0
+    override def knownSize: Int = (end - i) max 0
     def hasNext: Boolean = i < end
     def next(): A =
       if (hasNext) { val result = f(i); i += 1; result }
@@ -924,6 +1081,12 @@ object Iterator extends IterableFactory[Iterator] {
     if (step == 0) throw new IllegalArgumentException("zero step")
     private[this] var i = start
     private[this] var hasOverflowed = false
+    override def knownSize: Int = {
+      val size = math.ceil((end.toLong - i.toLong) / step.toDouble)
+      if (size < 0) 0
+      else if (size > Int.MaxValue) -1
+      else size.toInt
+    }
     def hasNext: Boolean = {
       (step <= 0 || i < end) && (step >= 0 || i > end) && !hasOverflowed
     }
@@ -956,6 +1119,18 @@ object Iterator extends IterableFactory[Iterator] {
     }
   }
 
+  /** Creates an `Iterator` that uses a function `f` to produce elements of type `A`
+    * and update an internal state of type `S`.
+    *
+    * @param init State initial value
+    * @param f    Computes the next element (or returns `None` to signal
+    *             the end of the collection)
+    * @tparam A   Type of the elements
+    * @tparam S   Type of the internal state
+    * @return an `Iterator` that produces elements using `f` until `f` returns `None`
+    */
+  override def unfold[A, S](init: S)(f: S => Option[(A, S)]): Iterator[A] = new UnfoldIterator(init)(f)
+
   /** Creates an infinite-length iterator returning the results of evaluating an expression.
     *  The expression is recomputed for every element.
     *
@@ -968,55 +1143,57 @@ object Iterator extends IterableFactory[Iterator] {
   }
 
   /** Creates an iterator to which other iterators can be appended efficiently.
-    *  Nested ConcatIterators are merged to avoid blowing the stack.
-    */
+   *  Nested ConcatIterators are merged to avoid blowing the stack.
+   */
   private final class ConcatIterator[+A](private var current: Iterator[A @uncheckedVariance]) extends AbstractIterator[A] {
     private var tail: ConcatIteratorCell[A @uncheckedVariance] = null
     private var last: ConcatIteratorCell[A @uncheckedVariance] = null
     private var currentHasNextChecked = false
 
-    // Advance current to the next non-empty iterator
-    // current is set to null when all iterators are exhausted
-    @tailrec
-    private[this] def advance(): Boolean = {
-      if (tail eq null) {
-        current = null
-        last = null
-        false
-      }
-      else {
-        current = tail.headIterator
-        tail = tail.tail
-        merge()
-        if (currentHasNextChecked) true
-        else if (current.hasNext) {
-          currentHasNextChecked = true
-          true
-        } else advance()
-      }
-    }
-
-    // If the current iterator is a ConcatIterator, merge it into this one
-    @tailrec
-    private[this] def merge(): Unit =
-    if (current.isInstanceOf[ConcatIterator[_]]) {
-      val c = current.asInstanceOf[ConcatIterator[A]]
-      current = c.current
-      currentHasNextChecked = c.currentHasNextChecked
-      if (c.tail ne null) {
-        c.last.tail = tail
-        tail = c.tail
-      }
-      merge()
-    }
-
     def hasNext =
       if (currentHasNextChecked) true
-      else if (current eq null) false
+      else if (current == null) false
       else if (current.hasNext) {
         currentHasNextChecked = true
         true
-      } else advance()
+      }
+      else {
+        // If we advanced the current iterator to a ConcatIterator, merge it into this one
+        @tailrec def merge(): Unit =
+          if (current.isInstanceOf[ConcatIterator[_]]) {
+            val c = current.asInstanceOf[ConcatIterator[A]]
+            current = c.current
+            currentHasNextChecked = c.currentHasNextChecked
+            if (c.tail != null) {
+              if (last == null) last = c.last
+              c.last.tail = tail
+              tail = c.tail
+            }
+            merge()
+          }
+
+        // Advance current to the next non-empty iterator
+        // current is set to null when all iterators are exhausted
+        @tailrec def advance(): Boolean =
+          if (tail == null) {
+            current = null
+            last = null
+            false
+          }
+          else {
+            current = tail.headIterator
+            if (last eq tail) last = last.tail
+            tail = tail.tail
+            merge()
+            if (currentHasNextChecked) true
+            else if (current != null && current.hasNext) {
+              currentHasNextChecked = true
+              true
+            } else advance()
+          }
+
+        advance()
+      }
 
     def next()  =
       if (hasNext) {
@@ -1026,14 +1203,15 @@ object Iterator extends IterableFactory[Iterator] {
 
     override def concat[B >: A](that: => IterableOnce[B]): Iterator[B] = {
       val c = new ConcatIteratorCell[B](that, null).asInstanceOf[ConcatIteratorCell[A]]
-      if(tail eq null) {
+      if (tail == null) {
         tail = c
         last = c
-      } else {
+      }
+      else {
         last.tail = c
         last = c
       }
-      if(current eq null) current = Iterator.empty
+      if (current == null) current = Iterator.empty
       this
     }
   }
@@ -1057,6 +1235,15 @@ object Iterator extends IterableFactory[Iterator] {
         } else
           dropping = 0
       }
+    override def knownSize: Int = {
+      val size = underlying.knownSize
+      if (size < 0) -1
+      else {
+        val dropSize = 0 max (size - dropping)
+        if (unbounded) dropSize
+        else remaining min dropSize
+      }
+    }
     def hasNext = { skip(); remaining != 0 && underlying.hasNext }
     def next()  = {
       skip()
@@ -1077,19 +1264,49 @@ object Iterator extends IterableFactory[Iterator] {
         else if (until <= lo) 0               // empty
         else if (unbounded) until - lo        // now finite
         else adjustedBound min (until - lo)   // keep lesser bound
+      val sum = dropping + lo
       if (rest == 0) empty
+      else if (sum < 0) {
+        dropping = Int.MaxValue
+        remaining = 0
+        this.concat(new SliceIterator(underlying, start = sum - Int.MaxValue, limit = rest))
+      }
       else {
-        dropping += lo
+        dropping = sum
         remaining = rest
         this
       }
     }
   }
 
-  // scalac generates a `readReplace` method to discard the deserialized state (see https://github.com/scala/bug/issues/10412).
-  // This prevents it from serializing it in the first place:
-  private[this] def writeObject(out: ObjectOutputStream): Unit = ()
-  private[this] def readObject(in: ObjectInputStream): Unit = ()
+  /** Creates an iterator that uses a function `f` to produce elements of
+    * type `A` and update an internal state of type `S`.
+    */
+  private final class UnfoldIterator[A, S](init: S)(f: S => Option[(A, S)]) extends AbstractIterator[A] {
+    private[this] var state: S = init
+    private[this] var nextResult: Option[(A, S)] = null
+
+    override def hasNext: Boolean = {
+      if (nextResult eq null) {
+        nextResult = {
+          val res = f(state)
+          if (res eq null) throw new NullPointerException("null during unfold")
+          res
+        }
+        state = null.asInstanceOf[S] // allow GC
+      }
+      nextResult.isDefined
+    }
+
+    override def next(): A = {
+      if (hasNext) {
+        val (value, newState) = nextResult.get
+        state = newState
+        nextResult = null
+        value
+      } else Iterator.empty.next()
+    }
+  }
 }
 
 /** Explicit instantiation of the `Iterator` trait to reduce class file size in subclasses. */

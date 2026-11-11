@@ -1,3 +1,4 @@
+import scala.language.experimental.macros
 import scala.reflect.runtime.universe._
 import scala.reflect.macros.blackbox.Context
 
@@ -33,7 +34,7 @@ object Impls345 {
 object Macros4 {
   class D[T] {
     class C[U] {
-      def foo[V] = macro Impls345.foo[T, U, V]
+      def foo[V]: Unit = macro Impls345.foo[T, U, V]
     }
   }
 }

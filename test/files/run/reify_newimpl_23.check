@@ -8,7 +8,7 @@ import scala.tools.reflect.ToolBox
 scala> import scala.tools.reflect.Eval
 import scala.tools.reflect.Eval
 
-scala> def foo[T]{
+scala> def foo[T] = {
   val code = reify {
     List[T]()
   }
@@ -17,6 +17,6 @@ scala> def foo[T]{
          val code = reify {
                           ^
 On line 2: free type: Ident(TypeName("T")) defined by foo in <console>:1:9
-foo: [T]=> Unit
+def foo[T]: Unit
 
 scala> :quit

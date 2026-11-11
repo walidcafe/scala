@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package phases
 
@@ -60,7 +72,7 @@ trait Metalevels {
    *
    *  Hence some bindings become cross-stage, which is not bad per se (in fact, some cross-stage bindings have sane semantics, as in the example above).
    *  However this affects freevars, since they are delicate inter-dimensional beings that refer to both current and next planes of existence.
-   *  When splicing tears the fabric of the reality apart, some freevars have to go single-dimensional to retain their sanity.
+   *  When splicing tears the fabric of the reality apart, some freevars have to go single-dimensional to retain their confidence.
    *
    *  Example 2. Consider the following snippet:
    *
@@ -101,7 +113,7 @@ trait Metalevels {
    *  The reasoning from Example 2 still holds here - we do need to inline the freevar that refers to x.
    *  However, we must not touch anything inside the splice'd block, because it's not getting reified.
    */
-  val metalevels = new Transformer {
+  val metalevels: AstTransformer = new AstTransformer {
     var insideSplice = false
     val inlineableBindings = mutable.Map[TermName, Tree]()
 

@@ -3,7 +3,11 @@
  * @author  Paul Phillips
  */
 
-import scala.tools.cmd._
+package scala.demo
+
+import scala.tools.partest.nest.{ Instance, Interpolation, Meta, Spec }
+
+import scala.language.postfixOps
 
 /** A sample command specification for illustrative purposes.
  *  First take advantage of the meta-options:
@@ -47,7 +51,7 @@ object DemoSpec extends DemoSpec with Property {
   type ThisCommandLine = SpecCommandLine
   def creator(args: List[String]) =
     new SpecCommandLine(args) {
-      override def errorFn(msg: String) = { println("Error: " + msg) ; sys.exit(0) }
+      override def errorFn(msg: String) = { throw new Error("Error: " + msg) }
     }
 }
 

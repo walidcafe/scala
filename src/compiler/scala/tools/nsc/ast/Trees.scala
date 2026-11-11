@@ -1,15 +1,26 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package ast
 
 import scala.reflect.ClassTag
-import java.lang.System.{lineSeparator => EOL}
+import java.lang.System.lineSeparator
+
+import scala.annotation.nowarn
 
 trait Trees extends scala.reflect.internal.Trees { self: Global =>
+  import self.analyzer.OriginalTreeAttachment
+
   // --- additional cases --------------------------------------------------------
   /** Only used during parsing */
   case class Parens(args: List[Tree]) extends Tree {
@@ -56,10 +67,8 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
     }
   }
 
-  class PostfixSelect(qual: Tree, name: Name) extends Select(qual, name)
-
   /** emitted by typer, eliminated by refchecks */
-  case class TypeTreeWithDeferredRefCheck()(val check: () => TypeTree) extends TypTree {
+  case class TypeTreeWithDeferredRefCheck(precheck: TypeTree)(val check: () => TypeTree) extends TypTree {
     override def transform(transformer: ApiTransformer): Tree =
       transformer.treeCopy.TypeTreeWithDeferredRefCheck(this)
     override def traverse(traverser: Traverser): Unit = {
@@ -101,10 +110,11 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
   object treeInfo extends {
     val global: Trees.this.type = self
   } with TreeInfo
+  import treeInfo._
 
   // --- additional cases in operations ----------------------------------
 
-  trait TreeCopier extends super.InternalTreeCopierOps {
+  trait TreeCopier extends InternalTreeCopierOps {
     def DocDef(tree: Tree, comment: DocComment, definition: Tree): DocDef
     def SelectFromArray(tree: Tree, qualifier: Tree, selector: Name, erasure: Type): SelectFromArray
     def InjectDerivedValue(tree: Tree, arg: Tree): InjectDerivedValue
@@ -112,9 +122,14 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
   }
   implicit val TreeCopierTag: ClassTag[TreeCopier] = ClassTag[TreeCopier](classOf[TreeCopier])
 
-  def newStrictTreeCopier: TreeCopier = new StrictTreeCopier
-  def newLazyTreeCopier: TreeCopier = new LazyTreeCopier
+  def newStrictTreeCopier: TreeCopier = new StrictAstTreeCopier
+  def newLazyTreeCopier: TreeCopier = new LazyAstTreeCopier
 
+  @nowarn("""cat=deprecation&origin=scala\.tools\.nsc\.ast\.Trees\.StrictTreeCopier""")
+  final type StrictAstTreeCopier = StrictTreeCopier
+
+  @nowarn("msg=shadowing a nested class of a parent is deprecated")
+  @deprecated("use StrictAstTreeCopier instead", since = "2.13.4")
   class StrictTreeCopier extends super.StrictTreeCopier with TreeCopier {
     def DocDef(tree: Tree, comment: DocComment, definition: Tree) =
       new DocDef(comment, definition).copyAttrs(tree)
@@ -123,10 +138,16 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
     def InjectDerivedValue(tree: Tree, arg: Tree) =
       new InjectDerivedValue(arg).copyAttrs(tree)
     def TypeTreeWithDeferredRefCheck(tree: Tree) = tree match {
-      case dc@TypeTreeWithDeferredRefCheck() => new TypeTreeWithDeferredRefCheck()(dc.check).copyAttrs(tree)
+      case dc@TypeTreeWithDeferredRefCheck(prechk) => new TypeTreeWithDeferredRefCheck(prechk)(dc.check).copyAttrs(tree)
+      case x => throw new MatchError(x)
     }
   }
 
+  @nowarn("""cat=deprecation&origin=scala\.tools\.nsc\.ast\.Trees\.LazyTreeCopier""")
+  final type LazyAstTreeCopier = LazyTreeCopier
+
+  @nowarn("msg=shadowing a nested class of a parent is deprecated")
+  @deprecated("use LazyAstTreeCopier instead", since = "2.13.4")
   class LazyTreeCopier extends super.LazyTreeCopier with TreeCopier {
     def DocDef(tree: Tree, comment: DocComment, definition: Tree) = tree match {
       case t @ DocDef(comment0, definition0)
@@ -144,12 +165,20 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
       case _ => this.treeCopy.InjectDerivedValue(tree, arg)
     }
     def TypeTreeWithDeferredRefCheck(tree: Tree) = tree match {
-      case t @ TypeTreeWithDeferredRefCheck() => t
+      case t: TypeTreeWithDeferredRefCheck => t
       case _ => this.treeCopy.TypeTreeWithDeferredRefCheck(tree)
     }
   }
 
   type ApiTransformer = super.Transformer
+
+  // TODO: uncomment when deprecating the below
+  // @nowarn("""cat=deprecation&origin=scala\.tools\.nsc\.ast\.Trees\.Transformer""")
+  final type AstTransformer = Transformer
+
+  // TODO: deprecate when we can cleanly cross-compile without warnings
+  // @deprecated("use AstTransformer instead", since = "2.13.4")
+  @nowarn("msg=shadowing a nested class of a parent is deprecated")
   class Transformer extends InternalTransformer {
     def transformUnit(unit: CompilationUnit): Unit = {
       try unit.body = transform(unit.body)
@@ -162,15 +191,22 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
   }
 
   // used when a phase is disabled
-  object noopTransformer extends Transformer {
+  object noopTransformer extends AstTransformer {
     override def transformUnit(unit: CompilationUnit): Unit = {}
   }
 
-  object resetPos extends Traverser {
-    override def traverse(t: Tree): Unit = {
-      if (t != EmptyTree) t.setPos(NoPosition)
-      super.traverse(t)
-    }
+  override protected def xtransform(transformer: super.Transformer, tree: Tree): Tree = tree match {
+    case DocDef(comment, definition) =>
+      transformer.treeCopy.DocDef(tree, comment, transformer.transform(definition))
+    case SelectFromArray(qualifier, selector, erasure) =>
+      transformer.treeCopy.SelectFromArray(
+        tree, transformer.transform(qualifier), selector, erasure)
+    case InjectDerivedValue(arg) =>
+      transformer.treeCopy.InjectDerivedValue(
+        tree, transformer.transform(arg))
+    case _: TypeTreeWithDeferredRefCheck =>
+      transformer.treeCopy.TypeTreeWithDeferredRefCheck(tree)
+    case _ => super.xtransform(transformer, tree)
   }
 
   // Finally, no one uses resetAllAttrs anymore, so I'm removing it from the compiler.
@@ -245,17 +281,14 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
 
       override def traverse(tree: Tree) = {
         tree match {
-         case _: DefTree | Function(_, _) | Template(_, _, _) =>
-           markLocal(tree)
-         case _ =>
-           tree
+          case _: DefTree | Function(_, _) | Template(_, _, _) => markLocal(tree)
+          case _ =>
         }
-
         tree.traverse(this)
       }
     }
 
-    class Transformer extends self.Transformer {
+    class ResetTransformer extends AstTransformer {
       override def transform(tree: Tree): Tree = {
         if (leaveAlone != null && leaveAlone(tree))
           tree
@@ -289,8 +322,21 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
                 transform(fn)
               case EmptyTree =>
                 tree
-              case _ =>
-                val dupl = tree.duplicate
+              // The typer does not accept UnApply. Replace it with Apply, which can be retyped.
+              case UnApply(Unapplied(Applied(Select(fun, nme.unapply | nme.unapplySeq), _, _)), args) =>
+                Apply(transform(fun), transformTrees(args))
+              case tree =>
+                val dupl = {
+                  val original = tree match {
+                    case tree @ Literal(_) =>
+                      tree.attachments.get[OriginalTreeAttachment] match {
+                        case Some(OriginalTreeAttachment(original)) => original
+                        case _ => tree
+                      }
+                    case tree => tree
+                  }
+                  original.duplicate
+                }
                 // Typically the resetAttrs transformer cleans both symbols and types.
                 // However there are exceptions when we cannot erase symbols due to idiosyncrasies of the typer.
                 // vetoXXX local variables declared below describe the conditions under which we cannot erase symbols.
@@ -307,7 +353,9 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
                   val sym = dupl.symbol
                   val vetoScope = !brutally && !(locals contains sym) && !(locals contains sym.deSkolemize)
                   val vetoThis = dupl.isInstanceOf[This] && sym.isPackageClass
-                  if (!(vetoScope || vetoThis)) dupl.symbol = NoSymbol
+                  // An error symbol is left by a failed typing attempt, not an external binding. Keeping it would
+                  // make retyping skip the tree without reporting an error (scala/bug#9041, scala/bug#13198).
+                  if (sym.isError || !(vetoScope || vetoThis)) dupl.symbol = NoSymbol
                 }
                 dupl.clearType()
             }
@@ -321,12 +369,14 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
       new MarkLocals().traverse(x)
 
       if (debug) {
-        assert(locals.size == orderedLocals.size)
-        val msg = orderedLocals.toList filter {_ != NoSymbol} map {"  " + _} mkString EOL
+        assert(locals.size == orderedLocals.size, "Incongruent ordered locals")
+        val msg = orderedLocals.toList.filter{_ != NoSymbol}
+          .map("  " + _)
+          .mkString(lineSeparator)
         trace("locals (%d total): %n".format(orderedLocals.size))(msg)
       }
 
-      new Transformer().transform(x)
+      new ResetTransformer().transform(x)
     }
   }
 
@@ -334,7 +384,7 @@ trait Trees extends scala.reflect.internal.Trees { self: Global =>
 
    case Parens(expr)                                               (only used during parsing)
    case DocDef(comment, defn) =>                                   (eliminated by typer)
-   case TypeTreeWithDeferredRefCheck() =>                          (created and eliminated by typer)
+   case TypeTreeWithDeferredRefCheck(prechk) =>                    (created by typer and eliminated by refchecks)
    case SelectFromArray(_, _, _) =>                                (created and eliminated by erasure)
    case InjectDerivedValue(_) =>                                   (created and eliminated by erasure)
 

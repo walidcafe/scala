@@ -1,3 +1,4 @@
+//> using javaOpt -Dneeds.forked.jvm
 object Test {
   def main(args: Array[String]): Unit = {
     import scala.concurrent._

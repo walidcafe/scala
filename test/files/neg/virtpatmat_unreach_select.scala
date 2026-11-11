@@ -1,3 +1,5 @@
+//> using options -Werror
+//
 class Test {
   object severity extends Enumeration
   class Severity(val id: Int) extends severity.Value

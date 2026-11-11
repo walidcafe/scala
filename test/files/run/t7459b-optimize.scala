@@ -1,3 +1,5 @@
+//> using options -opt:inline:**
+//
 class LM {
   class Node[B1]
 

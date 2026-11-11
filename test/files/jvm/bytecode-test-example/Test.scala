@@ -1,3 +1,4 @@
+//> using options -opt:none
 import scala.tools.partest.BytecodeTest
 
 import scala.tools.nsc.util.JavaClassPath

@@ -1,8 +1,9 @@
 package scala.reflect.quasiquotes
 
-import org.scalacheck._, Prop._, Gen._, Arbitrary._
+import org.junit.Assert.{assertEquals, assertTrue}
 import scala.reflect.runtime.universe._, Flag._
 
+@annotation.nowarn("msg=deprecated adaptation")
 object UnliftableProps extends QuasiquoteProperties("unliftable") {
   property("unlift name") = test {
     val termname0 = TermName("foo")
@@ -74,7 +75,9 @@ object UnliftableProps extends QuasiquoteProperties("unliftable") {
 
   property("unlift scala.symbol") = test {
     val q"${s: scala.Symbol}" = q"'foo"
-    assert(s.isInstanceOf[scala.Symbol] && s == 'foo)
+    //assert(s.isInstanceOf[scala.Symbol] && s == Symbol("foo"))
+    assertTrue(s.isInstanceOf[scala.Symbol])
+    assertEquals(Symbol("foo"), s)
   }
 
   implicit def unliftList[T: Unliftable]: Unliftable[List[T]] = Unliftable {

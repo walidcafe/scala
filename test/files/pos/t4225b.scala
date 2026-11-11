@@ -1,3 +1,6 @@
+
+//
+//
 class Foo {
   class Bar
   object Bar {

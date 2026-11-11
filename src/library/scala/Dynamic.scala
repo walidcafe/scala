@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2010-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 
@@ -26,7 +30,7 @@ package scala
  *  foo.arr(10)         ~~> foo.applyDynamic("arr")(10)
  *  }}}
  *
- *  As of Scala 2.10, defining direct or indirect subclasses of this trait
+ *  Defining direct or indirect subclasses of this trait
  *  is only possible if the language feature `dynamics` is enabled.
  */
 trait Dynamic extends Any

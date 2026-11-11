@@ -2,9 +2,16 @@ t6436b.scala:8: error: type mismatch;
  found   : StringContext
  required: ?{def q: ?}
 Note that implicit conversions are not applicable because they are ambiguous:
- both method foo1 in object quasiquotes of type (ctx: StringContext)AnyRef{def q: Nothing}
- and method foo2 in object quasiquotes of type (ctx: StringContext)AnyRef{def q: Nothing}
+ both method foo1 in object quasiquotes of type (ctx: StringContext): AnyRef{def q: Nothing}
+ and method foo2 in object quasiquotes of type (ctx: StringContext): AnyRef{def q: Nothing}
  are possible conversion functions from StringContext to ?{def q: ?}
   println(StringContext("a").q())
                        ^
-one error found
+t6436b.scala:2: warning: Implicit definition should have explicit type (inferred AnyRef{def q: Nothing}) [quickfixable]
+  implicit def foo1(ctx: StringContext) = new { def q = ??? }
+               ^
+t6436b.scala:3: warning: Implicit definition should have explicit type (inferred AnyRef{def q: Nothing}) [quickfixable]
+  implicit def foo2(ctx: StringContext) = new { def q = ??? }
+               ^
+2 warnings
+1 error

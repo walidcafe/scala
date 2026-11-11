@@ -1,4 +1,14 @@
-/* NSC -- new Scala compiler -- Copyright 2007-2013 LAMP/EPFL */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.tools.nsc
 package doc
@@ -6,8 +16,8 @@ package model
 
 import base._
 import diagram._
-
-import scala.collection._
+import scala.annotation.nowarn
+import scala.collection.{immutable, mutable}
 
 /** This trait extracts all required information for documentation from compilation units */
 trait ModelFactoryTypeSupport {
@@ -35,7 +45,7 @@ trait ModelFactoryTypeSupport {
           appendType0(tp)
         case tp :: tps =>
           appendType0(tp)
-          nameBuffer append sep
+          nameBuffer.append(sep)
           appendTypes0(tps, sep)
       }
 
@@ -45,13 +55,13 @@ trait ModelFactoryTypeSupport {
           val args = tp.typeArgs
           nameBuffer append '('
           appendTypes0(args.init, ", ")
-          nameBuffer append ") ⇒ "
+          nameBuffer append ") => "
           appendType0(args.last)
         case tp: TypeRef if definitions.isScalaRepeatedParamType(tp) =>
           appendType0(tp.args.head)
           nameBuffer append '*'
         case tp: TypeRef if definitions.isByNameParamType(tp) =>
-          nameBuffer append "⇒ "
+          nameBuffer append "=> "
           appendType0(tp.args.head)
         case tp: TypeRef if definitions.isTupleTypeDirect(tp) =>
           val args = tp.typeArgs
@@ -109,6 +119,7 @@ trait ModelFactoryTypeSupport {
           // type is inherited from one template to another. There may be multiple symbols with the same name in scope,
           // but we won't show the prefix if our symbol is among them, only if *it's not* -- that's equal to showing
           // the prefix only for ambiguous references, not for overloaded ones.
+          @nowarn("cat=lint-nonlocal-return")
           def needsPrefix: Boolean = {
             if ((owner != bSym.owner || preSym.isRefinementClass) && (normalizeTemplate(owner) != inTpl.sym))
               return true
@@ -140,7 +151,7 @@ trait ModelFactoryTypeSupport {
           }
 
           val prefix =
-            if (!settings.docNoPrefixes && needsPrefix && (bSym != AnyRefClass /* which we normalize */)) {
+            if (!settings.docNoPrefixes.value && needsPrefix && (bSym != AnyRefClass /* which we normalize */)) {
               if (!owner.isRefinementClass) {
                 val qName = makeQualifiedName(owner, Some(inTpl.sym))
                 if (qName != "") qName + "." else ""
@@ -185,20 +196,22 @@ trait ModelFactoryTypeSupport {
           }
         /* Eval-by-name types */
         case NullaryMethodType(result) =>
-          nameBuffer append '⇒'
+          nameBuffer append "=>"
           appendType0(result)
 
         /* Polymorphic types */
-        case PolyType(tparams, result) => assert(tparams.nonEmpty)
-          def typeParamsToString(tps: List[Symbol]): String = if (tps.isEmpty) "" else
-            tps.map{tparam =>
-              tparam.varianceString + tparam.name + typeParamsToString(tparam.typeParams)
-            }.mkString("[", ", ", "]")
-          nameBuffer append typeParamsToString(tparams)
+        case PolyType(tparams, result) =>
+          assert(tparams.nonEmpty, "polymorphic type must have at least one type parameter")
+          def typeParamsToString(tps: List[Symbol]): String =
+            if (tps.isEmpty) ""
+            else
+              tps.map { tparam =>
+                tparam.varianceString + tparam.unexpandedName + typeParamsToString(tparam.typeParams)
+              }.mkString("[", ", ", "]")
+          nameBuffer.append(typeParamsToString(tparams))
           appendType0(result)
 
         case et@ExistentialType(quantified, underlying) =>
-
           def appendInfoStringReduced(sym: Symbol, tp: Type): Unit = {
             if (sym.isType && !sym.isAliasType && !sym.isClass) {
                 tp match {
@@ -230,7 +243,7 @@ trait ModelFactoryTypeSupport {
                 nameBuffer append "val "
                 nameBuffer append tpnme.dropSingletonName(sym.name)
                 nameBuffer append ": "
-                appendType0(dropSingletonType(sym.info.bounds.hi))
+                appendType0(dropSingletonType(sym.info.upperBound))
               } else {
                 if (sym.flagString != "") nameBuffer append (sym.flagString + " ")
                 if (sym.keyString != "") nameBuffer append (sym.keyString + " ")
@@ -308,7 +321,7 @@ trait ModelFactoryTypeSupport {
 
     // scala/bug#4360: Entity caching depends on both the type AND the template it's in, as the prefixes might change for the
     // same type based on the template the type is shown in.
-    if (settings.docNoPrefixes)
+    if (settings.docNoPrefixes.value)
       typeCache.getOrElseUpdate(aType, createTypeEntity)
     else createTypeEntity
   }

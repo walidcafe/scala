@@ -1,10 +1,13 @@
 package scala.collection
 
 import org.hamcrest.CoreMatchers._
-import org.junit.Assert._
+import org.hamcrest.MatcherAssert._
+import org.junit.Assert.{assertThat => _, _}
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
+
+import scala.AdaptedArrowAssocWorkaround.Tx
 import scala.collection.immutable._
 
 @RunWith(classOf[JUnit4])
@@ -84,19 +87,19 @@ class LazyZipOpsTest {
 
   @Test
   def lazyZip2_withMap(): Unit = {
-    val res: Map[Int, (String, String)] = map.lazyZip(ys).map { case ((k, v), s) => k -> (s, v) }
+    val res: Map[Int, (String, String)] = map.lazyZip(ys).map { case ((k, v), s) => k -> Tx(s, v) }
 
     assertThat(res, either(
-      is(Map(1 -> ("a", "foo"), 2 -> ("b", "bar"))))
-      .or(is(Map(1 -> ("b", "foo"), 2 -> ("a", "bar"))))
+      is(Map(1 -> Tx("a", "foo"), 2 -> Tx("b", "bar"))))
+      .or(is(Map(1 -> Tx("b", "foo"), 2 -> Tx("a", "bar"))))
     )
   }
 
   @Test
   def lazyZip2_withSortedMap(): Unit = {
-    val res: TreeMap[Int, (String, String)] = sortedMap.lazyZip(ys).map { case ((k, v), s) => k -> (s, v) }
+    val res: TreeMap[Int, (String, String)] = sortedMap.lazyZip(ys).map { case ((k, v), s) => k -> Tx(s, v) }
 
-    assertEquals(Map(1 -> ("a", "foo"), 2 -> ("b", "bar")), res)
+    assertEquals(Map(1 -> Tx("a", "foo"), 2 -> Tx("b", "bar")), res)
   }
 
   @Test
@@ -162,20 +165,20 @@ class LazyZipOpsTest {
 
   @Test
   def lazyZip3_withMap(): Unit = {
-    val res: Map[Int, (Int, String, String)] = map.lazyZip(ws).lazyZip(ys).map { case ((k, v), w, y) => k -> (w, y, v) }
+    val res: Map[Int, (Int, String, String)] = map.lazyZip(ws).lazyZip(ys).map { case ((k, v), w, y) => k -> Tx(w, y, v) }
 
     assertThat(res, either(
-      is(Map(1 -> (1, "a", "foo"), 2 -> (2, "b", "bar"))))
-      .or(is(Map(1 -> (2, "b", "foo"), 2 -> (1, "a", "bar"))))
+      is(Map(1 -> Tx(1, "a", "foo"), 2 -> Tx(2, "b", "bar"))))
+      .or(is(Map(1 -> Tx(2, "b", "foo"), 2 -> Tx(1, "a", "bar"))))
     )
   }
 
   @Test
   def lazyZip3_withSortedMap(): Unit = {
     val res: TreeMap[Int, (Int, String, String)] = sortedMap.lazyZip(ws).lazyZip(ys)
-      .map { case ((k, v), w, y) => k -> (w, y, v) }
+      .map { case ((k, v), w, y) => k -> Tx(w, y, v) }
 
-    assertEquals(Map(1 -> (1, "a", "foo"), 2 -> (2, "b", "bar")), res)
+    assertEquals(Map(1 -> Tx(1, "a", "foo"), 2 -> Tx(2, "b", "bar")), res)
   }
 
   @Test
@@ -242,19 +245,57 @@ class LazyZipOpsTest {
   @Test
   def lazyZip4_withMap(): Unit = {
     val res: Map[Int, (Int, Int, String, String)] = map.lazyZip(ws).lazyZip(xs).lazyZip(ys)
-      .map { case ((k, v), w, x, y) => k -> (w, x, y, v) }
+      .map { case ((k, v), w, x, y) => k -> Tx(w, x, y, v) }
 
     assertThat(res, either(
-      is(Map(1 -> (1, 1, "a", "foo"), 2 -> (2, 2, "b", "bar"))))
-      .or(is(Map(1 -> (2, 2, "b", "foo"), 2 -> (1, 1, "a", "bar"))))
+      is(Map(1 -> Tx(1, 1, "a", "foo"), 2 -> Tx(2, 2, "b", "bar"))))
+      .or(is(Map(1 -> Tx(2, 2, "b", "foo"), 2 -> Tx(1, 1, "a", "bar"))))
     )
   }
 
   @Test
   def lazyZip4_withSortedMap(): Unit = {
     val res: TreeMap[Int, (Int, Int, String, String)] = sortedMap.lazyZip(ws).lazyZip(xs).lazyZip(ys)
-      .map { case ((k, v), w, x, y) => k -> (w, x, y, v) }
+      .map { case ((k, v), w, x, y) => k -> Tx(w, x, y, v) }
 
-    assertEquals(Map(1 -> (1, 1, "a", "foo"), 2 -> (2, 2, "b", "bar")), res)
+    assertEquals(Map(1 -> Tx(1, 1, "a", "foo"), 2 -> Tx(2, 2, "b", "bar")), res)
+  }
+
+  @Test
+  def lazyZipArray(): Unit = {
+    val a = Array(1,2,3).lazyZip(List(4,5,6)).map(_ + _)
+    val at: Array[Int] = a
+    assertArrayEquals(Array(5, 7, 9), at)
+  }
+
+  @Test
+  def lazyZipString(): Unit = {
+    val v = "abc".lazyZip(List(1,2,3)).map((a, b) => a.toInt + b.toInt)
+    val vt: IndexedSeq[Int] = v
+    assertEquals(Vector(98, 100, 102), vt)
+    val s = "abc".lazyZip(List(1,2,3)).map((a, b) => (a.toInt + b.toInt).toChar)
+    val st: String = s
+    assertEquals("bdf", st)
+  }
+
+  @Test
+  def lazyZip2FilterIsEmpty(): Unit = {
+    def filtered(xs: List[Int], p: Int => Boolean) = xs.view.lazyZip(List(4, 5, 6)).filter((a, _) => p(a))
+    val nonEmpty = filtered(List(1, 2, 3), _ > 1)
+    assertFalse(nonEmpty.isEmpty)
+    assertTrue(nonEmpty.nonEmpty)
+    val allFiltered = filtered(List(1, 2, 3), _ > 3)
+    assertTrue(allFiltered.isEmpty)
+    assertFalse(allFiltered.nonEmpty)
+    assertTrue(filtered(Nil, _ => true).isEmpty)
+  }
+
+  @Test
+  def lazyZip3And4FilterIsEmpty(): Unit = {
+    val v = List(1, 2, 3).view
+    assertFalse(v.lazyZip(v).lazyZip(v).filter((a, _, _) => a > 1).isEmpty)
+    assertTrue(v.lazyZip(v).lazyZip(v).filter((a, _, _) => a > 3).isEmpty)
+    assertFalse(v.lazyZip(v).lazyZip(v).lazyZip(v).filter((a, _, _, _) => a > 1).isEmpty)
+    assertTrue(v.lazyZip(v).lazyZip(v).lazyZip(v).filter((a, _, _, _) => a > 3).isEmpty)
   }
 }

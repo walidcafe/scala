@@ -20,10 +20,15 @@ class SetBenchmark {
   @Setup(Level.Trial) def initKeys(): Unit = {
     base = Set("a", "b", "c", "d")
   }
-  
+
   // immutable map is implemented as EmptySet -> Set1 -> Set2 -> Set3 -> Set4 -> HashSet
   // add an extra entry to Set4 causes a lot of work, benchmark the transition
   @Benchmark def set4AddElement(bh: Blackhole): Unit = {
     bh.consume(base + "e")
+  }
+
+  // benchmark for the optimized concat method
+  @Benchmark def set4Concat(bh: Blackhole): Unit = {
+    bh.consume(base concat base)
   }
 }

@@ -6,9 +6,10 @@ object Test extends SessionTest {
 s"""|
     |scala> :paste -raw $pastie
     |Pasting file $pastie...
+    |// Exiting paste mode... now compiling with scalac.
     |
-    |       val nope = 42
-    |       ^
+    |val nope = 42
+    |^
     |$pastie:3: error: expected class or object definition
     |There were compilation errors!
     |

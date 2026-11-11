@@ -1,18 +1,24 @@
-/* NSC -- new Scala compiler
- * Copyright 2006-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala
 package reflect
 package internal
 
-import scala.language.postfixOps
-
 import scala.annotation.switch
-import java.lang.{ Character => JCharacter }
 
 /** Contains constants and classifier methods for characters */
 trait Chars {
+  import Chars.CodePoint
   // Be very careful touching these.
   // Apparently trivial changes to the way you write these constants
   // will cause Scanners.scala to go from a nice efficient switch to
@@ -41,8 +47,7 @@ trait Chars {
 
   /** Convert a character to a backslash-u escape */
   def char2uescape(c: Char): String = {
-    @inline def hexChar(ch: Int): Char =
-      ( if (ch < 10) '0' else 'A' - 10 ) + ch toChar
+    @inline def hexChar(ch: Int): Char = ((if (ch < 10) '0' else 'A' - 10) + ch).toChar
 
     char2uescapeArray(2) = hexChar((c >> 12)     )
     char2uescapeArray(3) = hexChar((c >>  8) % 16)
@@ -67,34 +72,60 @@ trait Chars {
     '0' <= c && c <= '9' || 'A' <= c && c <= 'Z' || 'a' <= c && c <= 'z'
 
   /** Can character start an alphanumeric Scala identifier? */
-  def isIdentifierStart(c: Char): Boolean =
-    (c == '_') || (c == '$') || Character.isUnicodeIdentifierStart(c)
+  def isIdentifierStart(c: Char): Boolean      = (c == '_') || (c == '$') || Character.isUnicodeIdentifierStart(c)
+  def isIdentifierStart(c: CodePoint): Boolean = (c == '_') || (c == '$') || Character.isUnicodeIdentifierStart(c)
 
   /** Can character form part of an alphanumeric Scala identifier? */
-  def isIdentifierPart(c: Char) =
-    (c == '$') || Character.isUnicodeIdentifierPart(c)
+  def isIdentifierPart(c: Char)      = (c == '$') || Character.isUnicodeIdentifierPart(c)
+
+  def isIdentifierPart(c: CodePoint) = (c == '$') || Character.isUnicodeIdentifierPart(c)
 
   /** Is character a math or other symbol in Unicode?  */
   def isSpecial(c: Char) = {
     val chtp = Character.getType(c)
     chtp == Character.MATH_SYMBOL.toInt || chtp == Character.OTHER_SYMBOL.toInt
   }
-
-  private final val otherLetters = Set[Char]('\u0024', '\u005F')  // '$' and '_'
-  private final val letterGroups = {
-    import JCharacter._
-    Set[Byte](LOWERCASE_LETTER, UPPERCASE_LETTER, OTHER_LETTER, TITLECASE_LETTER, LETTER_NUMBER)
+  def isSpecial(codePoint: CodePoint) = {
+    val chtp = Character.getType(codePoint)
+    chtp == Character.MATH_SYMBOL.toInt || chtp == Character.OTHER_SYMBOL.toInt
   }
-  def isScalaLetter(ch: Char) = letterGroups(JCharacter.getType(ch).toByte) || otherLetters(ch)
+
+  // used for precedence
+  import Character.{LOWERCASE_LETTER, UPPERCASE_LETTER, OTHER_LETTER, TITLECASE_LETTER, LETTER_NUMBER}
+  def isScalaLetter(c: Char): Boolean =
+    Character.getType(c) match {
+      case LOWERCASE_LETTER | UPPERCASE_LETTER | OTHER_LETTER | TITLECASE_LETTER | LETTER_NUMBER => true
+      case _ => c == '$' || c == '_'
+    }
+  def isScalaLetter(c: CodePoint): Boolean =
+    Character.getType(c) match {
+      case LOWERCASE_LETTER | UPPERCASE_LETTER | OTHER_LETTER | TITLECASE_LETTER | LETTER_NUMBER => true
+      case _ => c == '$' || c == '_'
+    }
 
   /** Can character form part of a Scala operator name? */
-  def isOperatorPart(c : Char) : Boolean = (c: @switch) match {
+  def isOperatorPart(c: Char): Boolean = (c: @switch) match {
     case '~' | '!' | '@' | '#' | '%' |
          '^' | '*' | '+' | '-' | '<' |
          '>' | '?' | ':' | '=' | '&' |
          '|' | '/' | '\\' => true
     case c => isSpecial(c)
   }
+  def isOperatorPart(c: CodePoint): Boolean = (c: @switch) match {
+    case '~' | '!' | '@' | '#' | '%' |
+         '^' | '*' | '+' | '-' | '<' |
+         '>' | '?' | ':' | '=' | '&' |
+         '|' | '/' | '\\' => true
+    case c => isSpecial(c)
+  }
+
+  def isBiDiCharacter(c: Char): Boolean = (c: @switch) match {
+    case '\u202a' | '\u202b' | '\u202c' | '\u202d' | '\u202e' |
+         '\u2066' | '\u2067' | '\u2068' | '\u2069' => true
+    case _ => false
+  }
 }
 
-object Chars extends Chars { }
+object Chars extends Chars {
+  type CodePoint = Int
+}

@@ -1,3 +1,5 @@
+//> using options -Werror -Wperformance
+//
 
 import util.Try
 

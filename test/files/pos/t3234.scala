@@ -1,3 +1,6 @@
+
+//> using options -opt:inline:** -Wopt -Werror
+//
 trait Trait1 {
   @inline final def foo2(n: Int) = n*n
 }

@@ -1,13 +1,12 @@
-object Test extends scala.tools.partest.ReplTest {
+import scala.tools.partest._
+
+object Test extends ReplTest with Lambdaless {
 
   override def transformSettings(settings: scala.tools.nsc.Settings) = {
     settings.noimports.value = true
     settings.nopredef.value = true
     settings
   }
-
-  // replace indylambda function names by <function0>
-  override def normalize(s: String) = """\$\$Lambda.*""".r.replaceAllIn(s, "<function0>")
 
   def code = """
 1
@@ -17,9 +16,7 @@ object Test extends scala.tools.partest.ReplTest {
 (1, 2)
 
 { import scala.Predef.ArrowAssoc; 1 -> 2 }
-{ import scala.Predef.ArrowAssoc; 1 → 2 }
 1 -> 2
-1 → 2
 
 val answer = 42
 { import scala.StringContext; s"answer: $answer" }

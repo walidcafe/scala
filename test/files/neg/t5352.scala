@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 object boop {
   abstract class Bar { protected def f(): Any }
   class Bar1 extends Bar { protected def f(): Int = 5 }

@@ -9,10 +9,10 @@ object p1 {
   object D
 }
 package object p2 {
-  class B
+  @annotation.nowarn class B
   object B
 
-  class C extends java.io.Serializable
+  @annotation.nowarn class C extends java.io.Serializable
   object C
 
   type D = DD
@@ -24,7 +24,7 @@ class DD extends java.io.Serializable
 object Test {
   def main(args: Array[String]): Unit = {
 
-    // This is the behaviour that was intended and was unchanged by this commmit.
+    // This is the behaviour that was intended and was unchanged by this commit.
     assert(!(p1.B : Object).isInstanceOf[scala.Serializable])
     assert(p1.C.isInstanceOf[scala.Serializable])
     assert(!(p1.D: Object).isInstanceOf[scala.Serializable])

@@ -1,4 +1,4 @@
-
+//> using options -Werror -Xlint:unused
 import scala.language.experimental.macros
 
 object Unused {

@@ -3,19 +3,19 @@ package settings
 
 import org.junit.Assert._
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
-import scala.tools.testing.AssertUtil.assertThrows
+import scala.tools.testkit.AssertUtil.assertThrows
 
-@RunWith(classOf[JUnit4])
 class SettingsTest {
+  import SettingsTest._
+  private def settings = new MutableSettings(msg => throw new IllegalArgumentException(msg))
+
   @Test def booleanSettingColon(): Unit = {
     def check(args: String*): MutableSettings#BooleanSetting = {
       val s = new MutableSettings(msg => throw new IllegalArgumentException(msg))
-      val b1 = new s.BooleanSetting("-Ytest-setting", "")
-      s.allSettings += b1
+      val b1 = new s.BooleanSetting("-Ytest-setting", descr="", default=false)
+      s.allSettings(b1.name) = b1
       val (ok, residual) = s.processArguments(args.toList, processAll = true)
-      assert(residual.isEmpty)
+      assertTrue(residual.isEmpty)
       b1
     }
     assertTrue(check("-Ytest-setting").value)
@@ -30,9 +30,28 @@ class SettingsTest {
   private def check(args: String*)(b: MutableSettings => Boolean): Boolean = {
     val s = new MutableSettings(msg => throw new IllegalArgumentException(msg))
     val (ok, residual) = s.processArguments(args.toList, processAll = true)
-    assert(residual.isEmpty)
+    assertTrue(residual.isEmpty)
     b(s)
   }
+
+  @Test def `deprecation and xlint deprecation play well together`(): Unit = {
+    assertTrue(check("-deprecation")(_.deprecation))
+    assertTrue(check("--deprecation")(_.deprecation))
+    assertTrue(check("-deprecation")(!_.lintDeprecation))
+    assertTrue(check("-Xlint:deprecation")(_.deprecation))
+    assertTrue(check("-Xlint:deprecation")(_.lintDeprecation))
+    assertTrue(check("-deprecation", "-Xlint:deprecation")(ss => ss.deprecation && ss.lintDeprecation))
+    assertTrue(check("-deprecation", "-Xlint:-deprecation")(ss => ss.deprecation && !ss.lintDeprecation))
+    // normally, explicit yes overrides explicit no, but here we treat them as different settings.
+    // lint will enable deprecation if not explicitly disabled, otherwise just lints the usage.
+    assertTrue(check("-deprecation:false", "-Xlint:deprecation")(ss => !ss.deprecation && ss.lintDeprecation))
+    assertTrue(check("-deprecation:false", "-Xlint:-deprecation")(ss => !ss.deprecation && !ss.lintDeprecation))
+    // same behavior with -Xlint:_
+    assertTrue(check("-deprecation", "-Xlint")(ss => ss.deprecation && ss.lintDeprecation))
+    assertTrue(check("-deprecation", "-Xlint:-deprecation,_")(ss => ss.deprecation && !ss.lintDeprecation))
+    assertTrue(check("-deprecation:false", "-Xlint")(ss => !ss.deprecation && ss.lintDeprecation))
+  }
+
   @Test def userSettingsHavePrecedenceOverLint(): Unit = {
     assertTrue(check("-Xlint")(_.warnUnusedImport))
     assertFalse(check("-Xlint", "-Ywarn-unused:-imports")(_.warnUnusedImport))
@@ -112,7 +131,7 @@ class SettingsTest {
     def check(args: String*)(t: s.MultiChoiceSetting[mChoices.type] => Boolean): Boolean = {
       m.clear()
       val (ok, rest) = s.processArguments(args.toList, processAll = true)
-      assert(rest.isEmpty)
+      assertTrue(rest.isEmpty)
       t(m)
     }
 
@@ -145,14 +164,17 @@ class SettingsTest {
     def check(expected: String, args: String*): Unit = {
       val s = new MutableSettings(msg => throw new IllegalArgumentException(msg))
       val (_, residual) = s.processArguments(args.toList, processAll = true)
-      assert(residual.isEmpty)
-      assertTrue(s.source.value == ScalaVersion(expected))
+      assertTrue(s"remaining input [$residual]", residual.isEmpty)
+      assertTrue(s"(${s.source.value} == ${ScalaVersion(expected)})", s.source.value == ScalaVersion(expected))
     }
     check(expected = "2.13.0") // default
-    check(expected = "2.11.0", "-Xsource:2.11")
-    check(expected = "2.10",   "-Xsource:2.10.0")
-    check(expected = "2.12",   "-Xsource:2.12")
-    check(expected = "2.13",   "-Xsource:2.13")
+    check(expected = "3",      "-Xsource:2.14")
+    check(expected = "3",      "-Xsource:2.15")
+    check(expected = "9.11.0", "-Xsource:9.11")
+    check(expected = "9.10",   "-Xsource:9.10.0")
+    check(expected = "9.12",   "-Xsource:9.12")
+    check(expected = "9.13",   "-Xsource:9.13")
+    assertThrows[IllegalArgumentException](check(expected = "2.12", "-Xsource:2.12"), _ == "-Xsource must be at least the current major version (2.13.0)")
     assertThrows[IllegalArgumentException](check(expected = "2.11", "-Xsource"), _ == "-Xsource requires an argument, the syntax is -Xsource:<version>")
     assertThrows[IllegalArgumentException](check(expected = "2.11", "-Xsource", "2.11"), _ == "-Xsource requires an argument, the syntax is -Xsource:<version>")
     assertThrows[IllegalArgumentException](check(expected = "2.11", "-Xsource:2.invalid"), _ contains "Bad version (2.invalid)")
@@ -160,7 +182,7 @@ class SettingsTest {
 
   // equal with stripped margins and normalized line endings
   private def marginallyEquals(s1: String, s2: String): Boolean = {
-    def normally(s: String): String = s.stripMargin.lines.mkString("\n")
+    def normally(s: String): String = s.stripMargin.linesIterator.mkString("\n")
     normally(s1) == normally(s2)
   }
 
@@ -176,7 +198,7 @@ class SettingsTest {
     def check(args: String*)(t: s.MultiChoiceSetting[mChoices.type] => Boolean): Boolean = {
       m.clear()
       val (ok, rest) = s.processArguments(args.toList, processAll = true)
-      assert(rest.isEmpty)
+      assertTrue(rest.isEmpty)
       t(m)
     }
 
@@ -206,7 +228,8 @@ class SettingsTest {
     def check(args: String*)(t: s.MultiChoiceSetting[mChoices.type] => Boolean): Boolean = {
       m.clear()
       val (ok, rest) = s.processArguments(args.toList, processAll = true)
-      assert(rest.isEmpty)
+      assertTrue(ok)
+      assertTrue(rest.isEmpty)
       t(m)
     }
 
@@ -224,4 +247,164 @@ class SettingsTest {
       marginallyEquals(expected, m.help)
     })
   }
+  @Test def `wildcard doesn't disable everything`(): Unit = {
+    val settings = new Settings()
+    settings.processArguments("-opt:_" :: Nil, processAll = true)
+    assertTrue("has the choice", settings.opt.contains(settings.optChoices.unreachableCode))
+    assertTrue("is enabled", settings.optUnreachableCode)
+    assertFalse("inliner is not enabled", settings.optInlinerEnabled)
+  }
+  @Test def `kill switch can be enabled explicitly`(): Unit = {
+    val settings = new Settings()
+    settings.processArguments("-opt:unreachable-code,none" :: Nil, processAll = true)
+    assertTrue("has the choice", settings.opt.contains(settings.optChoices.unreachableCode))
+    assertFalse("is not enabled", settings.optUnreachableCode)
+  }
+  @Test def `kill switch disables inline`(): Unit = {
+    val settings = new Settings()
+    settings.processArguments("-opt:inline:**" :: "-opt:none" :: Nil, processAll = true)
+    assertTrue("has the choice", settings.optInlineFrom.nonEmpty)
+    assertFalse("is not enabled", settings.optInlinerEnabled)
+  }
+  @Test def `t12036 don't consume dash option as arg`(): Unit = {
+    import scala.collection.mutable.ListBuffer
+    val errors   = ListBuffer.empty[String]
+    val settings = new Settings(errors.addOne)
+    val (ok, rest) = settings.processArguments("-Vinline" :: "-Xlint" :: Nil, processAll = true)
+    assertFalse("processing should fail", ok)
+    assertEquals("processing stops at bad option", 2, rest.length)
+    assertEquals(2, errors.size)  // missing arg and bad option
+  }
+  @Test def `t12098 MultiStringSetting with prepend handles non-colon args`(): Unit = {
+    import scala.collection.mutable.ListBuffer
+    val errors   = ListBuffer.empty[String]
+    val settings = new Settings(errors.addOne)
+    val (ok, rest) = settings.processArguments("-Wconf" :: "help" :: "-Vdebug" :: "x.scala" :: Nil, processAll = true)
+    assertTrue("processing should succeed", ok)
+    assertEquals("processing stops at argument", 1, rest.length)
+    assertEquals("processing stops at the correct argument", "x.scala", rest.head)
+    assertEquals(0, errors.size)
+    assertTrue(settings.debug)
+    assertTrue(settings.Wconf.isHelping)
+  }
+  @Test def `t12098 MultiStringSetting prepends`(): Unit = {
+    val settings = new Settings(msg => fail(s"Unexpected error: $msg"))
+    val (ok, rest) = settings.processArguments("-Wconf:cat=lint-missing-interpolator:ws" :: "-Xlint" :: "x.scala" :: Nil, processAll = true)
+    assertTrue("processing should succeed", ok)
+    assertTrue(settings.warnMissingInterpolator)
+    assertTrue(settings.lintDeprecation)
+    // test/files/neg/t12098.scala shows that cat=deprecation:w due to xlint supersedes default cat=deprecation:ws
+  }
+  @Test def `choices can be multichoices`(): Unit = {
+    val s = new MutableSettings(msg => throw new IllegalArgumentException(msg))
+    object mChoices extends s.MultiChoiceEnumeration {
+      val a = Choice("a")
+      val b = Choice("b")
+      val c = Choice("c")
+      val d = Choice("d")
+    }
+    val m = s.MultiChoiceSetting("-m", "args", "magic sauce", mChoices, Some(List("a")))
+
+    def check(args: String*)(t: s.MultiChoiceSetting[mChoices.type] => Boolean): Boolean = {
+      m.clear()
+      val (ok, rest) = s.processArguments(args.toList, processAll = true)
+      assertTrue(ok)
+      assertTrue(rest.isEmpty)
+      t(m)
+    }
+
+    import mChoices._
+
+    assertTrue(check("-m:a:aval")(choices => choices.value == Set(a) && choices.value.toList.head.asInstanceOf[mChoices.Choice].selections == List("aval")))
+    assertTrue(check("-m:a:aval1,aval2")(choices => choices.value == Set(a) && choices.value.toList.head.asInstanceOf[mChoices.Choice].selections == List("aval1", "aval2")))
+  }
+  @Test def `optimizer flags are sane`: Unit = {
+    val s = settings
+    val args = "-opt:inline:p.*" :: Nil
+    val (ok, rest) = s.processArguments(args.toList, processAll = true)
+    assertTrue(ok)
+    assertTrue(rest.isEmpty)
+    assertTrue(s.optInlinerEnabled)
+    assertEquals("p.*" :: Nil, s.optInlineFrom)
+  }
+  @Test def `optimizer inline patterns are additive`: Unit = {
+    val s = settings
+    val args = "-opt:inline:p.*" :: "-opt:inline:q.C.m" :: Nil
+    val (ok, rest) = s.processArguments(args.toList, processAll = true)
+    assertTrue(ok)
+    assertTrue(rest.isEmpty)
+    assertTrue(s.optInlinerEnabled)
+    assertEquals("p.*" :: "q.C.m" :: Nil, s.optInlineFrom)
+  }
+  @Test def `optimizer old flags are supported`: Unit = {
+    val s = settings
+    val args = "-opt:l:method" :: Nil
+    val (ok, rest) = s.processArguments(args.toList, processAll = true)
+    assertTrue(ok)
+    assertTrue(rest.isEmpty)
+    assertFalse(s.optInlinerEnabled)
+    assertTrue(s.optBoxUnbox)
+  }
+  @Test def `print args to reporter`: Unit = {
+    val s = settings
+    val args = "-Vprint-args" :: "-" :: Nil
+    val (ok, rest) = s.processArguments(args, processAll = true)
+    assertTrue(ok)
+    assertTrue(rest.isEmpty)
+    assertFalse(s.isInfo)
+    assertTrue(s.printArgs.isSetByUser)
+  }
+  @Test def `name-based phases setting accepts tilde prefix`: Unit = {
+    val start = new Phase(null) { def name = "start"; def run() = () }
+    val chunk = new Phase(start) { def name = "chunker"; def run() = () }
+    val clean = new Phase(chunk) { def name = "clean"; def run() = () }
+    val go    = new Phase(clean) { def name = "go"; def run() = () }
+    val end   = new Phase(go) { def name = "end"; def run() = () }
+    val s = new MutableSettings(msg => throw new IllegalArgumentException(msg))
+    val ps = new s.PhasesSetting("-Yp", descr="", default="")
+    s.allSettings(ps.name) = ps
+    val args = List("-Yp:clean,~chunker,3")
+    val (ok, residual) = s.processArguments(args, processAll = true)
+    assertTrue(ok)
+    assertTrue(residual.isEmpty)
+    assertTrue(ps.contains("clean"))
+    assertFalse(ps.contains("chunker"))
+    assertTrue(ps.contains("~chunker"))
+    assertFalse(ps.contains("start"))
+    assertFalse(ps.contains("end"))
+    assertTrue(ps.containsPhase(clean))
+    assertTrue(ps.containsPhase(chunk))
+    assertTrue(ps.containsPhase(start))
+    assertTrue(ps.containsPhase(start.next))
+    assertTrue(ps.contains(s"~${start.next.name}"))
+    assertTrue(ps.containsPhase(go))
+    assertTrue(ps.containsId(go.id))
+    assertFalse(ps.containsPhase(end))
+    assertFalse(ps.containsId(end.id))
+  }
+  @Test def `phases setting accepts all or underscore`: Unit = {
+    val start = new Phase(null) { def name = "start"; def run() = () }
+    def check(args: String*): MutableSettings#PhasesSetting = {
+      val s = new MutableSettings(msg => throw new IllegalArgumentException(msg))
+      val ps = new s.PhasesSetting("-Yp", descr="", default="")
+      s.allSettings(ps.name) = ps
+      val (ok, residual) = s.processArguments(args.toList, processAll = true)
+      assertTrue(ok)
+      assertTrue(residual.isEmpty)
+      ps
+    }
+    assertTrue(check("-Yp:start").containsPhase(start))
+    assertTrue(check("-Yp:start").contains("start"))
+    assertTrue(check("-Yp:start").containsName("start"))
+    assertTrue(check("-Yp:all").containsPhase(start))
+    assertTrue(check("-Yp:all").contains("start"))
+    assertFalse(check("-Yp:all").containsName("start"))
+    assertTrue(check("-Yp:_").containsPhase(start))
+    assertTrue(check("-Yp:junk,_").containsPhase(start))
+  }
+}
+object SettingsTest {
+  import language.implicitConversions
+  /** Avoid deprecated conversion. */
+  @inline implicit def reflectSettingToBoolean(s: MutableSettings#BooleanSetting): Boolean = s.value
 }

@@ -1,3 +1,5 @@
+//> using options -Ydelambdafy:method
+//
 class DuplicateClassName {
   () => {
     {() => ()}

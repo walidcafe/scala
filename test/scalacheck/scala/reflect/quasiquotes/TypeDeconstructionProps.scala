@@ -1,7 +1,7 @@
 package scala.reflect.quasiquotes
 
-import org.scalacheck._, Prop._, Gen._, Arbitrary._
-import scala.reflect.runtime.universe._, Flag._
+import org.scalacheck._, Prop._, Gen._
+import scala.reflect.runtime.universe._
 
 object TypeDeconstructionProps extends QuasiquoteProperties("type deconstruction") {
   property("ident(type name)") = forAll { (name: TypeName) =>
@@ -72,7 +72,7 @@ object TypeDeconstructionProps extends QuasiquoteProperties("type deconstruction
     }
   }
 
-  property("applied type doesn't match type appliction") = test {
+  property("applied type doesn't match type application") = test {
     assertThrows[MatchError] {
       val tq"$tpt[..$tpts]" = q"foo[bar]"
     }

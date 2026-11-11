@@ -1,4 +1,4 @@
-// Traits.scala
+//> using options -Werror
 sealed trait T
 
 trait A extends T

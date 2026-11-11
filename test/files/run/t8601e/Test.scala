@@ -1,3 +1,4 @@
+//> using options -opt:inline:**
 class C {
   def foo: Unit = {StaticInit.fld}
 }

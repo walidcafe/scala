@@ -2,12 +2,12 @@ import scala.tools.partest._
 import scala.tools.nsc.Settings
 
 object Test extends DirectTest {
-  override def extraSettings = "-cp " + sys.props("partest.lib") + " -d \"" + testOutput.path + "\""
+  override def extraSettings = "-cp " + sys.props("partest.lib")
 
   def code = """
     object Test extends App {
       // manifest lookup also involves type tag lookup
-      // because we support manifest <-> typetag convertability
+      // because we support manifest <-> typetag convertibility
       //
       // however when scala-reflect.jar (the home of type tags) is not on the classpath
       // we need to omit the type tag lookup, because we lack the necessary symbols
@@ -19,11 +19,11 @@ object Test extends DirectTest {
       // and then force scalac to perform implicit search for a manifest
       // if type tag lookup is not disabled, the compiler will crash
       // if it is disabled, then the compilation will succeed
-      // http://groups.google.com/group/scala-internals/browse_thread/thread/166ce4b71b7c46bb
+      // https://groups.google.com/group/scala-internals/browse_thread/thread/166ce4b71b7c46bb
       def foo[T: Manifest] = ()
       foo[List[Int]]
     }
   """
 
-  def show = compile()
+  def show() = compile()
 }

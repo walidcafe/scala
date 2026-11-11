@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package runtime
@@ -20,7 +32,7 @@ private[reflect] trait SynchronizedSymbols extends internal.Symbols { self: Symb
   override def recursionTable_=(value: immutable.Map[Symbol, Int]) = _recursionTable.set(value)
 
   // Set the fields which point companions at one another.  Returns the module.
-  override def connectModuleToClass(m: ModuleSymbol, moduleClass: ClassSymbol): ModuleSymbol =
+  override def connectModuleToClass(m: ModuleSymbol, moduleClass: ClassSymbol): m.type =
     gilSynchronized { super.connectModuleToClass(m, moduleClass) }
 
   override def newFreeTermSymbol(name: TermName, value: => Any, flags: Long = 0L, origin: String = null): FreeTermSymbol =
@@ -30,6 +42,18 @@ private[reflect] trait SynchronizedSymbols extends internal.Symbols { self: Symb
     new FreeTypeSymbol(name, origin) with SynchronizedTypeSymbol initFlags flags
 
   override protected def makeNoSymbol: NoSymbol = new NoSymbol with SynchronizedSymbol
+
+  // Note: `StubSymbol` is mixed in last, its `info` / `rawInfo` need to win over `SynchronizedSymbol`'s
+  private class SynchronizedStubClassSymbol(owner0: Symbol, name0: TypeName, val missingMessage: String)
+    extends ClassSymbol(owner0, owner0.pos, name0) with SynchronizedClassSymbol with StubSymbol
+  private class SynchronizedStubTermSymbol(owner0: Symbol, name0: TermName, val missingMessage: String)
+    extends TermSymbol(owner0, owner0.pos, name0) with SynchronizedTermSymbol with StubSymbol
+
+  // public (not protected) to match the widened override in `Global`, both are mixed into `ReflectGlobal`
+  override def newStubSymbol(owner: Symbol, name: Name, missingMessage: String): Symbol = name match {
+    case n: TypeName => new SynchronizedStubClassSymbol(owner, n, missingMessage)
+    case _           => new SynchronizedStubTermSymbol(owner, name.toTermName, missingMessage)
+  }
 
   trait SynchronizedSymbol extends Symbol {
 
@@ -148,6 +172,7 @@ private[reflect] trait SynchronizedSymbols extends internal.Symbols { self: Symb
     override def exists: Boolean = gilSynchronizedIfNotThreadsafe(super.exists)
     override def typeSignature: Type = gilSynchronizedIfNotThreadsafe { super.typeSignature }
     override def typeSignatureIn(site: Type): Type = gilSynchronizedIfNotThreadsafe { super.typeSignatureIn(site) }
+    override def typeConstructor: Type = gilSynchronizedIfNotThreadsafe { super.typeConstructor }
 
     override def typeParams: List[Symbol] = gilSynchronizedIfNotThreadsafe {
       if (isCompilerUniverse) super.typeParams

@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2007-2013 LAMP/EPFL
- * @author  Manohar Jonnalagedda
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -9,7 +16,7 @@ package model
 
 import base.comment._
 
-import scala.collection._
+import scala.collection.mutable
 import scala.reflect.internal.util.Position
 
 /** The comment parser transforms raw comment strings into `Comment` objects.
@@ -70,9 +77,9 @@ trait CommentFactory extends base.CommentFactoryBase {
     //other comment cases
     // parse function will make the comment
     else {
-      val rawComment = global.expandedDocComment(sym, inTpl.sym).trim
+      val rawComment = global.docCommentsSupport.expandedDocComment(sym, inTpl.sym).trim
       if (rawComment != "") {
-        val c = parse(rawComment, global.rawDocComment(sym), global.docCommentPos(sym), linkTarget)
+        val c = parse(rawComment, global.docCommentsSupport.rawDocComment(sym), global.docCommentsSupport.docCommentPos(sym), linkTarget)
         Some(c)
       }
       else None

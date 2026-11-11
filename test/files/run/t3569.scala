@@ -1,3 +1,5 @@
+//> using options -opt:inline:**
+//
 object Test {
   final val bippy1 = 1
   final lazy val bippy2 = 2

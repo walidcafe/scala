@@ -1,15 +1,27 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools
 package reflect
 
 import scala.reflect.reify.Taggers
-import scala.tools.nsc.typechecker.{ Analyzer, Macros }
+import scala.tools.nsc.typechecker.{ AbstractAnalyzer, Macros }
 import scala.reflect.runtime.Macros.currentMirror
 import scala.reflect.quasiquotes.{ Quasiquotes => QuasiquoteImpls }
 
 /** Optimizes system macro expansions by hardwiring them directly to their implementations
  *  bypassing standard reflective load and invoke to avoid the overhead of Java/Scala reflection.
  */
-class FastTrack[MacrosAndAnalyzer <: Macros with Analyzer](val macros: MacrosAndAnalyzer) {
+class FastTrack[MacrosAndAnalyzer <: Macros with AbstractAnalyzer](val macros: MacrosAndAnalyzer) {
 
   import macros._
   import global._
@@ -23,8 +35,8 @@ class FastTrack[MacrosAndAnalyzer <: Macros with Analyzer](val macros: MacrosAnd
 
   private implicit def context2taggers(c0: MacroContext): Taggers { val c: c0.type } =
     new { val c: c0.type = c0 } with Taggers
-  private implicit def context2macroimplementations(c0: MacroContext): FormatInterpolator { val c: c0.type } =
-    new { val c: c0.type = c0 } with FormatInterpolator
+  private implicit def context2macroimplementations(c0: MacroContext): FastStringInterpolator { val c: c0.type } =
+    new { val c: c0.type = c0 } with FastStringInterpolator
   private implicit def context2quasiquote(c0: MacroContext): QuasiquoteImpls { val c: c0.type } =
     new { val c: c0.type = c0 } with QuasiquoteImpls
   private def makeBlackbox(sym: Symbol)(pf: PartialFunction[Applied, MacroContext => Tree]) =
@@ -49,11 +61,13 @@ class FastTrack[MacrosAndAnalyzer <: Macros with Analyzer](val macros: MacrosAnd
       makeBlackbox(        materializeClassTag) { case Applied(_, ttag :: Nil, _)                 => _.materializeClassTag(ttag.tpe) },
       makeBlackbox(     materializeWeakTypeTag) { case Applied(_, ttag :: Nil, (u :: _) :: _)     => _.materializeTypeTag(u, EmptyTree, ttag.tpe, concrete = false) },
       makeBlackbox(         materializeTypeTag) { case Applied(_, ttag :: Nil, (u :: _) :: _)     => _.materializeTypeTag(u, EmptyTree, ttag.tpe, concrete = true) },
-      makeBlackbox(           ApiUniverseReify) { case Applied(_, ttag :: Nil, (expr :: _) :: _)  => c => c.materializeExpr(c.prefix.tree, EmptyTree, expr) },
-      makeBlackbox(            StringContext_f) { case _                                          => _.interpolate },
+      makeBlackbox(           ApiUniverseReify) { case Applied(_, _ :: Nil, (expr :: _) :: _)     => c => c.materializeExpr(c.prefix.tree, EmptyTree, expr) },
+      makeWhitebox(            StringContext_f) { case _                                          => _.interpolateF },
+      makeWhitebox(            StringContext_s) { case _                                          => _.interpolateS },
+      makeWhitebox(            StringContext_raw) { case _                                        => _.interpolateRaw },
       makeBlackbox(ReflectRuntimeCurrentMirror) { case _                                          => c => currentMirror(c).tree },
       makeWhitebox(  QuasiquoteClass_api_apply) { case _                                          => _.expandQuasiquote },
       makeWhitebox(QuasiquoteClass_api_unapply) { case _                                          => _.expandQuasiquote }
-    )
+     )
   }
 }

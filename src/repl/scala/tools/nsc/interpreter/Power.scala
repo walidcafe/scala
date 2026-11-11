@@ -1,12 +1,19 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc.interpreter
 
 import java.io.InputStream
-import java.net.URL
+import java.net.{URI, URL}
 
 import scala.collection.mutable
 import scala.io.Codec
@@ -68,7 +75,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
       pass += 1
       val (repeats, unseen) = todo partition seen
       unseenHistory += unseen.size
-      if (settings.verbose) {
+      if (settings.verbose.value) {
         println("%3d  %s accumulated, %s discarded.  This pass: %s unseen, %s repeats".format(
           pass, keep.size, discarded, unseen.size, repeats.size))
       }
@@ -92,7 +99,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
     /** Looking for dwindling returns */
     def droppedEnough() = unseenHistory.size >= 4 && {
       unseenHistory takeRight 4 sliding 2 forall { it =>
-        val List(a, b) = it.toList
+        val List(a, b) = (it.toList: @unchecked)
         a > b
       }
     }
@@ -128,7 +135,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
 
   val initImports = List(
     "import scala.tools.nsc._",
-    "import scala.collection.JavaConverters._",
+    "import scala.jdk.CollectionConverters._",
     "import intp.global.{ error => _, _ }",
     "import definitions.{ getClass => _, _ }",
     "import power.rutil._",
@@ -226,7 +233,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
     def pp(f: Seq[T] => Seq[T]): Unit =
       pretty.prettify(f(value)).iterator foreach (StringPrettifier show _)
 
-    def freq[U](p: T => U) = (value.toSeq groupBy p mapValues (_.size)).toList sortBy (-_._2) map (_.swap)
+    def freq[U](p: T => U) = value.groupMapReduce(p)(_ => 1)(_ + _).toList sortBy (-_._2) map (_.swap)
 
     def >>(implicit ord: Ordering[T]): Unit      = pp(_.sorted)
     def >!(): Unit                               = pp(_.distinct)
@@ -241,9 +248,9 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
   class RichReplString(s: String) {
     // make an url out of the string
     def u: URL = (
-      if (s contains ":") new URL(s)
-      else if ((new java.io.File(s)).exists) new java.io.File(s).toURI.toURL
-      else new URL("http://" + s)
+      if (s contains ":") new URI(s).toURL
+      else if (new java.io.File(s).exists) new java.io.File(s).toURI.toURL
+      else new URI("http://" + s).toURL
     )
   }
   class RichInputStream(in: InputStream)(implicit codec: Codec) {
@@ -257,7 +264,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
 
   trait Implicits1 {
     // fallback
-    implicit def replPrinting[T](x: T)(implicit pretty: Prettifier[T] = Prettifier.default[T]) =
+    implicit def replPrinting[T](x: T)(implicit pretty: Prettifier[T] = Prettifier.default[T]): PrettifierClass[T] =
       new SinglePrettifierClass[T](x)
   }
   trait Implicits2 extends Implicits1 {
@@ -281,7 +288,7 @@ class Power[ReplValsImpl <: ReplVals : ru.TypeTag: ClassTag](val intp: IMain, re
     implicit def replPrettifier[T] : Prettifier[T] = Prettifier.default[T]
     implicit def replTypeApplication(sym: Symbol): RichSymbol = new RichSymbol(sym)
 
-    implicit def replInputStream(in: InputStream)(implicit codec: Codec) = new RichInputStream(in)
+    implicit def replInputStream(in: InputStream)(implicit codec: Codec): RichInputStream = new RichInputStream(in)
     implicit def replEnhancedURLs(url: URL)(implicit codec: Codec): RichReplURL = new RichReplURL(url)(codec)
   }
 

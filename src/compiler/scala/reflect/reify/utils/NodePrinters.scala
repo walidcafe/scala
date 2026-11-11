@@ -1,11 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
+
 package scala.reflect.reify
 package utils
 
 import java.lang.System.{lineSeparator => EOL}
+import scala.util.matching.Regex.quoteReplacement
 
 trait NodePrinters {
   self: Utils =>
@@ -23,7 +32,7 @@ trait NodePrinters {
       // Rolling a full-fledged, robust TreePrinter would be several times more code.
       // Also as of late we have tests that ensure that UX won't be broken by random changes to the reifier.
       val lines = (tree.toString.split(EOL) drop 1 dropRight 1).toList splitAt 2
-      val (List(universe, mirror), reification0) = lines
+      val (List(universe, mirror), reification0) = lines: @unchecked
       val reification = (for (line <- reification0) yield {
         var s = line substring 2
         s = s.replace(nme.UNIVERSE_PREFIX.toString, "")
@@ -55,7 +64,7 @@ trait NodePrinters {
           }
 
           val replacement = "Modifiers(" + buf.reverse.mkString(", ")  + ")"
-          java.util.regex.Matcher.quoteReplacement(replacement)
+          quoteReplacement(replacement)
         })
         s
       })

@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://www.scala-lang.org/           **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package collection.mutable
@@ -29,13 +33,10 @@ import java.lang.Integer
  *  its size is automatically doubled. Both parameters may be changed by
  *  overriding the corresponding values in class `HashTable`.
  *
- *  @author  Matthias Zenger
- *  @author  Martin Odersky
- *  @since   1
- *
  *  @tparam A     type of the elements contained in this hash table.
  */
-private[mutable] abstract class HashTable[A, B, Entry >: Null <: HashEntry[A, Entry]] extends HashTable.HashUtils[A] {
+// Not used in the standard library, but used in scala-parallel-collections
+private[collection] trait HashTable[A, B, Entry >: Null <: HashEntry[A, Entry]] extends HashTable.HashUtils[A] {
   // Replacing Entry type parameter by abstract type member here allows to not expose to public
   // implementation-specific entry classes such as `DefaultEntry` or `LinkedEntry`.
   // However, I'm afraid it's too late now for such breaking change.
@@ -127,7 +128,7 @@ private[mutable] abstract class HashTable[A, B, Entry >: Null <: HashEntry[A, En
     foreachEntry(writeEntry)
   }
 
-  /** Find entry with given key in table, null if not found.
+  /** Finds entry with given key in table, null if not found.
    */
   final def findEntry(key: A): Entry =
     findEntry0(key, index(elemHashCode(key)))
@@ -138,7 +139,7 @@ private[mutable] abstract class HashTable[A, B, Entry >: Null <: HashEntry[A, En
     e
   }
 
-  /** Add entry to table
+  /** Adds entry to table
    *  pre: no entry with same key exists
    */
   protected[collection] final def addEntry(e: Entry): Unit = {
@@ -154,7 +155,7 @@ private[mutable] abstract class HashTable[A, B, Entry >: Null <: HashEntry[A, En
       resize(2 * table.length)
   }
 
-  /** Find entry with given key in table, or add new one if not found.
+  /** Finds entry with given key in table, or adds new one if not found.
    *  May be somewhat faster then `findEntry`/`addEntry` pair as it
    *  computes entry's hash index only once.
    *  Returns entry found in table or null.
@@ -172,10 +173,14 @@ private[mutable] abstract class HashTable[A, B, Entry >: Null <: HashEntry[A, En
    */
   def createNewEntry(key: A, value: B): Entry
 
-  /** Remove entry from table if present.
+  /** Removes entry from table if present.
    */
   final def removeEntry(key: A) : Entry = {
-    val h = index(elemHashCode(key))
+    removeEntry0(key, index(elemHashCode(key)))
+  }
+  /** Removes entry from table if present.
+   */
+  private[collection] final def removeEntry0(key: A, h: Int) : Entry = {
     var e = table(h).asInstanceOf[Entry]
     if (e != null) {
       if (elemEquals(e.key, key)) {
@@ -239,7 +244,7 @@ private[mutable] abstract class HashTable[A, B, Entry >: Null <: HashEntry[A, En
     }
   }
 
-  /** Remove all entries from table
+  /** Removes all entries from table
    */
   def clearTable(): Unit = {
     var i = table.length - 1
@@ -354,7 +359,7 @@ private[mutable] abstract class HashTable[A, B, Entry >: Null <: HashEntry[A, En
 
   /**
     * Note: we take the most significant bits of the hashcode, not the lower ones
-    * this is of crucial importance when populating the table in parallel
+    * this is of crucial importance when populating the table in parallel.
     */
   protected[collection] final def index(hcode: Int): Int = {
     val ones = table.length - 1
@@ -405,9 +410,8 @@ private[collection] object HashTable {
 }
 
 /** Class used internally.
-  * @since 2.8
   */
-private[mutable] trait HashEntry[A, E <: HashEntry[A, E]] {
+private[collection] trait HashEntry[A, E <: HashEntry[A, E]] {
   val key: A
   var next: E = _
 }

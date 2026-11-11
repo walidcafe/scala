@@ -1,4 +1,4 @@
-
+//> using options -Wunused:imports -Werror
 object Main extends App {
 
   def f(): Any = Macro {

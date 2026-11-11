@@ -1,7 +1,20 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.reflect.reify
 package utils
 
-import scala.collection._
+import scala.annotation._
+import scala.collection.{immutable, mutable}, mutable.{ArrayBuffer, ListBuffer}
 import java.lang.System.{lineSeparator => EOL}
 
 trait SymbolTables {
@@ -10,7 +23,7 @@ trait SymbolTables {
   import global._
 
   class SymbolTable private[SymbolTable] (
-    private[SymbolTable] val symtab: immutable.ListMap[Symbol, Tree] = immutable.ListMap[Symbol, Tree](),
+    private[SymbolTable] val symtab: immutable.ListMap[Symbol, Tree] = immutable.ListMap.empty[Symbol, Tree],
     private[SymbolTable] val aliases: List[(Symbol, TermName)] = List[(Symbol, TermName)](),
     private[SymbolTable] val original: Option[List[Tree]] = None) {
 
@@ -24,12 +37,13 @@ trait SymbolTables {
         case Some(FreeDef(_, name, _, _, _)) => name
         case Some(SymDef(_, name, _, _)) => name
         case None => nme.EMPTY
+        case x    => throw new MatchError(x)
       }
 
     def symAliases(sym: Symbol): List[TermName] =
       symName(sym) match {
         case name if name.isEmpty => Nil
-        case _ => (aliases.distinct groupBy (_._1) mapValues (_ map (_._2)))(sym)
+        case _ => (aliases.distinct.groupMap(_._1)(_._2))(sym)
       }
 
     def symBinding(sym: Symbol): Tree =
@@ -37,6 +51,7 @@ trait SymbolTables {
         case Some(FreeDef(_, _, binding, _, _)) => binding
         case Some(SymDef(_, _, _, _)) => throw new UnsupportedOperationException(s"${symtab(sym)} is a symdef, hence it doesn't have a binding")
         case None => EmptyTree
+        case x    => throw new MatchError(x)
       }
 
     def symRef(sym: Symbol): Tree =
@@ -44,8 +59,10 @@ trait SymbolTables {
         case Some(FreeDef(_, name, binding, _, _)) => Ident(name) updateAttachment binding
         case Some(SymDef(_, name, _, _)) => Ident(name) updateAttachment ReifyBindingAttachment(Ident(sym))
         case None => EmptyTree
+        case x    => throw new MatchError(x)
       }
 
+    @deprecated("use add instead", since="2.13.3")
     def +(sym: Symbol, name: TermName, reification: Tree): SymbolTable = add(sym, name, reification)
     def +(symDef: Tree): SymbolTable = add(symDef)
     def ++(symDefs: IterableOnce[Tree]): SymbolTable = symDefs.iterator.foldLeft(this)((symtab, symDef) => symtab.add(symDef))
@@ -65,14 +82,15 @@ trait SymbolTables {
       assert(sym != NoSymbol, showRaw(symDef))
       val name = symDef match {
         case FreeDef(_, name, _, _, _) => name
-        case SymDef(_, name, _, _) => name
+        case SymDef(_, name, _, _)     => name
+        case x                         => throw new MatchError(x)
       }
       val newSymtab = if (!(symtab contains sym)) symtab + (sym -> symDef) else symtab
       val newAliases = aliases :+ (sym -> name)
       new SymbolTable(newSymtab, newAliases)
     }
 
-    private def add(sym: Symbol, name0: TermName, reification: Tree): SymbolTable = {
+    def add(@unused sym: Symbol, name0: TermName, reification: Tree): SymbolTable = {
       def freshName(name0: TermName): TermName = {
         var name = name0.toString
         name = name.replace(".type", "$type")
@@ -95,7 +113,7 @@ trait SymbolTables {
       val newAliases = aliases filter (_._2 != name)
       newSymtab = newSymtab filter { case ((sym, _)) => newAliases exists (_._1 == sym) }
       newSymtab = newSymtab map { case ((sym, tree)) =>
-        val ValDef(mods, primaryName, tpt, rhs) = tree
+        val ValDef(mods, primaryName, tpt, rhs) = tree: @unchecked
         val tree1 =
           if (!(newAliases contains ((sym, primaryName)))) {
             val primaryName1 = newAliases.find(_._1 == sym).get._2
@@ -119,7 +137,7 @@ trait SymbolTables {
     def debugString: String = {
       val buf = new StringBuilder
       buf.append("symbol table = " + (if (syms.length == 0) "<empty>" else "")).append(EOL)
-      syms foreach (sym => buf.append(symDef(sym)).append(EOL))
+      syms.foreach(sym => buf.append(symDef(sym)).append(EOL))
       buf.delete(buf.length - EOL.length, buf.length)
       buf.toString
     }
@@ -149,8 +167,8 @@ trait SymbolTables {
       reifier.state.symtab = symtab0.asInstanceOf[reifier.SymbolTable]
       def currtab = reifier.symtab.asInstanceOf[SymbolTable]
       try {
-        val cumulativeSymtab = mutable.ArrayBuffer[Tree](symtab0.symtab.values.toList: _*)
-        val cumulativeAliases = mutable.ArrayBuffer[(Symbol, TermName)](symtab0.aliases: _*)
+        val cumulativeSymtab = ArrayBuffer[Tree](symtab0.symtab.values.toList: _*)
+        val cumulativeAliases = ArrayBuffer[(Symbol, TermName)](symtab0.aliases: _*)
 
         def fillInSymbol(sym: Symbol): Tree = {
           if (reifyDebug) println("Filling in: %s (%s)".format(sym, sym.accurateKindString))
@@ -158,7 +176,7 @@ trait SymbolTables {
           // scala/bug#6204 don't reify signatures for incomplete symbols, because this might lead to cyclic reference errors
           val signature =
             if (sym.isInitialized) {
-              if (sym.isCapturedVariable) capturedVariableType(sym)
+              if (sym.isCapturedVariable) capturedVariables.capturedVariableType(sym)
               else if (isFreeTerm) sym.tpe
               else sym.info
             } else NoType
@@ -186,7 +204,7 @@ trait SymbolTables {
         }
 
         val withAliases = cumulativeSymtab flatMap (entry => {
-          val result = mutable.ListBuffer[Tree]()
+          val result = ListBuffer[Tree]()
           result += entry
           val sym = reifyBinding(entry).symbol
           if (sym != NoSymbol)

@@ -1,9 +1,7 @@
 /*
  * filter: inliner warnings; re-run with
  */
-import scala.tools.nsc._
 import scala.tools.partest.CompilerTest
-import scala.collection.{ mutable, immutable, generic }
 
 object Test extends CompilerTest {
   import global._
@@ -75,7 +73,7 @@ package extest {
   """
 
   override def check(source: String, unit: global.CompilationUnit): Unit = {
-    getPackage(TermName("extest")).moduleClass.info.decls.toList.filter(_.isType).map(_.initialize).sortBy(_.name.toString) foreach { clazz =>
+    getPackage("extest").moduleClass.info.decls.toList.filter(_.isType).map(_.initialize).sortBy(_.name.toString) foreach { clazz =>
       exitingTyper {
         clazz.info
         println(clazz.defString)

@@ -3,8 +3,12 @@ reload: PingPong.scala
 askTypeCompletion at PingPong.scala(10,31)
 ================================================================================
 [response] askTypeCompletion at (10,31)
-retrieved 32 members
+retrieved 36 members
 [inaccessible] private[this] val ping: Ping
+[inaccessible] private[this] val self: Pong
+[inaccessible] private[this] val self: Pong
+[inaccessible] private[this] val self: Pong
+[inaccessible] private[this] val self: Pong
 [inaccessible] protected[package lang] def clone(): Object
 [inaccessible] protected[package lang] def finalize(): Unit
 def +(other: String): String
@@ -13,13 +17,13 @@ def ensuring(cond: Boolean): Pong
 def ensuring(cond: Boolean, msg: => Any): Pong
 def ensuring(cond: Pong => Boolean): Pong
 def ensuring(cond: Pong => Boolean, msg: => Any): Pong
-def equals(x$1: Any): Boolean
+def equals(x$1: Object): Boolean
 def formatted(fmtstr: String): String
 def hashCode(): Int
 def poke(): Unit
 def →[B](y: B): (Pong, B)
 final def !=(x$1: Any): Boolean
-final def ##(): Int
+final def ## : Int
 final def ==(x$1: Any): Boolean
 final def asInstanceOf[T0]: T0
 final def eq(x$1: AnyRef): Boolean
@@ -38,7 +42,11 @@ private[this] val name: String
 askTypeCompletion at PingPong.scala(19,28)
 ================================================================================
 [response] askTypeCompletion at (19,28)
-retrieved 33 members
+retrieved 37 members
+[inaccessible] private[this] val self: Ping
+[inaccessible] private[this] val self: Ping
+[inaccessible] private[this] val self: Ping
+[inaccessible] private[this] val self: Ping
 [inaccessible] protected[package lang] def clone(): Object
 [inaccessible] protected[package lang] def finalize(): Unit
 def +(other: String): String
@@ -47,7 +55,7 @@ def ensuring(cond: Boolean): Ping
 def ensuring(cond: Boolean, msg: => Any): Ping
 def ensuring(cond: Ping => Boolean): Ping
 def ensuring(cond: Ping => Boolean, msg: => Any): Ping
-def equals(x$1: Any): Boolean
+def equals(x$1: Object): Boolean
 def formatted(fmtstr: String): String
 def hashCode(): Int
 def loop: Unit
@@ -55,7 +63,7 @@ def name: String
 def poke: Unit
 def →[B](y: B): (Ping, B)
 final def !=(x$1: Any): Boolean
-final def ##(): Int
+final def ## : Int
 final def ==(x$1: Any): Boolean
 final def asInstanceOf[T0]: T0
 final def eq(x$1: AnyRef): Boolean

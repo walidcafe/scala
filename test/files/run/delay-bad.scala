@@ -1,3 +1,4 @@
+//> using options -Xmaxwarns 0
 trait A extends DelayedInit
 {
   print("-A")

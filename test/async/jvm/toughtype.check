@@ -1,0 +1,3 @@
+toughtype.scala:175: warning: discarded pure expression does nothing
+              identity[A] _
+                      ^

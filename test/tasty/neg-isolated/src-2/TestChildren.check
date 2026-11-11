@@ -1,0 +1,4 @@
+TestChildren_fail.scala:5: error: can't find type in parents of class tastytest.Child: tastytest.Parent; perhaps it is missing from the classpath.
+  def test1 = new Child
+                  ^
+1 error

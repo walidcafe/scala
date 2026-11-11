@@ -60,7 +60,7 @@ abstract class PerRunInitTest {
 
       val settings = new Settings(showError)
 
-      new Global(settings, new StoreReporter)
+      new Global(settings, new StoreReporter(settings))
     }
     underTest = new PostProcessorFrontendAccessImpl(global)
   }
@@ -77,13 +77,14 @@ abstract class PerRunInitTest {
 
   def clearCaches() = underTest.global.perRunCaches.clearAll()
 
+  @annotation.nowarn("cat=deprecation")
   def doGc() = {
     System.gc()
     System.runFinalization()
   }
 
   @Test
-  def clearedWhenExpired: Unit = {
+  def clearedWhenExpired(): Unit = {
     val data = newData()
 
     add(1, data)
@@ -97,7 +98,7 @@ abstract class PerRunInitTest {
   }
 
   @Test
-  def clearedWeakOnly: Unit = {
+  def clearedWeakOnly(): Unit = {
     var data = newData()
     val ref = WeakReference(data)
 
@@ -110,7 +111,7 @@ abstract class PerRunInitTest {
   }
 
   @Test
-  def notClearedIfRequested: Unit = {
+  def notClearedIfRequested(): Unit = {
     val data = newData()
     dontClear(data)
 

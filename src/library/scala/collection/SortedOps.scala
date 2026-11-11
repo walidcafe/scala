@@ -1,16 +1,33 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.collection
 
 
 /** Base trait for sorted collections */
 trait SortedOps[A, +C] {
 
-  implicit def ordering: Ordering[A]
+  def ordering: Ordering[A]
 
   /** Returns the first key of the collection. */
   def firstKey: A
 
   /** Returns the last key of the collection. */
   def lastKey: A
+
+  /** Comparison function that orders keys. */
+  @deprecated("Use ordering.compare instead", "2.13.0")
+  @deprecatedOverriding("Use ordering.compare instead", "2.13.0")
+  @inline def compare(k0: A, k1: A): Int = ordering.compare(k0, k1)
 
   /** Creates a ranged projection of this collection. Any mutations in the
     *  ranged projection will update this collection and vice versa.
@@ -60,13 +77,13 @@ trait SortedOps[A, +C] {
    */
   def rangeUntil(until: A): C = rangeImpl(None, Some(until))
 
-  /** Create a range projection of this collection with no lower-bound.
+  /** Creates a range projection of this collection with no lower-bound.
     *  @param to The upper-bound (inclusive) of the ranged projection.
     */
   @deprecated("Use rangeTo", "2.13.0")
   final def to(to: A): C = rangeTo(to)
 
-  /** Create a range projection of this collection with no lower-bound.
+  /** Creates a range projection of this collection with no lower-bound.
     *  @param to The upper-bound (inclusive) of the ranged projection.
     */
   def rangeTo(to: A): C

@@ -1,14 +1,11 @@
-t856.scala:3: error: class ComplexRect needs to be abstract, since:
-it has 2 unimplemented members.
-/** As seen from class ComplexRect, the missing signatures are as follows.
- *  For convenience, these are usable as stub implementations.
- */
+t856.scala:3: error: class ComplexRect needs to be abstract.
+Missing implementations for 2 members.
   // Members declared in scala.Equals
   def canEqual(that: Any): Boolean = ???
 
   // Members declared in scala.Product2
-  def _2: Double = ???
+  def _2: Double = ??? // implements `def _2: T2`
 
 class ComplexRect(val _1:Double, _2:Double) extends Complex {
       ^
-one error found
+1 error

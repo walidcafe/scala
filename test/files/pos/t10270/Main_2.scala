@@ -1,3 +1,4 @@
+//> using options -Xfatal-warnings -Ywarn-unused:imports
 
 object Main extends App {
 

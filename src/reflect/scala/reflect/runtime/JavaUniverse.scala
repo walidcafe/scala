@@ -1,13 +1,25 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package runtime
 
-import scala.reflect.internal.{TreeInfo, SomePhase}
+import scala.annotation.nowarn
+import scala.reflect.internal.{SomePhase, TreeInfo}
 import scala.reflect.internal.{SymbolTable => InternalSymbolTable}
 import scala.reflect.runtime.{SymbolTable => RuntimeSymbolTable}
-import scala.reflect.internal.util.Statistics
 import scala.reflect.api.{TypeCreator, Universe}
-import scala.reflect.internal.util.Statistics
+import scala.reflect.internal.util.{CodeAction, Statistics}
 
 /** An implementation of [[scala.reflect.api.Universe]] for runtime reflection using JVM classloaders.
  *
@@ -21,19 +33,21 @@ class JavaUniverse extends InternalSymbolTable with JavaUniverseForce with Refle
   lazy val settings = new Settings
 
   override final val statistics = new Statistics(JavaUniverse.this, settings) with ReflectStats
-  private val isLogging = System.getProperty("scala.debug.reflect") != null
+  private[this] val isLogging = System.getProperty("scala.debug.reflect") != null
   def log(msg: => AnyRef): Unit = if (isLogging) Console.err.println("[reflect] " + msg)
 
   // TODO: why put output under isLogging? Calls to inform are already conditional on debug/verbose/...
-  import scala.reflect.internal.{Reporter, ReporterImpl}
-  override def reporter: Reporter = new ReporterImpl {
+  import scala.reflect.internal.Reporter
+  override def reporter: Reporter = new Reporter {
+    @nowarn("msg=overriding method info0")
     protected def info0(pos: Position, msg: String, severity: Severity, force: Boolean): Unit = log(msg)
   }
 
   // minimal Run to get Reporting wired
   def currentRun = new RunReporting {}
   class PerRunReporting extends PerRunReportingBase {
-    def deprecationWarning(pos: Position, msg: String, since: String): Unit = reporter.warning(pos, msg)
+    def deprecationWarning(pos: Position, msg: String, since: String, site: String, origin: String, actions: List[CodeAction]): Unit =
+      reporter.warning(pos, msg)
   }
   protected def PerRunReporting = new PerRunReporting
 
@@ -43,7 +57,7 @@ class JavaUniverse extends InternalSymbolTable with JavaUniverseForce with Refle
   def newStrictTreeCopier: TreeCopier = new StrictTreeCopier
   def newLazyTreeCopier: TreeCopier = new LazyTreeCopier
 
-  def currentFreshNameCreator = globalFreshNameCreator
+  def currentFreshNameCreator = freshNames.globalFreshNameCreator
 
   override lazy val internal: Internal = new SymbolTableInternal {
     override def typeTagToManifest[T: ClassTag](mirror0: Any, tag: Universe # TypeTag[T]): Manifest[T] = {
@@ -141,7 +155,7 @@ class JavaUniverse extends InternalSymbolTable with JavaUniverseForce with Refle
   def init(): Unit = {
     definitions.init()
 
-    // workaround for http://groups.google.com/group/scala-internals/browse_thread/thread/97840ba4fd37b52e
+    // workaround for https://groups.google.com/group/scala-internals/browse_thread/thread/97840ba4fd37b52e
     // constructors are by definition single-threaded, so we initialize all lazy vals (and local object) in advance
     // in order to avoid deadlocks later (e.g. one thread holds a global reflection lock and waits for definitions.Something to initialize,
     // whereas another thread holds a definitions.Something initialization lock and needs a global reflection lock to complete the initialization)

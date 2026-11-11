@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package sys
@@ -77,15 +81,15 @@ class FileProcessLogger(file: File) extends ProcessLogger with Closeable with Fl
  *  when run.
  */
 object ProcessLogger {
-  /** Creates a [[scala.sys.process.ProcessLogger]] that redirects output to a `java.io.File`. */
+  /** Returns a [[scala.sys.process.ProcessLogger]] that redirects output to a `java.io.File`. */
   def apply(file: File): FileProcessLogger = new FileProcessLogger(file)
 
-  /** Creates a [[scala.sys.process.ProcessLogger]] that sends all output, standard and error,
+  /** Returns a [[scala.sys.process.ProcessLogger]] that sends all output, standard and error,
    *  to the passed function.
    */
   def apply(fn: String => Unit): ProcessLogger = apply(fn, fn)
 
-  /** Creates a [[scala.sys.process.ProcessLogger]] that sends all output to the corresponding
+  /** Returns a [[scala.sys.process.ProcessLogger]] that sends all output to the corresponding
    *  function.
    *
    *  @param fout  This function will receive standard output.

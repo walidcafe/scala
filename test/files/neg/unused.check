@@ -1,0 +1,9 @@
+unused.scala:7: warning: pattern var x in value patvars is never used
+    case C(x, 2, _, _) => 1
+           ^
+unused.scala:10: warning: pattern var e in value patvars is never used
+    case e => 4
+         ^
+error: No warnings can be incurred under -Werror.
+2 warnings
+1 error

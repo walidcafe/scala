@@ -1,3 +1,5 @@
+//> using options -Xlint:deprecation -Werror
+//
 // bug 989
 '42'
 

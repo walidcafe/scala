@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package math
@@ -14,7 +18,7 @@ package math
  *  of partial ordering on some type.  This trait is for representing the
  *  latter.
  *
- *  A [[http://en.wikipedia.org/wiki/Partially_ordered_set partial ordering]] is a
+ *  A [[https://en.wikipedia.org/wiki/Partially_ordered_set partial ordering]] is a
  *  binary relation on a type `T`, exposed as the `lteq` method of this trait.
  *  This relation must be:
  *
@@ -27,14 +31,11 @@ package math
  *    for any `x`, `y`, and `z` of type `T`.
  *
  *  Additionally, a partial ordering induces an
- *  [[http://en.wikipedia.org/wiki/Equivalence_relation equivalence relation]]
+ *  [[https://en.wikipedia.org/wiki/Equivalence_relation equivalence relation]]
  *  on a type `T`: `x` and `y` of type `T` are equivalent if and only if
  *  `lteq(x, y) && lteq(y, x) == '''true'''`. This equivalence relation is
  *  exposed as the `equiv` method, inherited from the
  *  [[scala.math.Equiv Equiv]] trait.
- *
- *  @author  Geoffrey Washburn
- *  @since 2.7
  */
 
 trait PartialOrdering[T] extends Equiv[T] {
@@ -49,25 +50,25 @@ trait PartialOrdering[T] extends Equiv[T] {
    */
   def tryCompare(x: T, y: T): Option[Int]
 
-  /** Returns `'''true'''` iff `x` comes before `y` in the ordering.
+  /** Returns `true` iff `x` comes before `y` in the ordering.
    */
   def lteq(x: T, y: T): Boolean
 
-  /** Returns `'''true'''` iff `y` comes before `x` in the ordering.
+  /** Returns `true` iff `y` comes before `x` in the ordering.
    */
   def gteq(x: T, y: T): Boolean = lteq(y, x)
 
-  /** Returns `'''true'''` iff `x` comes before `y` in the ordering
+  /** Returns `true` iff `x` comes before `y` in the ordering
    *  and is not the same as `y`.
    */
   def lt(x: T, y: T): Boolean = lteq(x, y) && !equiv(x, y)
 
-  /** Returns `'''true'''` iff `y` comes before `x` in the ordering
+  /** Returns `true` iff `y` comes before `x` in the ordering
    *  and is not the same as `x`.
    */
   def gt(x: T, y: T): Boolean = gteq(x, y) && !equiv(x, y)
 
-  /** Returns `'''true'''` iff `x` is equivalent to `y` in the ordering.
+  /** Returns `true` iff `x` is equivalent to `y` in the ordering.
    */
   def equiv(x: T, y: T): Boolean = lteq(x,y) && lteq(y,x)
 
@@ -80,4 +81,8 @@ trait PartialOrdering[T] extends Equiv[T] {
     override def gt(x: T, y: T) = outer.gt(y, x)
     override def equiv(x: T, y: T) = outer.equiv(y, x)
   }
+}
+
+object PartialOrdering {
+  @inline def apply[T](implicit ev: PartialOrdering[T]): PartialOrdering[T] = ev
 }

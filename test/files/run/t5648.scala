@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 case class C(val s: Int*)
 
 object Test {

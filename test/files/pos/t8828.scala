@@ -1,3 +1,5 @@
+//> using options -Xlint:inaccessible -Xfatal-warnings
+//
 
 package outer
 

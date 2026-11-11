@@ -1,3 +1,6 @@
+
+//> using javacOpt -Xlint:deprecation
+
 class Use_2 {
     public int test() {
         Test u = new Test();

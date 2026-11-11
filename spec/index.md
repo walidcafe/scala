@@ -3,20 +3,7 @@ title: Scala Language Specification
 layout: toc
 ---
 
-# Table of Contents
-
-<ol>
-  {% assign sorted_pages = site.pages | sort:"name" %}
-  {% for post in sorted_pages %}
-    <!-- exclude this page from the toc, not sure how to check
-         whether there is no chapter variable in the page  -->
-    {% if post.chapter >= 0 %}
-      <li>
-        <a href="{{site.baseurl}}{{ post.url }}"> {{ post.title }}</a>
-      </li>
-    {% endif %}
-  {% endfor %}
-</ol>
+{% include table-of-contents.yml %}
 
 #### Authors and Contributors
 
@@ -48,7 +35,7 @@ definitions or glue code.
 Scala has been developed from 2001 in the programming methods
 laboratory at EPFL. Version 1.0 was released in November 2003. This
 document describes the second version of the language, which was
-released in March 2006. It acts a reference for the language
+released in March 2006. It acts as a reference for the language
 definition and some core library modules. It is not intended to teach
 Scala or its concepts; for this there are [other documents](14-references.html).
 

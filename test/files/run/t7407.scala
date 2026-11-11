@@ -1,3 +1,5 @@
+//> using options -opt:none
+//
 // scala/bug#7407
 object Test {
 

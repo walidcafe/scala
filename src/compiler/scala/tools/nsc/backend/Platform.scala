@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -34,7 +41,7 @@ trait Platform {
    * Tells whether a class with both a binary and a source representation
    * (found in classpath and in sourcepath) should be re-compiled. Behaves
    * on the JVM similar to javac, i.e. if the source file is newer than the classfile,
-   * a re-compile is triggered. On .NET by contrast classfiles always take precedence.
+   * a re-compile is triggered.
    */
   def needCompile(bin: AbstractFile, src: AbstractFile): Boolean
 }

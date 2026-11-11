@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 object Test {
   def f: Unit = {
     var b = false

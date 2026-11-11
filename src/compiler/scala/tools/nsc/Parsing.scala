@@ -1,12 +1,20 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2014 LAMP/EPFL, Typesafe Inc.
- * @author  Adriaan Moors
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package tools.nsc
 
 import scala.reflect.internal.Positions
+import scala.reflect.internal.util.CodeAction
 
 /** Similar to Reporting: gather global functionality specific to parsing.
  */
@@ -28,8 +36,8 @@ trait Parsing { self : Positions with Reporting =>
     }
 
     def incompleteHandled = incompleteHandler != null
-    def incompleteInputError(pos: Position, msg: String): Unit =
+    def incompleteInputError(pos: Position, msg: String, actions: List[CodeAction] = Nil): Unit =
       if (incompleteHandled) incompleteHandler(pos, msg)
-      else reporter.error(pos, msg)
+      else reporter.error(pos, msg, actions)
   }
 }

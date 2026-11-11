@@ -1,3 +1,6 @@
+
+//> using options -Xlint:deprecation
+
 class Test {
   def test: Unit = {
     val d = new Defs

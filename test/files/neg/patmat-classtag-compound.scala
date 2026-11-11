@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 object Test extends App{
   trait Bar
   trait Foo

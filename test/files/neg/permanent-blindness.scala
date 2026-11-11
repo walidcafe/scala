@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 package foo {
   class Bippy
   object Bop {

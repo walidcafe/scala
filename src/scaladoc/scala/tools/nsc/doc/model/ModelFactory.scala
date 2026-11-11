@@ -1,4 +1,14 @@
-/* NSC -- new Scala compiler -- Copyright 2007-2013 LAMP/EPFL */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package tools.nsc
@@ -8,13 +18,16 @@ package model
 import base.comment._
 import diagram._
 
-import scala.collection._
-import scala.util.matching.Regex
-import scala.reflect.macros.internal.macroImpl
-import symtab.Flags
+import java.net.URI
+import java.nio.file.Paths
 
-import io._
-import model.{ RootPackage => RootPackageEntity }
+import scala.collection.mutable, mutable.ListBuffer
+import scala.reflect.io._
+import scala.reflect.macros.internal.macroImpl
+import scala.util.matching.Regex.quoteReplacement
+
+import model.{RootPackage => RootPackageEntity}
+import symtab.Flags
 
 /** This trait extracts all required information for documentation from compilation units */
 class ModelFactory(val global: Global, val settings: doc.Settings) {
@@ -60,6 +73,17 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     case _ => false
   }
 
+  // This unsightly hack closes issue scala/bug#4086.
+  private lazy val modifiedSynchronized: Symbol = {
+    val sym = definitions.Object_synchronized
+    val info = (sym.info: @unchecked) match {
+      case PolyType(ts, MethodType(List(bp), mt)) =>
+        val cp = bp.cloneSymbol.setPos(bp.pos).setInfo(definitions.byNameType(bp.info))
+        PolyType(ts, MethodType(List(cp), mt))
+    }
+    sym.cloneSymbol.setPos(sym.pos).setInfo(info)
+  }
+
   def optimize(str: String): String =
     if (str.length < 16) str.intern else str
 
@@ -76,7 +100,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     def inTemplate: TemplateImpl = inTpl
     def toRoot: List[EntityImpl] = this :: inTpl.toRoot
     def qualifiedName = name
-    def annotations = sym.annotations.filterNot(_.tpe =:= typeOf[macroImpl]).map(makeAnnotation)
+    def annotations = sym.annotations.filterNot(_.atp =:= typeOf[macroImpl]).map(makeAnnotation)
     def inPackageObject: Boolean = sym.owner.isModuleClass && sym.owner.sourceModule.isPackageObject
     def isType = sym.name.isTypeName
   }
@@ -88,7 +112,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     def isTrait = sym.isTrait
     def isClass = sym.isClass && !sym.isTrait
     def isObject = sym.isModule && !sym.hasPackageFlag
-    def isCaseClass = sym.isCaseClass
+    def isCase = sym.isCase
     def isRootPackage = false
     def selfType = if (sym.thisSym eq sym) None else Some(makeType(sym.thisSym.typeOfThis, this))
   }
@@ -101,7 +125,9 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
 
     // if there is a field symbol, the ValDef will use it, which means docs attached to it will be under the field symbol, not the getter's
     protected[this] def commentCarryingSymbol(sym: Symbol) =
-      if (sym.hasAccessorFlag && sym.accessed.exists) sym.accessed else sym
+      if (sym == modifiedSynchronized) definitions.Object_synchronized
+      else if (sym.hasAccessorFlag && sym.accessed.exists) sym.accessed
+      else sym
 
     lazy val comment = thisFactory.comment(commentCarryingSymbol(sym), linkTarget, inTpl)
 
@@ -118,19 +144,22 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
       else if (sym.isProtectedLocal) ProtectedInInstance()
       else {
         val qual =
-          if (sym.hasAccessBoundary)
-            Some(makeTemplate(sym.privateWithin))
-          else None
-        if (sym.isPrivate) PrivateInTemplate(inTpl)
-        else if (sym.isProtected) ProtectedInTemplate(qual getOrElse inTpl)
+          if (sym.hasAccessBoundary) {
+            val qualTpl = makeTemplate(sym.privateWithin)
+            if (qualTpl != inTpl) Some(qualTpl)
+            else None
+          } else None
+        def tp(c: TemplateImpl) = makeType(c.sym.tpe, inTpl)
+        if (sym.isPrivate) PrivateInTemplate(None)
+        else if (sym.isProtected) ProtectedInTemplate(qual.map(tp))
         else qual match {
-          case Some(q) => PrivateInTemplate(q)
+          case Some(q) => PrivateInTemplate(Some(tp(q)))
           case None => Public()
         }
       }
     }
     def flags = {
-      val fgs = mutable.ListBuffer.empty[Paragraph]
+      val fgs = ListBuffer.empty[Paragraph]
       if (sym.isImplicit) fgs += Paragraph(Text("implicit"))
       if (sym.isSealed) fgs += Paragraph(Text("sealed"))
       if (!sym.isTrait && (sym hasFlag Flags.ABSTRACT)) fgs += Paragraph(Text("abstract"))
@@ -196,7 +225,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
         case d: MemberEntity with Def =>
           val paramLists: List[String] =
             if (d.valueParams.isEmpty) Nil
-            else d.valueParams map (ps => ps map (_.resultType.name) mkString ("(",",",")"))
+            else d.valueParams.map(ps => ps.map(_.resultType.name).mkString("(",",",")"))
           paramLists.mkString
         case _ => ""
       }
@@ -269,7 +298,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     assert(!(docTemplatesCache isDefinedAt sym), sym)
     docTemplatesCache += (sym -> this)
 
-    if (settings.verbose)
+    if (settings.verbose.value)
       inform("Creating doc template for " + sym)
 
     override def linkTarget: DocTemplateImpl = this
@@ -286,22 +315,25 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     }
 
     def sourceUrl = {
-      def fixPath(s: String) = s.replaceAll("\\" + java.io.File.separator, "/")
-      val assumedSourceRoot  = fixPath(settings.sourcepath.value) stripSuffix "/"
 
       if (!settings.docsourceurl.isDefault)
-        inSource map { case (file, _) =>
-          val filePath = fixPath(file.path).replaceFirst("^" + assumedSourceRoot, "").stripSuffix(".scala")
+        inSource.map { case (file, line) =>
+          val filePathExt = {
+            // file path is relative to source root (-sourcepath); use an absolute path otherwise
+            val sp = settings.sourcepath.value
+            val fileUri = file.file.toPath.toUri
+            if (sp.isEmpty) fileUri.getRawPath
+            else Paths.get(sp).toUri.relativize(fileUri).getRawPath
+          }
+          val (filePath, fileExt) =
+            filePathExt.lastIndexOf('.') match {
+              case -1 => (filePathExt, "")
+              case i  => filePathExt.splitAt(i)
+            }
           val tplOwner = this.inTemplate.qualifiedName
           val tplName = this.name
-          val patches = new Regex("""€\{(FILE_PATH|TPL_OWNER|TPL_NAME)\}""")
-          def substitute(name: String): String = name match {
-            case "FILE_PATH" => filePath
-            case "TPL_OWNER" => tplOwner
-            case "TPL_NAME" => tplName
-          }
-          val patchedString = patches.replaceAllIn(settings.docsourceurl.value, m => java.util.regex.Matcher.quoteReplacement(substitute(m.group(1))) )
-          new java.net.URL(patchedString)
+          val patchedString = expandUrl(settings.docsourceurl.value, filePath, fileExt, filePathExt, line, tplOwner, tplName)
+          new URI(patchedString).toURL
         }
       else None
     }
@@ -313,7 +345,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     /* Subclass cache */
     private lazy val subClassesCache = (
       if (sym == AnyRefClass || sym == AnyClass) null
-      else mutable.ListBuffer[DocTemplateEntity]()
+      else ListBuffer[DocTemplateEntity]()
     )
     def registerSubClass(sc: DocTemplateEntity): Unit = {
       if (subClassesCache != null)
@@ -322,10 +354,10 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     def directSubClasses = if (subClassesCache == null) Nil else subClassesCache.toList
 
     /* Implicitly convertible class cache */
-    private var implicitlyConvertibleClassesCache: mutable.ListBuffer[(DocTemplateImpl, ImplicitConversionImpl)] = null
+    private var implicitlyConvertibleClassesCache: ListBuffer[(DocTemplateImpl, ImplicitConversionImpl)] = null
     def registerImplicitlyConvertibleClass(dtpl: DocTemplateImpl, conv: ImplicitConversionImpl): Unit = {
       if (implicitlyConvertibleClassesCache == null)
-        implicitlyConvertibleClassesCache = mutable.ListBuffer[(DocTemplateImpl, ImplicitConversionImpl)]()
+        implicitlyConvertibleClassesCache = ListBuffer[(DocTemplateImpl, ImplicitConversionImpl)]()
       implicitlyConvertibleClassesCache += ((dtpl, conv))
     }
 
@@ -335,10 +367,9 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
       else
         implicitlyConvertibleClassesCache.toList
 
-    // the implicit conversions are generated eagerly, but the members generated by implicit conversions are added
-    // lazily, on completeModel
-    val conversions: List[ImplicitConversionImpl] =
-      if (settings.docImplicits) makeImplicitConversions(sym, this) else Nil
+    // the implicit conversions are generated lazily, on completeModel
+    lazy val conversions: List[ImplicitConversionImpl] =
+      if (settings.docImplicits.value) makeImplicitConversions(sym, this) else Nil
 
     // members as given by the compiler
     lazy val memberSyms      = sym.info.members.filter(s => membersShouldDocument(s, this)).toList
@@ -435,7 +466,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     def primaryConstructor: Option[MemberImpl with Constructor] = if (isClass) constructors find { _.isPrimary } else None
     override def valueParams =
       // we don't want params on a class (non case class) signature
-      if (isCaseClass) primaryConstructor match {
+      if (isCase) primaryConstructor match {
         case Some(const) => const.sym.paramss map (_ map (makeValueParam(_, this)))
         case None => List()
       }
@@ -474,17 +505,20 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
       def nonRootTemplate(sym: Symbol): Option[DocTemplateImpl] =
         if (sym eq RootPackage) None else findTemplateMaybe(sym)
 
-      /* Variable precedence order for implicitly added members: Take the variable definitions from ...
-       * 1. the target of the implicit conversion
-       * 2. the definition template (owner)
-       * 3. the current template
-       */
-      val inRealTpl = (
-        conversion.flatMap(conv => nonRootTemplate(conv.toType.typeSymbol))
-          orElse nonRootTemplate(sym.owner)
-          orElse Option(inTpl))
+      val inRealTpl = conversion match {
+        case Some(conv) =>
+          /* Variable precedence order for implicitly added members: Take the variable definitions from ...
+           * 1. the target of the implicit conversion
+           * 2. the definition template (owner)
+           * 3. the current template
+           */
+          nonRootTemplate(conv.toType.typeSymbol).orElse(nonRootTemplate(sym.owner)).getOrElse(inTpl)
+        case None =>
+          // This case handles members which were inherited but not implemented or overridden
+          inTpl
+      }
 
-      inRealTpl flatMap (tpl => thisFactory.comment(commentCarryingSymbol(sym), tpl, tpl))
+      thisFactory.comment(commentCarryingSymbol(sym), inRealTpl, inRealTpl)
     }
 
     override def inDefinitionTemplates = useCaseOf.fold(super.inDefinitionTemplates)(_.inDefinitionTemplates)
@@ -496,7 +530,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     }
     def isUseCase = useCaseOf.isDefined
     override def byConversion: Option[ImplicitConversionImpl] = conversion
-    override def isImplicitlyInherited = { assert(modelFinished); conversion.isDefined }
+    override def isImplicitlyInherited = { assert(modelFinished, "cannot check if implicitly inherited before model is finished"); conversion.isDefined }
     override def isShadowedImplicit    = isImplicitlyInherited && inTpl.implicitsShadowing.get(this).map(_.isShadowed).getOrElse(false)
     override def isAmbiguousImplicit   = isImplicitlyInherited && inTpl.implicitsShadowing.get(this).map(_.isAmbiguous).getOrElse(false)
     override def isShadowedOrAmbiguousImplicit = isShadowedImplicit || isAmbiguousImplicit
@@ -550,14 +584,15 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
    * package object abstraction and placing members directly in the package.
    *
    * Here's the explanation of what we do. The code:
-   *
+   * {{{
    * package foo {
    *   object `package` {
    *     class Bar
    *   }
    * }
-   *
+   * }}}
    * will yield this Symbol structure:
+   * <pre>
    *                                       +---------+ (2)
    *                                       |         |
    * +---------------+         +---------- v ------- | ---+                              +--------+ (2)
@@ -565,11 +600,12 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
    * +---------------+         | +------------------ | -+ |         +------------------- v ---+   |
    *                           | | package object foo#3 <-----(1)---- module class package#4  |   |
    *                           | +----------------------+ |         | +---------------------+ |   |
-   *                           +--------------------------+         | | class package$Bar#5 | |   |
+   *                           +--------------------------+         | | class package\$Bar#5 | |   |
    *                                                                | +----------------- | -+ |   |
    *                                                                +------------------- | ---+   |
    *                                                                                     |        |
    *                                                                                     +--------+
+   * </pre>
    * (1) sourceModule
    * (2) you get out of owners with .owner
    *
@@ -682,7 +718,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
           }
       else {
         // no class inheritance at this point
-        assert(inOriginalOwner(bSym, inTpl), bSym + " in " + inTpl)
+        assert(inOriginalOwner(bSym, inTpl), s"$bSym in $inTpl")
         Some(createDocTemplate(bSym, inTpl))
       }
     }
@@ -697,7 +733,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
 
       // Code is duplicate because the anonymous classes are created statically
       def createNoDocMemberTemplate(bSym: Symbol, inTpl: DocTemplateImpl): MemberTemplateImpl = {
-        assert(modelFinished) // only created AFTER the model is finished
+        assert(modelFinished, "cannot create NoDocMember template before model is finished") // only created AFTER the model is finished
         if (bSym.isModule || (bSym.isAliasType && bSym.tpe.typeSymbol.isModule))
           new MemberTemplateImpl(bSym, inTpl) with Object {}
         else if (bSym.isTrait || (bSym.isAliasType && bSym.tpe.typeSymbol.isTrait))
@@ -708,17 +744,18 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
           throw new IllegalArgumentException(s"'$bSym' isn't a class, trait or object thus cannot be built as a member template.")
       }
 
-      assert(modelFinished)
+      assert(modelFinished, "cannot create lazy template member before model is finished")
       val bSym = normalizeTemplate(aSym)
 
       if (docTemplatesCache isDefinedAt bSym)
         docTemplatesCache(bSym)
       else
         docTemplatesCache.get(bSym.owner) match {
-          case Some(inTpl) =>
-            val mbrs = inTpl.members.collect({ case mbr: MemberImpl if mbr.sym == bSym => mbr })
-            assert(mbrs.length == 1)
-            mbrs.head
+          case Some(docTpl) =>
+            docTpl.members.collect { case mbr: MemberImpl if mbr.sym == bSym => mbr } match {
+              case h :: Nil => h
+              case _ => throw new AssertionError("must have exactly one member with bSym")
+            }
           case _ =>
             // move the class completely to the new location
             createNoDocMemberTemplate(bSym, inTpl)
@@ -739,17 +776,9 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
           override def isVar = true
         })
       else if (bSym.isMethod && !bSym.hasAccessorFlag && !bSym.isConstructor && !bSym.isModule) {
-        val cSym = { // This unsightly hack closes issue #4086.
-          if (bSym == definitions.Object_synchronized) {
-            val cSymInfo = (bSym.info: @unchecked) match {
-              case PolyType(ts, MethodType(List(bp), mt)) =>
-                val cp = bp.cloneSymbol.setPos(bp.pos).setInfo(definitions.byNameType(bp.info))
-                PolyType(ts, MethodType(List(cp), mt))
-            }
-            bSym.cloneSymbol.setPos(bSym.pos).setInfo(cSymInfo)
-          }
+        val cSym: Symbol =
+          if (bSym == definitions.Object_synchronized) modifiedSynchronized
           else bSym
-        }
         Some(new NonTemplateParamMemberImpl(cSym, conversion, useCaseOf, inTpl) with HigherKindedImpl with Def {
           override def isDef = true
         })
@@ -785,7 +814,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     if (!localShouldDocument(aSym) || aSym.isModuleClass || aSym.isPackageObject || aSym.isMixinConstructor)
       Nil
     else {
-      val allSyms = useCases(aSym, inTpl.sym) map { case (bSym, bComment, bPos) =>
+      val allSyms = docCommentsSupport.useCases(aSym, inTpl.sym) map { case (bSym, bComment, bPos) =>
         docComments.put(bSym, DocComment(bComment, bPos)) // put the comment in the list, don't parse it yet, closes scala/bug#4898
         bSym
       }
@@ -805,17 +834,17 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
   }
 
   def findTemplateMaybe(aSym: Symbol): Option[DocTemplateImpl] = {
-    assert(modelFinished)
+    assert(modelFinished, "cannot try to find template before model is finished")
     docTemplatesCache.get(normalizeTemplate(aSym)).filterNot(packageDropped(_))
   }
 
   def makeTemplate(aSym: Symbol): TemplateImpl = makeTemplate(aSym, None)
 
   def makeTemplate(aSym: Symbol, inTpl: Option[TemplateImpl]): TemplateImpl = {
-    assert(modelFinished)
+    assert(modelFinished, "cannot make template before model is finished")
 
     def makeNoDocTemplate(aSym: Symbol, inTpl: TemplateImpl): NoDocTemplateImpl =
-      noDocTemplatesCache getOrElse (aSym, new NoDocTemplateImpl(aSym, inTpl))
+      noDocTemplatesCache.getOrElse(aSym, new NoDocTemplateImpl(aSym, inTpl))
 
     findTemplateMaybe(aSym) getOrElse {
       val bSym = normalizeTemplate(aSym)
@@ -901,7 +930,7 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
         }
         else None
       def resultType =
-        makeTypeInTemplateContext(aSym.tpe, inTpl, aSym)
+        makeTypeInTemplateContext(aSym.tpe, this.inTpl, aSym)
       def isImplicit = aSym.isImplicit
     }
 
@@ -933,14 +962,12 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
        *   - a NoDocTemplate if the type's symbol is not documented at all */
       def makeTemplateOrMemberTemplate(parent: Type): TemplateImpl = {
         def noDocTemplate = makeTemplate(parent.typeSymbol)
-        findTemplateMaybe(parent.typeSymbol) match {
-          case Some(tpl) => tpl
-          case None => parent match {
+        findTemplateMaybe(parent.typeSymbol).getOrElse {
+          parent match {
             case TypeRef(pre, sym, args) =>
-              findTemplateMaybe(pre.typeSymbol) match {
-                case Some(tpl) => findMember(parent.typeSymbol, tpl).collect({case t: TemplateImpl => t}).getOrElse(noDocTemplate)
-                case None => noDocTemplate
-              }
+              findTemplateMaybe(pre.typeSymbol)
+                .flatMap(findMember(parent.typeSymbol, _).collect { case t: TemplateImpl => t })
+                .getOrElse(noDocTemplate)
             case _ => noDocTemplate
           }
         }
@@ -1003,20 +1030,21 @@ class ModelFactory(val global: Global, val settings: doc.Settings) {
     aSym.isModule && aSym.isJavaDefined &&
     aSym.info.members.exists(s => localShouldDocument(s) && (!s.isConstructor || s.owner == aSym))
 
-  def localShouldDocument(aSym: Symbol): Boolean =
-    !aSym.isPrivate && (aSym.isProtected || aSym.privateWithin == NoSymbol) && !aSym.isSynthetic
-
-  // the classes that are excluded from the index should also be excluded from the diagrams
-  def classExcluded(clazz: TemplateEntity): Boolean = settings.hardcoded.isExcluded(clazz.qualifiedName)
+  def localShouldDocument(aSym: Symbol): Boolean = {
+    // For `private[X]`, isPrivate is false (while for protected[X], isProtected is true)
+    def isPrivate = aSym.isPrivate || !aSym.isProtected && aSym.privateWithin != NoSymbol
+    // for private, only document if enabled in settings and not top-level
+    !aSym.isSynthetic && (!isPrivate || settings.visibilityPrivate.value && !aSym.isTopLevel)
+  }
 
   // the implicit conversions that are excluded from the pages should not appear in the diagram
   def implicitExcluded(convertorMethod: String): Boolean = settings.hiddenImplicits(convertorMethod)
 
   // whether or not to create a page for an {abstract,alias} type
   def typeShouldDocument(bSym: Symbol, inTpl: DocTemplateImpl) =
-    (settings.docExpandAllTypes && (bSym.sourceFile != null)) ||
+    (settings.docExpandAllTypes.value && (bSym.sourceFile != null)) ||
     (bSym.isAliasType || bSym.isAbstractType) &&
-    { val rawComment = global.expandedDocComment(bSym, inTpl.sym)
+    { val rawComment = global.docCommentsSupport.expandedDocComment(bSym, inTpl.sym)
       rawComment.contains("@template") || rawComment.contains("@documentable") }
 }
 object ModelFactory {
@@ -1025,4 +1053,36 @@ object ModelFactory {
   val defaultGroupName = "Ungrouped"
   val defaultGroupDesc = None
   val defaultGroupPriority = 1000
+
+  val tokens = raw"€\{($FILE_PATH|$FILE_EXT|$FILE_PATH_EXT|$FILE_LINE|$TPL_OWNER|$TPL_NAME)\}".r
+  final val FILE_PATH     = "FILE_PATH"
+  final val FILE_EXT      = "FILE_EXT"
+  final val FILE_PATH_EXT = "FILE_PATH_EXT"
+  final val FILE_LINE     = "FILE_LINE"
+  final val TPL_OWNER     = "TPL_OWNER"
+  final val TPL_NAME      = "TPL_NAME"
+
+  val WordChar = raw"(\w)".r
+
+  def expandUrl(urlTemplate: String, filePath: String, fileExt: String, filePathExt: String, line: Int, tplOwner: String, tplName: String): String = {
+    val absolute = filePath.startsWith("/")
+
+    def subst(token: String, index: Int): String = {
+      // If a relative path follows a word character, insert a `/`
+      def sep: String =
+        if (index > 0 && !absolute && WordChar.matches(urlTemplate.substring(index-1, index))) "/"
+        else ""
+      def dotted: Boolean = index > 0 && urlTemplate(index-1) == '.'
+
+      token match {
+        case FILE_PATH     => s"$sep$filePath"
+        case FILE_EXT      => if (dotted) fileExt.stripPrefix(".") else fileExt
+        case FILE_PATH_EXT => s"$sep$filePathExt"
+        case FILE_LINE     => line.toString
+        case TPL_OWNER     => tplOwner
+        case TPL_NAME      => tplName
+      }
+    }
+    tokens.replaceAllIn(urlTemplate, m => quoteReplacement(subst(m.group(1), m.start)))
+  }
 }

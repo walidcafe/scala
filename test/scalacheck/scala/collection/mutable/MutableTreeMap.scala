@@ -31,8 +31,8 @@ trait Generators {
     } yield mutable.TreeMap(keys zip values: _*)
   }
 
-  implicit def arbRedBlackTree[A: Arbitrary: Ordering, B: Arbitrary] = Arbitrary(genRedBlackTree[A, B])
-  implicit def arbTreeMap[A: Arbitrary: Ordering, B: Arbitrary] = Arbitrary(genTreeMap[A, B])
+  implicit def arbRedBlackTree[A: Arbitrary: Ordering, B: Arbitrary]: Arbitrary[RB.Tree[A,B]] = Arbitrary(genRedBlackTree[A, B])
+  implicit def arbTreeMap[A: Arbitrary: Ordering, B: Arbitrary]: Arbitrary[mutable.TreeMap[A,B]] = Arbitrary(genTreeMap[A, B])
 }
 
 object RedBlackTreeProperties extends Properties("mutable.RedBlackTree") with Generators {
@@ -138,7 +138,7 @@ object MutableTreeMapProperties extends Properties("mutable.TreeMap") with Gener
     val map = mutable.TreeMap[K, V]()
     map ++= entries
 
-    map.iteratorFrom(k).toSeq == entries.filterKeys(_ >= k).toSeq.sorted
+    map.iteratorFrom(k).toSeq == entries.view.filterKeys(_ >= k).toSeq.sorted
   }
 
   property("keysIteratorFrom") = forAll { (entries: Map[K, V], k: K) =>
@@ -152,7 +152,7 @@ object MutableTreeMapProperties extends Properties("mutable.TreeMap") with Gener
     val map = mutable.TreeMap[K, V]()
     map ++= entries
 
-    map.valuesIteratorFrom(k).toSeq == entries.filterKeys(_ >= k).toSeq.sorted.map(_._2)
+    map.valuesIteratorFrom(k).toSeq == entries.view.filterKeys(_ >= k).toSeq.sorted.map(_._2)
   }
 
   property("headOption") = forAll { (map: mutable.TreeMap[K, V]) =>
@@ -218,7 +218,7 @@ object MutableTreeMapProjectionProperties extends Properties("mutable.TreeMapPro
   type K = String
   type V = Int
 
-  implicit val ord = implicitly[Ordering[K]]
+  private val ord = implicitly[Ordering[K]]
 
   def in(key: K, from: Option[K], until: Option[K]) =
     from.fold(true)(_ <= key) && until.fold(true)(_ > key)

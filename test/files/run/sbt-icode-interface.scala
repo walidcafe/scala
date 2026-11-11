@@ -9,14 +9,14 @@ object Test extends DirectTest {
   """.trim
 
   def show(): Unit = {
-    val global = newCompiler("-usejavacp")
+    val global = newCompiler()
     import global._
     val r = new Run
     r.compileSources(newSourceFile(code) :: Nil)
 
     val results = collection.mutable.Buffer[(Boolean, String)]()
 
-    // Nailing down defacto compiler API from SBT's usage
+    // Nailing down de facto compiler API from SBT's usage
     // https://github.com/sbt/sbt/blob/adb41611cf73260938274915d8462d924df200c8/compile/interface/src/main/scala/xsbt/Analyzer.scala#L29-L41
     def isTopLevelModule(sym: Symbol) = sym.isTopLevel && sym.isModule
     for (unit <- currentRun.units if !unit.isJava) {

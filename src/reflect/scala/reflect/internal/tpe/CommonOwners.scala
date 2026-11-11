@@ -1,10 +1,22 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package internal
 package tpe
 
-private[internal] trait CommonOwners {
-  self: SymbolTable =>
+private[internal] final class CommonOwners[U <: SymbolTable with Singleton](val self: U) {
+  import self._
 
   /** The most deeply nested owner that contains all the symbols
     *  of thistype or prefixless typerefs/singletype occurrences in given type.
@@ -15,20 +27,15 @@ private[internal] trait CommonOwners {
     *  of thistype or prefixless typerefs/singletype occurrences in given list
     *  of types.
     */
-  protected[internal] def commonOwner(tps: List[Type]): Symbol = {
+  protected[internal] def commonOwner(tps: List[Type]): Symbol =
     if (tps.isEmpty) NoSymbol
     else {
       commonOwnerMap.clear()
-      tps foreach (commonOwnerMap traverse _)
+      tps foreach (commonOwnerMap)
       if (commonOwnerMap.result ne null) commonOwnerMap.result else NoSymbol
     }
-  }
 
-  protected def commonOwnerMap: CommonOwnerMap = commonOwnerMapObj
-
-  protected class CommonOwnerMap extends TypeTraverserWithResult[Symbol] {
-    var result: Symbol = _
-
+  class CommonOwnerMap extends TypeCollector[Symbol](null) {
     def clear(): Unit = { result = null }
 
     private def register(sym: Symbol): Unit = {
@@ -39,13 +46,13 @@ private[internal] trait CommonOwners {
         while ((result ne NoSymbol) && (result ne sym) && !(sym isNestedIn result))
           result = result.owner
     }
-    def traverse(tp: Type) = tp.normalize match {
+    def apply(tp: Type) = tp.normalize match {
       case ThisType(sym)                => register(sym)
-      case TypeRef(NoPrefix, sym, args) => register(sym.owner) ; args foreach traverse
+      case TypeRef(NoPrefix, sym, args) => register(sym.owner) ; args foreach apply
       case SingleType(NoPrefix, sym)    => register(sym.owner)
-      case _                            => tp.mapOver(this)
+      case _                            => tp.foldOver(this)
     }
   }
 
-  private lazy val commonOwnerMapObj = new CommonOwnerMap
+  private[internal] lazy val commonOwnerMapObj = new CommonOwnerMap
 }

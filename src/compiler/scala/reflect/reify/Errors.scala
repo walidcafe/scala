@@ -1,7 +1,21 @@
-package scala.reflect.reify
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
-import scala.reflect.macros.ReificationException
-import scala.reflect.macros.UnexpectedReificationException
+package scala.reflect
+package reify
+
+import internal.util.StringContextStripMarginOps
+import macros.ReificationException
+import macros.UnexpectedReificationException
 
 trait Errors {
   self: Reifier =>

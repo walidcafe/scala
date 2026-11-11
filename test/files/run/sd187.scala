@@ -1,15 +1,14 @@
 import scala.tools.partest._
-import java.io.{Console => _, _}
 
 object Test extends DirectTest {
 
-  override def extraSettings: String = "-usejavacp -Xprint-pos -Xprint:patmat -Ystop-after:patmat -d " + testOutput.path
+  override def extraSettings: String = "-usejavacp -Vprint-pos -Vprint:patmat -Ystop-after:patmat"
 
   override def code =
     """
     |class C {                                                                                        //
     |  def commonSubPattern(x: Any) = {                                                               //
-    |    x match {                                                                                    //
+    |    (x:  @unchecked) match {                                                                     //
     |      case _: Option[_] =>                                                                       //
     |      case s: String if s == "4" =>                                                              //
     |         s.hashCode                                                                              //
@@ -17,7 +16,7 @@ object Test extends DirectTest {
     |         s.hashCode                                                                              //
     |    }                                                                                            //
     |  }                                                                                              //
-    |  def extractor(x: Any) = x match {                                                              //
+    |  def extractor(x: Any) = (x: @unchecked) match {                                                //
     |      case Product2(a, b) =>                                                                     //
     |         a                                                                                       //
     |    }                                                                                            //
@@ -33,10 +32,5 @@ object Test extends DirectTest {
     |}
     |""".stripMargin
 
-
-  override def show(): Unit = {
-    Console.withErr(System.out) {
-      compile()
-    }
-  }
+  override def show(): Unit = compile()
 }

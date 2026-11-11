@@ -1,3 +1,5 @@
+//> using options -Xmaxwarns 0 -opt:local
+//
 object Test extends App {
 
   val one: java.lang.Integer = 1

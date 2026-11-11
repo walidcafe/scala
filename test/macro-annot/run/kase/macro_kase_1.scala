@@ -33,7 +33,7 @@ object kaseMacro {
       Modifiers(flags1.asInstanceOf[FlagSet], mods.privateWithin, mods.annotations)
     }
     def makeCaseAccessor(mods: Modifiers) = {
-      if (isByName(mods)) c.abort(c.enclosingPosition, "`kase' parameters may not be call-by-name")
+      if (isByName(mods)) c.abort(c.enclosingPosition, "`kase` parameters may not be call-by-name")
       val flags1 = mods.flags.asInstanceOf[Long] /* | InternalFlags.CASEACCESSOR */ & ~InternalFlags.PRIVATE & ~InternalFlags.LOCAL
       Modifiers(flags1.asInstanceOf[FlagSet], mods.privateWithin, mods.annotations)
     }
@@ -69,11 +69,12 @@ object kaseMacro {
     def expand(annottees: List[c.Tree]): List[c.Tree] = {
       val cdef @ ClassDef(_, name, tparams, Template(_, _, cbody)) = annottees.head
       val primaryCtor = cbody.collect{ case ddef @ DefDef(_, termNames.CONSTRUCTOR, _, _, _, _) => ddef }.head
-      if (primaryCtor.vparamss.isEmpty) c.abort(c.enclosingPosition, "`kase' is not appplicable to classes without a parameter list")
+      if (primaryCtor.vparamss.isEmpty) c.abort(c.enclosingPosition, "`kase` is not applicable to classes without a parameter list")
       val primaryParamss = primaryCtor.vparamss
       val primaryParams = primaryParamss.head
       val secondaryParamss = primaryParamss.tail
       val ourPolyType = if (tparams.nonEmpty) AppliedTypeTree(Ident(name), tparams.map(tparam => Ident(tparam.name))) else Ident(name)
+      val ourWildType = if (tparams.nonEmpty) AppliedTypeTree(Ident(name), tparams.map(_ => Bind(typeNames.WILDCARD, EmptyTree))) else Ident(name)
       val tparamUnderscores = tparams.zipWithIndex.map{ case (tdef, i) => TypeDef(makeDeferredSynthetic(unmakeParam(tdef.mods)), TypeName("x$" + (i+1)), tdef.tparams, tdef.rhs) }
       val ourExistentialType = ExistentialTypeTree(AppliedTypeTree(Ident(name), tparamUnderscores.map(tdef => Ident(tdef.name))), tparamUnderscores)
 
@@ -154,7 +155,7 @@ object kaseMacro {
               Apply(Select(thatC, TermName("canEqual")), List(This(name)))
             }
             def sameTypeCheck = {
-              val ifSameType = CaseDef(Typed(Ident(termNames.WILDCARD), ourPolyType), EmptyTree, Literal(Constant(true)))
+              val ifSameType = CaseDef(Typed(Ident(termNames.WILDCARD), ourWildType), EmptyTree, Literal(Constant(true)))
               val otherwise = CaseDef(Ident(termNames.WILDCARD), EmptyTree, Literal(Constant(false)))
               Match(Ident(equalsParam.name), List(ifSameType, otherwise))
             }
@@ -297,7 +298,7 @@ object kaseMacro {
       annottees.head.tree match {
         case ClassDef(_, _, _, _) => new kaseClassHelper[c.type](c)
         case ModuleDef(_, _, _) => new kaseObjectHelper[c.type](c)
-        case _ => c.abort(c.enclosingPosition, "`kase' is only applicable to classes and objects")
+        case _ => c.abort(c.enclosingPosition, "`kase` is only applicable to classes and objects")
       }
     }
     c.Expr[Any](Block(helper.expand(annottees.map(_.tree).toList), Literal(Constant(()))))

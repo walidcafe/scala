@@ -1,50 +1,60 @@
-/* scaladoc, a documentation generator for Scala
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
- * @author  Geoffrey Washburn
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 
 import scala.tools.nsc.doc.DocFactory
 import scala.tools.nsc.reporters.ConsoleReporter
-import scala.reflect.internal.Reporter
-import scala.reflect.internal.util.{ FakePos, NoPosition, Position }
+import scala.tools.nsc.settings.DefaultPathFactory
+import scala.reflect.internal.util.{FakePos, Position}
 
 /** The main class for scaladoc, a front-end for the Scala compiler
  *  that generates documentation from source files.
  */
 class ScalaDoc {
-  val versionMsg = "Scaladoc %s -- %s".format(Properties.versionString, Properties.copyrightString)
+  import ScalaDoc._
+  val versionMsg = s"Scaladoc ${Properties.versionString} -- ${Properties.copyrightString}"
 
   def process(args: Array[String]): Boolean = {
     var reporter: ScalaDocReporter = null
-    val docSettings = new doc.Settings(msg => reporter.error(FakePos("scaladoc"), msg + "\n  scaladoc -help  gives more information"),
-                                       msg => reporter.printMessage(msg))
+    val docSettings = new doc.Settings(msg => reporter.error(NoDocPos, s"$msg\n  scaladoc -help gives more information"),
+                                       msg => reporter.echo(msg),
+                                       DefaultPathFactory)
     reporter = new ScalaDocReporter(docSettings)
-    val command = new ScalaDoc.Command(args.toList, docSettings)
+    val command = new Command(args.toList, docSettings)
     def hasFiles = command.files.nonEmpty || docSettings.uncompilableFiles.nonEmpty
 
-    if (docSettings.version.value)
+    if (!command.ok)
+      ()
+    else if (docSettings.version.value)
       reporter.echo(versionMsg)
     else if (docSettings.Xhelp.value)
       reporter.echo(command.xusageMsg)
     else if (docSettings.Yhelp.value)
       reporter.echo(command.yusageMsg)
     else if (docSettings.showPlugins.value)
-      reporter.warning(null, "Plugins are not available when using Scaladoc")
+      reporter.warning(NoDocPos, "Plugins are not available when using Scaladoc")
     else if (docSettings.showPhases.value)
-      reporter.warning(null, "Phases are restricted when using Scaladoc")
+      reporter.warning(NoDocPos, s"Phases are restricted when using Scaladoc.\n${new DocFactory(reporter, docSettings).compiler.phaseDescriptions}")
     else if (docSettings.help.value || !hasFiles)
       reporter.echo(command.usageMsg)
     else
-      try { new DocFactory(reporter, docSettings) document command.files }
+      try new DocFactory(reporter, docSettings).document(command.files)
       catch {
         case ex @ FatalError(msg) =>
-          if (docSettings.debug.value) ex.printStackTrace()
-          reporter.error(null, "fatal error: " + msg)
+          if (docSettings.isDebug) ex.printStackTrace()
+          reporter.error(NoDocPos, s"fatal error: $msg")
       }
-      finally reporter.printSummary()
+      finally reporter.finish()
 
     !reporter.reallyHasErrors
   }
@@ -72,39 +82,24 @@ class ScalaDocReporter(settings: Settings) extends ConsoleReporter(settings) {
 
   def printDelayedMessages(): Unit = delayedMessages.values.foreach(_.apply())
 
-  override def printSummary(): Unit = {
+  override def finish(): Unit = {
     printDelayedMessages()
-    super.printSummary()
+    super.finish()
   }
 }
 
 object ScalaDoc extends ScalaDoc {
+  val NoDocPos = FakePos("scaladoc")
+
   class Command(arguments: List[String], settings: doc.Settings) extends CompilerCommand(arguments, settings) {
     override def cmdName = "scaladoc"
-    override def usageMsg = (
-      createUsageMsg("where possible scaladoc", shouldExplain = false, x => x.isStandard && settings.isScaladocSpecific(x.name)) +
-      "\n\nStandard scalac options also available:" +
-      createUsageMsg(x => x.isStandard && !settings.isScaladocSpecific(x.name))
-    )
+    override def usageMsg =
+      sm"""${createUsageMsg("where possible scaladoc", explain = false)(x => x.isStandard && settings.isScaladocSpecific(x.name))}
+           |Standard scalac options also available:
+           |${optionsMessage(x => x.isStandard && !settings.isScaladocSpecific(x.name))}"""
   }
 
   def main(args: Array[String]): Unit = {
     System.exit(if (process(args)) 0 else 1)
-  }
-
-  implicit class SummaryReporter(val rep: Reporter) extends AnyVal {
-    /** Adds print lambda to ScalaDocReporter, executes it on other reporter */
-    private[this] def summaryMessage(pos: Position, msg: String, print: () => Unit): Unit = rep match {
-      case r: ScalaDocReporter => r.addDelayedMessage(pos, msg, print)
-      case _ => print()
-    }
-
-    def summaryEcho(pos: Position, msg: String): Unit    = summaryMessage(pos, msg, () => rep.echo(pos, msg))
-    def summaryError(pos: Position, msg: String): Unit   = summaryMessage(pos, msg, () => rep.error(pos, msg))
-    def summaryWarning(pos: Position, msg: String): Unit = summaryMessage(pos, msg, () => rep.warning(pos, msg))
-
-    def summaryEcho(msg: String): Unit    = summaryEcho(NoPosition, msg)
-    def summaryError(msg: String): Unit   = summaryError(NoPosition, msg)
-    def summaryWarning(msg: String): Unit = summaryWarning(NoPosition, msg)
   }
 }

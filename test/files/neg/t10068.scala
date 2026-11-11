@@ -1,3 +1,5 @@
+//> using options -Xelide-below WARNING -Xsource:2.13
+//
 import annotation._, elidable._
 
 abstract class C {

@@ -1,28 +1,44 @@
-/* NEST (New Scala Test)
- * Copyright 2007-2013 LAMP/EPFL
- * @author Philipp Haller
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.partest
 package nest
 
+import java.io.{BufferedReader, FileWriter, PrintWriter}
 import scala.collection.mutable.ListBuffer
-import scala.tools.nsc.{ Global, Settings, CompilerCommand }
-import scala.tools.nsc.reporters.{ Reporter, ConsoleReporter }
+import scala.reflect.internal.util.{CodeAction, NoPosition, Position, ScalaClassLoader}
 import scala.reflect.io.AbstractFile
-import java.io.{ PrintWriter, FileWriter }
+import scala.tools.nsc.reporters.{ConsoleReporter, Reporter}
+import scala.tools.nsc.{CompilerCommand, Global, Settings}
+import scala.util.chaining._
+import scala.sys.process._
 
-class ExtConsoleReporter(settings: Settings, val writer: PrintWriter) extends ConsoleReporter(settings, Console.in, writer) {
-  shortname = true
-  // override def error(pos: Position, msg: String): Unit
+object ExtConsoleReporter {
+  def apply(settings: Settings, writer: PrintWriter) = {
+    val loader = new ClassLoader(getClass.getClassLoader) with ScalaClassLoader
+    loader.create[ConsoleReporter](settings.reporter.value, settings.errorFn)(settings, Console.in, writer, writer).tap(_.shortname = true)
+  }
+}
+class PlainReporter(settings: Settings, reader: BufferedReader, writer: PrintWriter, echo: PrintWriter) extends ConsoleReporter(settings, reader, writer, echo) {
+  override def doReport(pos: Position, msg: String, severity: Severity, actions: List[CodeAction]): Unit = writer.println(s"[$severity] [$pos]: $msg")
 }
 
 class TestSettings(cp: String, error: String => Unit) extends Settings(error) {
   @deprecated("Use primary constructor", "1.0.12")
   def this(cp: String) = this(cp, _ => ())
-  nowarnings.value  = false
-  encoding.value    = "UTF-8"
-  classpath.value   = cp
+  nowarnings.value = false
+  encoding.value   = "UTF-8"
+  classpath.value  = cp
+  //lint.add("_")
 }
 
 class PartestGlobal(settings: Settings, reporter: Reporter) extends Global(settings, reporter) {
@@ -35,16 +51,15 @@ class DirectCompiler(val runner: Runner) {
     new PartestGlobal(settings, reporter)
 
   def newGlobal(settings: Settings, logWriter: FileWriter): Global =
-    newGlobal(settings, new ExtConsoleReporter(settings, new PrintWriter(logWriter)))
+    newGlobal(settings, ExtConsoleReporter(settings, new PrintWriter(logWriter, true)))
 
 
   /** Massage args to merge plugins and fix paths.
-   *  Plugin path can be relative to test root, or cwd is out.
-   *  While we're at it, mix in the baseline options, too.
-   *  That's how ant passes in the plugins dir.
+   *  Plugin path can be relative to test root, or cwd (".") means use output dir and copy scalac-plugin.xml there.
+   *  Mix in the baseline options from the suiteRunner (scalacOpts, scalacExtraArgs).
    */
   private def updatePluginPath(args: List[String], out: AbstractFile, srcdir: AbstractFile): Seq[String] = {
-    val dir = PathSettings.testRoot
+    val dir = runner.suiteRunner.pathSettings.testRoot
     // The given path, or the output dir if ".", or a temp dir if output is virtual (since plugin loading doesn't like virtual)
     def pathOrCwd(p: String) =
       if (p == ".") {
@@ -61,39 +76,49 @@ class DirectCompiler(val runner: Runner) {
     }
 
     val xprefix = "-Xplugin:"
-    val (xplugs, others) = args partition (_ startsWith xprefix)
-    val Xplugin = if (xplugs.isEmpty) Nil else List(xprefix +
-      (xplugs map (_ stripPrefix xprefix) flatMap (_ split pathSeparator) map absolutize mkString pathSeparator)
-    )
-    runner.suiteRunner.scalacExtraArgs ++ runner.suiteRunner.scalacOpts.split(' ') ++ others ++ Xplugin
+    val (xplugs, others) = args.partition(_.startsWith(xprefix))
+    val Xplugin =
+      if (xplugs.isEmpty) Nil
+      else List(xprefix + xplugs.map(_ stripPrefix xprefix).flatMap(_ split pathSeparator).map(absolutize).mkString(pathSeparator))
+
+    // tests control most compiler settings, but let the environment tell us whether to exercise optimizer
+    val filteredOpts = runner.suiteRunner.scalacOpts.split(' ').filter(_.startsWith("-opt"))
+
+    runner.suiteRunner.scalacExtraArgs ++ filteredOpts ++ others ++ Xplugin
+  }
+  private def updatePluginPath(args: List[String]): Seq[String] = {
+    import runner.testInfo.testFile
+    val srcDir = if (testFile.isDirectory) testFile else Path(testFile).parent.jfile
+    updatePluginPath(args, AbstractFile.getDirectory(runner.outDir), AbstractFile.getDirectory(srcDir))
   }
 
   def compile(opts0: List[String], sources: List[File]): TestState = {
-    import runner.{ sources => _, _ }
+    import runner.{sources => _, _}
+    import testInfo._
 
-    // adding codelib.jar to the classpath
-    // codelib provides the possibility to override standard reify
-    // this shields the massive amount of reification tests from changes in the API
-    val codeLib = PathSettings.srcCodeLib.fold[List[Path]](x => Nil, lib => List[Path](lib))
     // add the instrumented library version to classpath -- must come first
-    val specializedOverride: List[Path] = if (kind == "specialized") List(PathSettings.srcSpecLib.fold(sys.error, identity)) else Nil
+    val specializedOverride: List[Path] =
+      if (kind == "specialized")
+        List(suiteRunner.pathSettings.srcSpecLib.fold(sys.error, identity))
+      else Nil
 
-    val classPath: List[Path] = specializedOverride ++ codeLib ++ fileManager.testClassPath ++ List[Path](outDir)
+    val classPath: List[Path] = specializedOverride ++ fileManager.testClassPath ++ List[Path](outDir)
 
     val parseArgErrors = ListBuffer.empty[String]
 
     val testSettings = new TestSettings(FileManager.joinPaths(classPath), s => parseArgErrors += s)
     val logWriter    = new FileWriter(logFile)
-    val srcDir       = if (testFile.isDirectory) testFile else Path(testFile).parent.jfile
-    val opts         = updatePluginPath(opts0, AbstractFile getDirectory outDir, AbstractFile getDirectory srcDir)
+    val opts         = updatePluginPath(opts0)
     val command      = new CompilerCommand(opts.toList, testSettings)
-    val global       = newGlobal(testSettings, logWriter)
-    val reporter     = global.reporter.asInstanceOf[ExtConsoleReporter]
+    val reporter     = ExtConsoleReporter(testSettings, new PrintWriter(logWriter, true))
+    val global       = newGlobal(testSettings, reporter)
     def errorCount   = reporter.errorCount
 
-    testSettings.outputDirs setSingleOutput outDir.getPath
+    // usually, -d outDir, but don't override setting by the test
+    if (!testSettings.outdir.isSetByUser)
+      testSettings.outputDirs.setSingleOutput(outDir.getPath)
 
-    def reportError(s: String): Unit = reporter.error(null, s)
+    def reportError(s: String): Unit = reporter.error(NoPosition, s)
 
     parseArgErrors.toList foreach reportError
 
@@ -103,8 +128,7 @@ class DirectCompiler(val runner: Runner) {
       if (command.files.nonEmpty) reportError(command.files.mkString("flags file may only contain compiler options, found: ", space, ""))
     }
 
-    def ids = sources.map(_.testIdent) mkString space
-    nestUI.vlog(s"% scalac $ids")
+    suiteRunner.verbose(sources.map(_.testIdent).mkString("% compiling ", space, if (suiteRunner.debug) s" -d $outDir" else ""))
 
     def execCompile() =
       if (command.shouldStopWithInfo) {
@@ -112,16 +136,31 @@ class DirectCompiler(val runner: Runner) {
         runner genFail "compilation stopped with info"
       } else {
         new global.Run compile sources.map(_.getPath)
-        if (!reporter.hasErrors) runner.genPass()
-        else {
-          reporter.printSummary()
-          reporter.writer.close()
-          runner.genFail(s"compilation failed with $errorCount errors")
-        }
+        val result =
+          if (!reporter.hasErrors) runner.genPass()
+          else {
+            reporter.finish()
+            runner.genFail(s"compilation failed with $errorCount errors")
+          }
+        reporter.close()
+        result
       }
 
-    try     { execCompile() }
-    catch   { case t: Throwable => reportError(t.getMessage) ; runner.genCrash(t) }
-    finally { logWriter.close() }
+    def execOtherCompiler() = {
+      val stdout = new StringBuilder
+      val stderr = new StringBuilder
+      val logger = ProcessLogger(stdout append _, stderr append _)
+      val resultCode = (suiteRunner.config.optCompilerPath.get + " " + sources.map(_.getPath).mkString(" ")) ! logger
+      logWriter append stdout
+      logWriter append stderr
+      if (resultCode == 0) runner.genPass()
+      else runner.genFail(s"compilation failed")
+    }
+
+    try
+      if (suiteRunner.config.optCompilerPath.isEmpty) execCompile()
+      else execOtherCompiler()
+    catch runner.crashHandler
+    finally logWriter.close()
   }
 }

@@ -1,22 +1,21 @@
 
 scala> class M[A]
-defined class M
+class M
 
 scala> implicit def ma0[A](a: A): M[A] = null
-warning: there was one feature warning; for details, enable `:setting -feature' or `:replay -feature'
-ma0: [A](a: A)M[A]
+warning: 1 feature warning; for details, enable `:setting -feature` or `:replay -feature`
+def ma0[A](a: A): M[A]
 
 scala> implicit def ma1[A](a: A): M[A] = null
-warning: there was one feature warning; for details, enable `:setting -feature' or `:replay -feature'
-ma1: [A](a: A)M[A]
+warning: 1 feature warning; for details, enable `:setting -feature` or `:replay -feature`
+def ma1[A](a: A): M[A]
 
 scala> def convert[F[X <: F[X]]](builder: F[_ <: F[_]]) = 0
-warning: there was one feature warning; for details, enable `:setting -feature' or `:replay -feature'
-convert: [F[X <: F[X]]](builder: F[_ <: F[_]])Int
+def convert[F[X <: F[X]]](builder: F[_ <: F[_]]): Int
 
 scala> convert(Some[Int](0))
        ^
-       error: no type parameters for method convert: (builder: F[_ <: F[_]])Int exist so that it can be applied to arguments (Some[Int])
+       error: no type parameters for method convert: (builder: F[_ <: F[_]]): Int exist so that it can be applied to arguments (Some[Int])
         --- because ---
        argument expression's type is not compatible with formal parameter type;
         found   : Some[Int]
@@ -33,6 +32,6 @@ scala> Range(1,2).toArray: Seq[_]
         required: Seq[_]
 
 scala> 0
-res2: Int = 0
+val res2: Int = 0
 
 scala> :quit

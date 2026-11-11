@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala
 package sys
@@ -14,9 +18,6 @@ package sys
  *  is not a requirement.
  *
  *  See `scala.sys.SystemProperties` for an example usage.
- *
- *  @author Paul Phillips
- *  @since   2.9
  */
 trait Prop[+T] {
   /** The full name of the property, e.g., "java.awt.headless".
@@ -24,14 +25,14 @@ trait Prop[+T] {
   def key: String
 
   /** If the key exists in the properties map, converts the value
-   *  to type `T` using valueFn.  As yet no validation is performed:
+   *  to type `T` using `valueFn`.  As yet no validation is performed:
    *  it will throw an exception on a failed conversion.
    *  @return   the converted value, or `zero` if not in the map
    */
   def value: T
 
-  /** True if the key exists in the properties map.  Note that this
-   *  is not sufficient for a Boolean property to be considered true.
+  /** Returns `true` if the key exists in the properties map.  Note that this
+   *  is not sufficient for a `Boolean` property to be considered `true`.
    *  @return   whether the map contains the key
    */
   def isSet: Boolean
@@ -39,7 +40,7 @@ trait Prop[+T] {
   /** Sets the property.
    *
    *  @param    newValue  the new string value
-   *  @return   the old value, or null if it was unset.
+   *  @return   the old value, or `null` if it was unset.
    */
   def set(newValue: String): String
 
@@ -47,13 +48,13 @@ trait Prop[+T] {
    */
   def setValue[T1 >: T](value: T1): T
 
-  /** Gets the current string value if any.  Will not return null: use
+  /** Returns the current string value if any.  Will not return `null`: use
    *  `isSet` to test for existence.
    *  @return   the current string value if any, else the empty string
    */
   def get: String
 
-  /** Some(value) if the property is set, None otherwise.
+  /** `Some(value)` if the property is set, `None` otherwise.
    */
   def option: Option[T]
 
@@ -66,20 +67,20 @@ trait Prop[+T] {
   def clear(): Unit
 
   /** A value of type `T` for use when the property is unset.
-   *  The default implementation delivers null for reference types
-   *  and 0/0.0/false for non-reference types.
+   *  The default implementation delivers `null` for reference types
+   *  and 0/0.0/`false` for non-reference types.
    */
   protected def zero: T
 }
 
 object Prop {
   /** A creator of property instances.  For any type `T`, if an implicit
-   *  parameter of type Creator[T] is in scope, a Prop[T] can be created
-   *  via this object's apply method.
+   *  parameter of type `Creator[T]` is in scope, a `Prop[T]` can be created
+   *  via this object's `apply` method.
    */
   @annotation.implicitNotFound("No implicit property creator available for type ${T}.")
   trait Creator[+T] {
-    /** Creates a Prop[T] of this type based on the given key. */
+    /** Returns a `Prop[T]` of this type based on the given key. */
     def apply(key: String): Prop[T]
   }
 

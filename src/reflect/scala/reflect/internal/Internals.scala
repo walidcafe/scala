@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala
 package reflect
 package internal
@@ -13,7 +25,9 @@ trait Internals extends api.Internals {
   type Internal = MacroInternalApi
   lazy val internal: Internal = new SymbolTableInternal {}
 
+  @deprecated("compatibility with Scala 2.10 EOL", "2.13.0")
   type Compat = MacroCompatApi
+  @deprecated("compatibility with Scala 2.10 EOL", "2.13.0")
   lazy val compat: Compat = new Compat {}
 
   trait SymbolTableInternal extends MacroInternalApi {
@@ -39,9 +53,9 @@ trait Internals extends api.Internals {
     def setSymbol(tree: Tree, sym: Symbol): tree.type = tree.setSymbol(sym)
     def setOriginal(tt: TypeTree, tree: Tree): TypeTree = tt.setOriginal(tree)
 
-    def captureVariable(vble: Symbol): Unit = self.captureVariable(vble)
-    def referenceCapturedVariable(vble: Symbol): Tree = self.referenceCapturedVariable(vble)
-    def capturedVariableType(vble: Symbol): Type = self.capturedVariableType(vble)
+    def captureVariable(vble: Symbol): Unit = self.capturedVariables.captureVariable(vble)
+    def referenceCapturedVariable(vble: Symbol): Tree = self.capturedVariables.referenceCapturedVariable(vble)
+    def capturedVariableType(vble: Symbol): Type = self.capturedVariables.capturedVariableType(vble)
 
     def classDef(sym: Symbol, impl: Template): ClassDef = self.ClassDef(sym, impl)
     def moduleDef(sym: Symbol, impl: Template): ModuleDef = self.ModuleDef(sym, impl)

@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings -Ywarn-unused:privates
+//
 
 class Test
 

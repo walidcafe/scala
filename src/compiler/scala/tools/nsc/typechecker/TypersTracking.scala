@@ -1,15 +1,23 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package typechecker
 
 import Mode._
+import scala.annotation._
 
 trait TypersTracking {
-  self: Analyzer =>
+  self: AbstractAnalyzer =>
 
   import global._
   import typeDebug._
@@ -22,7 +30,7 @@ trait TypersTracking {
 
   def fullSiteString(context: Context): String = {
     def owner_long_s = (
-      if (settings.debug.value) {
+      if (settings.isDebug) {
         def flags_s = context.owner.debugFlagString match {
           case "" => ""
           case s  => " with flags " + inLightMagenta(s)
@@ -63,7 +71,7 @@ trait TypersTracking {
 
     private def truncAndOneLine(s: String): String = {
       val s1 = s.replaceAll("\\s+", " ")
-      if (s1.length < 60 || settings.debug.value) s1 else s1.take(57) + "..."
+      if (s1.length < 60 || settings.isDebug) s1 else s1.take(57) + "..."
     }
 
     private class Frame(val tree: Tree) { }
@@ -77,7 +85,8 @@ trait TypersTracking {
     def indented(s: String): String =
       if (s == "") "" else currentIndent + s.replaceAll("\n", "\n" + currentIndent)
 
-    @inline final def runWith[T](t: Tree)(body: => T): T = {
+    @annotation.unused
+    @inline private final def runWith[T](t: Tree)(body: => T): T = {
       push(t)
       try body finally pop(t)
     }
@@ -99,7 +108,7 @@ trait TypersTracking {
     def showPush(tree: Tree, mode: Mode, pt: Type, context: Context): Unit = {
       def tree_s = truncAndOneLine(ptTree(tree))
       def pt_s = if (pt.isWildcard || context.inTypeConstructorAllowed) "" else s": pt=$pt"
-      def all_s = List(tree_s, pt_s, mode, fullSiteString(context)) filterNot (_ == "") mkString " "
+      def all_s = List(tree_s, pt_s, mode.toString, fullSiteString(context)).filterNot(_.isEmpty).mkString(" ")
 
       atLowerIndent(show(indented("""|-- """ + all_s)))
     }
@@ -108,7 +117,7 @@ trait TypersTracking {
       show(resetIfEmpty(indented("""\-> """ + s)))
       typedTree
     }
-    def showAdapt(original: Tree, adapted: Tree, pt: Type, context: Context): Unit = {
+    def showAdapt(original: Tree, adapted: Tree, pt: Type, @unused context: Context): Unit = {
       if (!noPrintAdapt(original, adapted)) {
         def tree_s1 = inLightCyan(truncAndOneLine(ptTree(original)))
         def pt_s = if (pt.isWildcard) "" else s" based on pt $pt"
@@ -128,15 +137,11 @@ trait TypersTracking {
         show(indented(s"[typed$class_s] " + truncAndOneLine(ptTree(tree))))
     }
 
-    def nextTyped(tree: Tree, mode: Mode, pt: Type, context: Context)(body: => Tree): Tree =
-      nextTypedInternal(tree, showPush(tree, mode, pt, context))(body)
-
-    def nextTypedInternal(tree: Tree, pushFn: => Unit)(body: => Tree): Tree = (
-      if (noPrintTyping(tree))
-        body
-      else
-        runWith(tree) { pushFn ; showPop(body) }
-    )
+    def beforeNextTyped(tree: Tree, mode: Mode, pt: Type, context: Context): Boolean = if (noPrintTyping(tree)) false else {
+      push(tree)
+      showPush(tree, mode, pt, context)
+      true
+    }
 
     @inline final def printTyping(tree: Tree, s: => String) = {
       if (printTypings && !noPrintTyping(tree))
@@ -156,7 +161,7 @@ trait TypersTracking {
   // Some trees which are typed with mind-numbing frequency and
   // which add nothing by being printed. Did () type to Unit? Let's
   // gamble on yes.
-  def printingOk(t: Tree) = printTypings && (settings.debug.value || !noPrint(t))
+  def printingOk(t: Tree) = printTypings && (settings.isDebug || !noPrint(t))
   def noPrintTyping(t: Tree) = (t.tpe ne null) || !printingOk(t)
   def noPrintAdapt(tree1: Tree, tree2: Tree) = !printingOk(tree1) || (
        (tree1.tpe == tree2.tpe)

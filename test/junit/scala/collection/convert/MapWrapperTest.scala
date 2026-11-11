@@ -1,18 +1,23 @@
 package scala.collection.convert
 
-import org.junit.Assert._
-import org.junit.Test
+import java.{util => jutil}
+
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import org.junit.{Ignore, Test}
 import org.junit.runner.RunWith
 import org.junit.runners.JUnit4
-import java.util
+
+import scala.jdk.CollectionConverters._
+import scala.tools.testkit.AssertUtil.assertThrows
+import scala.util.chaining._
 
 @RunWith(classOf[JUnit4])
 class MapWrapperTest {
 
   /* Test for scala/bug#7883 */
+  @deprecated("Uses deprecated extension", since="2.13")
   @Test
   def testContains(): Unit = {
-    import scala.collection.JavaConverters.mapAsJavaMapConverter
     import scala.language.reflectiveCalls  // for accessing containsCounter
 
     // A HashMap which throws an exception when the iterator method is called.
@@ -51,7 +56,6 @@ class MapWrapperTest {
   // test for scala/bug#8504
   @Test
   def testHashCodeNulls(): Unit = {
-    import scala.collection.JavaConverters._
     val javaMap = Map(1 -> null).asJava
 
     // Before the fix for scala/bug#8504, this throws a NPE
@@ -61,8 +65,7 @@ class MapWrapperTest {
   // regression test for https://github.com/scala/bug/issues/10663
   @Test
   def testHashCodeEqualsMatchesJavaMap(): Unit = {
-    import scala.collection.JavaConverters._
-    val jmap = new util.HashMap[String, String]()
+    val jmap = new jutil.HashMap[String, String]()
     jmap.put("scala", "rocks")
     jmap.put("java interop is fun!", "ya!")
     jmap.put("Ĺởồҝ ïŧ\\'ş ūŋǐčōđẹ", "whyyyy")
@@ -77,5 +80,104 @@ class MapWrapperTest {
     assertEquals(jmap.hashCode(), mapWrapper.hashCode())
     assertTrue(jmap == mapWrapper)
     assertTrue(mapWrapper == jmap)
+  }
+
+  // was: induce intermittent failure due to contention, where updater is called more than once
+  @Test @Ignore("busy work") def `t12586 updateWith should delegate to compute`: Unit = {
+    import jutil.concurrent.ConcurrentHashMap
+    val limit = 100      // retries until trigger
+    @volatile var count = 0
+    val jmap = new ConcurrentHashMap[String, Int]()
+    class Loki extends Runnable {
+      @volatile var done = false
+      def run(): Unit = {
+        while (!done) {
+          jmap.put("KEY", 1)
+          //Thread.`yield`()
+        }
+      }
+    }
+    val wrapped = jmap.asScala
+    val loki = new Loki
+    val runner = new Thread(loki).tap(_.start)
+    def updater(old: Option[Int]) = {
+      count += 1
+      old.map(_ + 1)
+      //  .tap(res => println(s"count $count: res=$res"))
+    }
+    for (i <- 1 to limit) {
+      count = 0
+      wrapped.updateWith("KEY")(updater)
+      assertEquals(s"index $i", 1, count)
+      //Thread.`yield`()
+    }
+    loki.done = true
+    runner.join()
+  }
+  @Test def `updateWith and getOrElseUpdate should reflect null policy of update`: Unit = {
+    val jmap = new jutil.concurrent.ConcurrentHashMap[String, String]()
+    val wrapped = jmap.asScala
+    assertThrows[NullPointerException](jmap.put("K", null))
+    assertThrows[NullPointerException](jmap.putIfAbsent("K", null))
+    assertThrows[NullPointerException](wrapped.put("K", null))
+    assertThrows[NullPointerException](wrapped.update("K", null))
+    assertThrows[NullPointerException](wrapped.updateWith("K")(_ => Some(null)))
+    assertThrows[NullPointerException](wrapped.getOrElseUpdate("K", null))
+
+    var count = 0
+    def v = {
+      count += 1
+      null
+    }
+    assertThrows[NullPointerException](wrapped.update("K", v))
+    assertEquals(1, count)
+    assertThrows[NullPointerException](wrapped.updateWith("K")(_ => Some(v)))
+    assertEquals(3, count)  // extra count in retry
+  }
+  @Test def `more updateWith and getOrElseUpdate should reflect null policy of update`: Unit = {
+    val jmap = new jutil.HashMap[String, String]()
+    val wrapped = jmap.asScala
+    wrapped.put("K", null)
+    assertEquals(1, wrapped.size)
+    wrapped.remove("K")
+    assertEquals(0, wrapped.size)
+    wrapped.update("K", null)
+    assertEquals(1, wrapped.size)
+    wrapped.remove("K")
+    wrapped.updateWith("K")(_ => Some(null))
+    assertEquals(1, wrapped.size)
+    wrapped.remove("K")
+    wrapped.getOrElseUpdate("K", null)
+    assertEquals(1, wrapped.size)
+
+    var count = 0
+    def v = {
+      count += 1
+      null
+    }
+    wrapped.update("K", v)
+    assertEquals(1, count)
+    wrapped.remove("K")
+    wrapped.updateWith("K")(_ => Some(v))
+    assertEquals(2, count)
+  }
+
+  @Test def `getOrElseUpdate / updateWith support should insert null`: Unit = {
+    val jmap = new jutil.HashMap[String, String]()
+    val wrapped = jmap.asScala
+
+    wrapped.getOrElseUpdate("a", null)
+    assertTrue(jmap.containsKey("a"))
+
+    wrapped.getOrElseUpdate(null, "x")
+    assertTrue(jmap.containsKey(null))
+
+    jmap.clear()
+
+    wrapped.updateWith("b")(_ => Some(null))
+    assertTrue(jmap.containsKey("b"))
+
+    wrapped.updateWith(null)(_ => Some("x"))
+    assertTrue(jmap.containsKey(null))
   }
 }

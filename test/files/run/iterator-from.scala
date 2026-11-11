@@ -4,7 +4,6 @@
 
 import scala.util.{Random => R}
 import scala.collection._
-import scala.math.Ordered
 
 object Test extends App {
   val maxLength = 25
@@ -13,7 +12,7 @@ object Test extends App {
 
   def testSet[A](set: SortedSet[A], list: List[A])(implicit o: Ordering[A]): Unit = {
     val distinctSorted = list.distinct.sorted
-    assertEquals("Set size wasn't the same as list sze", set.size, distinctSorted.size)
+    assertEquals("Set size wasn't the same as list size", set.size, distinctSorted.size)
 
     for(key <- distinctSorted) {
       val clazz = set.getClass
@@ -25,7 +24,7 @@ object Test extends App {
 
   def testMap[A, B](map: SortedMap[A, B], list: List[(A, B)])(implicit o: Ordering[A]): Unit = {
     val distinctSorted = distinctByKey(list).sortBy(_._1)
-    assertEquals("Map size wasn't the same as list sze", map.size, distinctSorted.size)
+    assertEquals("Map size wasn't the same as list size", map.size, distinctSorted.size)
 
     for(keyValue <- distinctSorted) {
       val key = keyValue._1
@@ -64,7 +63,7 @@ object Test extends App {
 
     val treeMap = immutable.TreeMap(keyValues:_*)
     testMap(treeMap, keyValues)
-    testMap(treeMap.filterKeys(_ % 2 == 0).to(SortedMap), keyValues  filter (_._1 % 2 == 0))
-    testMap(treeMap.mapValues(_ + 1).to(SortedMap), keyValues map {case (k,v) => (k, v + 1)})
+    testMap(treeMap.view.filterKeys(_ % 2 == 0).to(SortedMap), keyValues  filter (_._1 % 2 == 0))
+    testMap(treeMap.view.mapValues(_ + 1).to(SortedMap), keyValues map {case (k,v) => (k, v + 1)})
   }
 }

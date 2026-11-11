@@ -1,3 +1,5 @@
+//> using options -opt:unreachable-code
+//
 // See comment in BCodeBodyBuilder
 
 // -opt:unreachable-code

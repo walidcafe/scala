@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
@@ -9,7 +16,7 @@ package internal
 package util
 
 /** @inheritdoc */
-class Position extends scala.reflect.api.Position with InternalPositionImpl with DeprecatedPosition {
+class Position extends macros.EmptyAttachments with api.Position with InternalPositionImpl with DeprecatedPosition {
   type Pos = Position
   def pos: Position = this
   def withPos(newPos: Position): macros.Attachments { type Pos = Position.this.Pos } = newPos
@@ -27,12 +34,15 @@ class Position extends scala.reflect.api.Position with InternalPositionImpl with
 }
 
 object Position {
-  val tabInc = 8
+  final val tabInc = 8
 
   private def validate[T <: Position](pos: T): T = {
-    if (pos.isRange)
-      assert(pos.start <= pos.end, s"bad position: ${pos.show}")
-
+    if (pos.isRange) {
+      import pos.{pos => _, _}
+      assert(start <= end, s"bad position: ${pos.show}")
+      //assert(start <= point && point <= end, s"bad position: point $point out of range $start..$end: ${pos.show}")
+      //assert(start <= point && point <= end, s"bad position: point $point out of range $start..$end: ${pos.show}\n${pos.lineContent}\n${pos.lineCaret}")
+    }
     pos
   }
 
@@ -59,8 +69,10 @@ class OffsetPosition(sourceIn: SourceFile, pointIn: Int) extends DefinedPosition
   override def start   = point
   override def end     = point
 }
-class RangePosition(sourceIn: SourceFile, startIn: Int, pointIn: Int, endIn: Int) extends OffsetPosition(sourceIn, pointIn) {
+class RangePosition(sourceIn: SourceFile, startIn: Int, pointIn: Int, endIn: Int) extends DefinedPosition {
   override def isRange = true
+  override def source  = sourceIn
+  override def point   = pointIn
   override def start   = startIn
   override def end     = endIn
 }
@@ -123,19 +135,39 @@ private[util] trait InternalPositionImpl {
   final def makeTransparentIf(cond: Boolean): Position =
     if (cond && isOpaqueRange) Position.transparent(source, start, point, end) else this
 
-  /** Copy a range position with a changed value.
-   */
-  def withStart(start: Int): Position          = copyRange(start = start)
-  def withPoint(point: Int): Position          = if (isRange) copyRange(point = point) else Position.offset(source, point)
-  def withEnd(end: Int): Position              = copyRange(end = end)
-  def withSource(source: SourceFile): Position = copyRange(source = source)
-  def withShift(shift: Int): Position          = Position.range(source, start + shift, point + shift, end + shift)
+  /* Copy a range position with a changed value. */
+  /* Note: the result is validated (start <= end), use `copyRange` to update both at the same time. */
+  /** If start differs, copy a range position or promote an offset. */
+  def withStart(start: Int): Position = if (isDefined && this.start != start) copyRange(start = start) else this
+  /** If point differs, copy a range position or return an offset. */
+  def withPoint(point: Int): Position =
+    if (!isDefined || this.point == point) this else if (isRange) copyRange(point = point) else asOffset(point)
+  /** If end differs, copy a range position or promote an offset. */
+  def withEnd(end: Int): Position     = if (isDefined && this.end != end) copyRange(end = end) else this
+  def withSource(source: SourceFile): Position =
+    if (isRange) copyRange(source = source)
+    else if (isDefined) Position.offset(source, point)
+    else this
+  def withShift(shift: Int): Position =
+    if (isRange) Position.range(source, start + shift, point + shift, end + shift)
+    else if (isDefined) asOffset(point + shift)
+    else this
+
+  def copyRange(start: Int = start, point: Int = point, end: Int = end, source: SourceFile = source) =
+    Position.range(source, start, point, end)
 
   /** Convert a range position to a simple offset.
    */
   def focusStart: Position = if (this.isRange) asOffset(start) else this
   def focus: Position      = if (this.isRange) asOffset(point) else this
   def focusEnd: Position   = if (this.isRange) asOffset(end) else this
+
+  /** Convert an offset position to a degenerate range.
+   *
+   *  Note that withPoint does not promote to range, but withStart and withEnd may do so.
+   *  It would be more disciplined to require explicit promotion with toRange.
+   */
+  def toRange: Position = if (this.isRange) this else copyRange()
 
   /** If you have it in for punctuation you might not like these methods.
    *  However I think they're aptly named.
@@ -145,17 +177,27 @@ private[util] trait InternalPositionImpl {
    *    |^  means union, taking the point of the rhs
    *    ^|  means union, taking the point of the lhs
    */
-  def |(that: Position, poses: Position*): Position = poses.foldLeft(this | that)(_ | _)
+  //def |(that: Position, poses: Position*): Position = poses.foldLeft(this | that)(_ | _)
   def |(that: Position): Position                   = this union that
   def ^(point: Int): Position                       = this withPoint point
   def |^(that: Position): Position                  = (this | that) ^ that.point
   def ^|(that: Position): Position                  = (this | that) ^ this.point
 
-  def union(pos: Position): Position = (
-    if (!pos.isRange) this
-    else if (this.isRange) copyRange(start = start min pos.start, end = end max pos.end)
-    else pos
-  )
+  /** Widen a range to include the other operand.
+   *  If this position is a range, preserve its point; otherwise, the point of the other operand.
+   *  Note that NoPosition | offset is not promoted to an offset position.
+   *  Nor is offset | offset promoted to range.
+   */
+  def union(pos: Position): Position = {
+    def ranged(point: Int) = Position.range(source, start = start.min(pos.start), point = point, end = end.max(pos.end))
+    if (pos.isRange) {
+      if (this.isRange) ranged(point)
+      else if (this.isDefined) ranged(pos.point)
+      else pos
+    }
+    else if (this.isRange && pos.isDefined && !this.includes(pos)) ranged(point)
+    else this
+  }
 
   def includes(pos: Position): Boolean         = isRange && pos.isDefined && start <= pos.start && pos.end <= end
   def properlyIncludes(pos: Position): Boolean = includes(pos) && (start < pos.start || pos.end < end)
@@ -167,12 +209,31 @@ private[util] trait InternalPositionImpl {
   // necessary condition to establish that there is overlap.
   def overlaps(pos: Position): Boolean         = bothRanges(pos) && start < pos.end && pos.start < end
 
-  def line: Int           = if (hasSource) source.offsetToLine(point) + 1 else 0
-  def column: Int         = if (hasSource) calculateColumn() else 0
-  def lineContent: String = if (hasSource) source.lineToString(line - 1) else ""
-  def lineCaret: String   = if (hasSource) " " * (column - 1) + "^" else ""
+  private def line0       = source.offsetToLine(point)
+  private def lineOffset  = source.lineToOffset(line0)
+  def line: Int           = if (hasSource) line0 + 1 else 0
+  def column: Int         = if (!hasSource) 0 else {
+    var idx = lineOffset
+    var col = 0
+    while (idx != point) {
+      col += (if (source.content(idx) == '\t') Position.tabInc - col % Position.tabInc else 1)
+      idx += 1
+    }
+    col + 1
+  }
+  def lineContent: String = if (hasSource) source.lineToString(line0) else ""
+  def lineCaret: String   = if (!hasSource) "" else {
+    val buf = new StringBuilder
+    var idx = lineOffset
+    while (idx < point) {
+      buf.append(if (source.content(idx) == '\t') '\t' else ' ')
+      idx += 1
+    }
+    buf.append('^')
+    buf.toString
+  }
   @deprecated("use `lineCaret`", since="2.11.0")
-  def lineCarat: String   = lineCaret
+  def lineCarat: String = lineCaret
 
   def showError(msg: String): String = {
     def escaped(s: String) = {
@@ -184,16 +245,11 @@ private[util] trait InternalPositionImpl {
         sb.toString
       } else s
     }
-    def errorAt(p: Pos) = {
-      def where     = p.line
-      def content   = escaped(p.lineContent)
-      def indicator = p.lineCaret
-      f"$where: $msg%n$content%n$indicator"
-    }
+    import java.lang.System.{lineSeparator => NL}
     finalPosition match {
       case FakePos(fmsg) => s"$fmsg $msg"
       case NoPosition    => msg
-      case pos           => errorAt(pos)
+      case pos           => s"${pos.line}: ${msg}${NL}${escaped(pos.lineContent)}${NL}${pos.lineCaret}"
     }
   }
   def showDebug: String = toString
@@ -209,18 +265,6 @@ private[util] trait InternalPositionImpl {
     that.isDefined && this.point == that.point && this.source.file == that.source.file
 
   private def asOffset(point: Int): Position = Position.offset(source, point)
-  private def copyRange(source: SourceFile = source, start: Int = start, point: Int = point, end: Int = end): Position =
-    Position.range(source, start, point, end)
-
-  private def calculateColumn(): Int = {
-    var idx = source.lineToOffset(source.offsetToLine(point))
-    var col = 0
-    while (idx != point) {
-      col += (if (source.content(idx) == '\t') Position.tabInc - col % Position.tabInc else 1)
-      idx += 1
-    }
-    col + 1
-  }
   private def hasSource                      = source ne NoSourceFile
   private def bothRanges(that: Position)     = isRange && that.isRange
   private def bothDefined(that: Position)    = isDefined && that.isDefined

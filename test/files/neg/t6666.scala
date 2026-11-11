@@ -1,3 +1,5 @@
+//> using options -Ydelambdafy:inline
+//
 class C(a: Any)
 object F {
   def byname(a: => Any) = println(a)

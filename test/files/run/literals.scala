@@ -1,3 +1,5 @@
+//> using options -deprecation
+//
 //############################################################################
 // Literals
 //############################################################################
@@ -5,14 +7,6 @@
 //############################################################################
 
 object Test {
-
-  /* I add a couple of Unicode identifier tests here "temporarily" */
-
-  def \u03b1\u03c1\u03b5\u03c4\u03b7 = "alpha rho epsilon tau eta"
-
-  case class GGG(i: Int) {
-    def \u03b1\u03b1(that: GGG) = i + that.i
-  }
 
   def check_success[A](name: String, closure: => A, expected: A): Unit = {
     val res: Option[String] =
@@ -28,15 +22,19 @@ object Test {
 
   def main(args: Array[String]): Unit = {
     // char
+
+    //unicode escapes escape in char literals
     check_success("'\\u0024' == '$'", '\u0024', '$')
     check_success("'\\u005f' == '_'", '\u005f', '_')
-    check_success("65.asInstanceOf[Char] == 'A'", 65.asInstanceOf[Char], 'A')
-    //check_success("\"\\141\\142\" == \"ab\"", "\141\142", "ab")
-    //check_success("\"\\0x61\\0x62\".trim() == \"x61\\0x62\"", "\0x61\0x62".substring(1), "x61\0x62")
-    //check_success(""""\0x61\0x62".getBytes == Array(0, 120, ...)""",
-    //  "\0x61\0x62".getBytes(io.Codec.UTF8.charSet) sameElements Array[Byte](0, 120, 54, 49, 0, 120, 54, 50),
-    //  true)
 
+    //unicode escapes escape in interpolations
+    check_success("""s"\\u0024" == "$"""", s"\u0024", "$")
+    check_success("s\"\"\"\\u0024\"\"\" == \"$\"", s"""\u0024""", "$")
+
+
+    //Int#asInstanceOf[Char] gets the char at the codepoint
+    check_success("65.asInstanceOf[Char] == 'A'", 65.asInstanceOf[Char], 'A')
+    
     // boolean
     check_success("(65 : Byte) == 'A'", (65: Byte) == 'A', true) // contrib #176
 
@@ -61,6 +59,80 @@ object Test {
     check_success("0x80000000 == -2147483648", 0x80000000, -2147483648)
     check_success("0xffffffff == -1", 0xffffffff, -1)
 
+    check_success("0b_0000 == 0x0", 0b_0000, 0x0)
+    check_success("0b_0001 == 0x1", 0b_0001, 0x1)
+    check_success("0b_0010 == 0x2", 0b_0010, 0x2)
+    check_success("0b_0011 == 0x3", 0b_0011, 0x3)
+    check_success("0b_0100 == 0x4", 0b_0100, 0x4)
+    check_success("0b_0101 == 0x5", 0b_0101, 0x5)
+    check_success("0b_0110 == 0x6", 0b_0110, 0x6)
+    check_success("0b_0111 == 0x7", 0b_0111, 0x7)
+    check_success("0b_1000 == 0x8", 0b_1000, 0x8)
+    check_success("0b_1001 == 0x9", 0b_1001, 0x9)
+    check_success("0b_1010 == 0xa", 0b_1010, 0xa)
+    check_success("0b_1011 == 0xb", 0b_1011, 0xb)
+    check_success("0b_1100 == 0xc", 0b_1100, 0xc)
+    check_success("0b_1101 == 0xd", 0b_1101, 0xd)
+    check_success("0b_1110 == 0xe", 0b_1110, 0xe)
+    check_success("0b_1111 == 0xf", 0b_1111, 0xf)
+
+    check_success("0B_1000 == 0x8", 0B_1000, 0x8)
+
+    assert(0b0001_0000 == 16)
+    assert(0b0010_0000 == 32)
+    assert(0b0100_0000 == 64)
+    assert(0b1000_0000 == 128)
+
+    assert(0b0001_0000_0000 == 256)
+    assert(0b0010_0000_0000 == 512)
+    assert(0b0100_0000_0000 == 1024)
+    assert(0b1000_0000_0000 == 2048)
+
+    assert(0b0001_0000_0000_0000 == 4096)
+    assert(0b0010_0000_0000_0000 == 8192)
+    assert(0b0100_0000_0000_0000 == 16384)
+    assert(0b1000_0000_0000_0000 == 32768)
+
+    assert(0b0001__0000_0000_0000_0000 == 65536)
+    assert(0b0010__0000_0000_0000_0000 == 131072)
+    assert(0b0100__0000_0000_0000_0000 == 262144)
+    assert(0b1000__0000_0000_0000_0000 == 524288)
+
+    assert(0b0001_0000__0000_0000_0000_0000 == 1048576)
+    assert(0b0010_0000__0000_0000_0000_0000 == 2097152)
+    assert(0b0100_0000__0000_0000_0000_0000 == 4194304)
+    assert(0b1000_0000__0000_0000_0000_0000 == 8388608)
+
+    assert(0b0001_0000_0000__0000_0000_0000_0000 == 16777216)
+    assert(0b0010_0000_0000__0000_0000_0000_0000 == 33554432)
+    assert(0b0100_0000_0000__0000_0000_0000_0000 == 67108864)
+    assert(0b1000_0000_0000__0000_0000_0000_0000 == 134217728)
+
+    assert(0b0001_0000_0000_0000__0000_0000_0000_0000 == 268435456)
+    assert(0b0010_0000_0000_0000__0000_0000_0000_0000 == 536870912)
+    assert(0b0100_0000_0000_0000__0000_0000_0000_0000 == 1073741824)
+    assert(0b1000_0000_0000_0000__0000_0000_0000_0000L == 2147483648L)
+
+    assert(0b1000_0000_0000_0000__0000_0000_0000_0000 == -2147483648) // Signed !
+    assert(0b1111_1111_1111_1111__1111_1111_1111_1111 == -1)
+
+    // Randomly generated using https://numbergenerator.org/random-32-bit-binary-number#!numbers=10&length=32&addfilters=
+    // Converted to signed decimal using https://onlinetoolz.net/unsigned-signed#base=2&bits=32
+    assert(0b0110_1000_1100_0101_0010_1100_0100_0011 ==  1757752387)
+    assert(0b1111_0101_0100_1011_0101_1000_0011_0110 == -179611594)
+    assert(0b0000_0011_0000_1010_1010_0011_0000_0000 ==  51028736)
+    assert(0b0101_0010_1111_1001_0100_0101_1101_1011 ==  1392068059)
+    assert(0b1001_0000_1111_1001_1011_1101_1100_1111 == -1862681137)
+
+    assert(0B0000_0111_1110_1100_0111_1100_1000_0010 ==  132938882)
+    assert(0B0000_1011_0111_1011_0001_1010_1010_1000 ==  192617128)
+    assert(0B1100_1100_1000_1010_1111_0111_0100_1101 == -863307955)
+    assert(0B1000_0000_0001_0010_0001_1001_0101_1110 == -2146297506)
+    assert(0B1110_0000_0110_1100_0111_0110_1100_1111 == -529762609)
+
+    assert(0b0010_1001_0101_1001__1010_0100_1000_1010__1001_1000_0011_0111__1100_1011_0111_0101L ==  2979593543648529269L)
+    assert(0b1101_1110_0100_1000__0010_1101_1010_0010__0111_1000_1111_1001__1010_1001_0101_1000L == -2429641823128802984L)
+
     // long
     check_success("1l == 1L", 1l, 1L)
     check_success("1L == 1l", 1L, 1l)
@@ -74,7 +146,7 @@ object Test {
       0xffffffffffffffffL, -1L)
 
     // see JLS at address:
-    // http://java.sun.com/docs/books/jls/second_edition/html/lexical.doc.html#230798
+    // https://java.sun.com/docs/books/jls/second_edition/html/lexical.doc.html#230798
 
     // float
     check_success("1e1f == 10.0f", 1e1f, 10.0f)
@@ -92,7 +164,7 @@ object Test {
       1.0000001f)
     check_success("3.4028235E38f == Float.MaxValue", 3.4028235E38f, Float.MaxValue)
     check_success("1.asInstanceOf[Float] == 1.0", 1.asInstanceOf[Float], 1.0f)
-    check_success("1l.asInstanceOf[Float] == 1.0", 1l.asInstanceOf[Float], 1.0f)
+    check_success("1L.asInstanceOf[Float] == 1.0", 1L.asInstanceOf[Float], 1.0f)
 
     // double
     check_success("1e1 == 10.0", 1e1, 10.0)
@@ -114,10 +186,6 @@ object Test {
     check_success("1l.asInstanceOf[Double] == 1.0", 1l.asInstanceOf[Double], 1.0)
 
     check_success("\"\".length()", "\u001a".length(), 1)
-
-    val ggg = GGG(1) \u03b1\u03b1 GGG(2)
-    check_success("ggg == 3", ggg, 3)
-
   }
 }
 

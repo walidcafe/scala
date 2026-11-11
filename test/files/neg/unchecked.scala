@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 import language.existentials
 
 object Test {

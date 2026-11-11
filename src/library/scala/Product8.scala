@@ -1,10 +1,15 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 // GENERATED CODE: DO NOT EDIT. See scala.Function0 for timestamp.
 
 package scala
@@ -15,25 +20,33 @@ object Product8 {
 }
 
 /** Product8 is a Cartesian product of 8 components.
- *  @since 2.3
+ *
+ *  @tparam T1 the type of the 1st element
+ *  @tparam T2 the type of the 2nd element
+ *  @tparam T3 the type of the 3rd element
+ *  @tparam T4 the type of the 4th element
+ *  @tparam T5 the type of the 5th element
+ *  @tparam T6 the type of the 6th element
+ *  @tparam T7 the type of the 7th element
+ *  @tparam T8 the type of the 8th element
  */
 trait Product8[+T1, +T2, +T3, +T4, +T5, +T6, +T7, +T8] extends Any with Product {
   /** The arity of this product.
    *  @return 8
    */
-  override def productArity = 8
+  override def productArity: Int = 8
 
   
   /** Returns the n-th projection of this product if 0 <= n < productArity,
    *  otherwise throws an `IndexOutOfBoundsException`.
    *
-   *  @param n number of the projection to be returned
-   *  @return  same as `._(n+1)`, for example `productElement(0)` is the same as `._1`.
-   *  @throws  IndexOutOfBoundsException
+   *  @param n the zero-based index of the projection to be returned
+   *  @return  the element at the given zero-based index, equivalent to `._(n+1)` (e.g., `productElement(0)` returns `._1`)
+   *  @throws  IndexOutOfBoundsException if the `n` is out of range(n < 0 || n >= 8).
    */
 
   @throws(classOf[IndexOutOfBoundsException])
-  override def productElement(n: Int) = n match { 
+  override def productElement(n: Int): Any = n match { 
     case 0 => _1
     case 1 => _2
     case 2 => _3
@@ -42,7 +55,7 @@ trait Product8[+T1, +T2, +T3, +T4, +T5, +T6, +T7, +T8] extends Any with Product 
     case 5 => _6
     case 6 => _7
     case 7 => _8
-    case _ => throw new IndexOutOfBoundsException(n.toString())
+    case _ => throw new IndexOutOfBoundsException(s"$n is out of bounds (min 0, max 7)")
  }
 
   /** A projection of element 1 of this Product.

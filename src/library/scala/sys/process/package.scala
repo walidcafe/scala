@@ -1,16 +1,21 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 // Developer note:
 //   scala -J-Dscala.process.debug
 // for process debugging output.
 //
-package scala.sys {
+package scala.sys
+package process
   /** This package handles the execution of external processes.  The contents of
     * this package can be divided in three groups, according to their
     * responsibilities:
@@ -182,7 +187,7 @@ package scala.sys {
     * import java.io.File
     * import java.net.URL
     * import scala.sys.process._
-    * new URL("http://www.scala-lang.org/") #> new File("scala-lang.html") !
+    * new URL("https://www.scala-lang.org/") #> new File("scala-lang.html") !
     * }}}
     *
     * More information about the other ways of controlling I/O can be found
@@ -200,7 +205,7 @@ package scala.sys {
     *   - `destroy()`: this will kill the external process and close the streams
     *   associated with it.
     */
-  package object process extends ProcessImplicits {
+  object `package` extends ProcessImplicits {
     /** The input stream of this process */
     def stdin  = java.lang.System.in
     /** The output stream of this process */
@@ -212,7 +217,6 @@ package scala.sys {
   //   if (isWin) Array("cmd.exe", "/C", _)
   //   else Array("sh", "-c", _)
 
-  package process {
     // These are in a nested object instead of at the package level
     // due to the issues described in tickets #3160 and #3836.
     private[process] object processInternal {
@@ -227,10 +231,11 @@ package scala.sys {
       type InputStream            = java.io.InputStream
       type JProcess               = java.lang.Process
       type JProcessBuilder        = java.lang.ProcessBuilder
-      type LinkedBlockingQueue[T] = java.util.concurrent.LinkedBlockingQueue[T]
       type OutputStream           = java.io.OutputStream
-      type SyncVar[T]             = scala.concurrent.SyncVar[T]
       type URL                    = java.net.URL
+
+      @deprecated("Use `java.util.concurrent.LinkedBlockingQueue with capacity 1` instead.", since = "2.13.4")
+      type SyncVar[T] = scala.concurrent.SyncVar[T]
 
       def onError[T](handler: Throwable => T): Throwable =?> T = {
         case e @ _ => handler(e)
@@ -252,5 +257,3 @@ package scala.sys {
         Console.println("[process] " + (msgs mkString " "))
       }
     }
-  }
-}

@@ -1,7 +1,20 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.interactive
 
 import Lexer._
 import java.io.Writer
+import scala.collection.AbstractIterator
 
 /** An abstract class for writing and reading Scala objects to and
  *  from a legible representation. The representation follows the following grammar:
@@ -21,8 +34,8 @@ import java.io.Writer
  *  These Picklers build on the work of Andrew Kennedy. They are most closely inspired by
  *  Iulian Dragos' picklers for Scala to XML. See:
  *
- *  <a href="http://code.google.com/p/gdata-scala-client/wiki/DevelopersGuide">
- *  http://code.google.com/p/gdata-scala-client/wiki/DevelopersGuide
+ *  <a href="https://code.google.com/p/gdata-scala-client/wiki/DevelopersGuide">
+ *  https://code.google.com/p/gdata-scala-client/wiki/DevelopersGuide
  *  </a>
  */
 abstract class Pickler[T] {
@@ -41,8 +54,8 @@ abstract class Pickler[T] {
    *  @return An `UnpickleSuccess` value if the current input corresponds to the
    *          kind of value that is unpickled by the current subclass of `Pickler`,
    *          an `UnpickleFailure` value otherwise.
-   *  @throws  `Lexer.MalformedInput` if input is invalid, or if
-   *          an `Unpickle
+   *  @throws Lexer.MalformedInput if input is invalid, or if
+   *          an `Unpickle`
    */
   def unpickle(rd: Lexer): Unpickled[T]
 
@@ -56,7 +69,7 @@ abstract class Pickler[T] {
   /** A pickler that adds a label to the current pickler, using the representation
    *   `label ( <current pickler> )`
    *
-   *  @label  the string to be added as a label.
+   *  @param  label the string to be added as a label.
    */
   def labelled(label: String): Pickler[T] = labelledPickler(label, this)
 
@@ -87,38 +100,38 @@ object Pickler {
    *  where a value of the given type `T` could not be unpickled from input.
    *  @tparam  T the type of unpickled values in case of success.
    */
-  abstract class Unpickled[+T] {
+  sealed abstract class Unpickled[+T] {
     /** Transforms success values to success values using given function,
      *  leaves failures alone
      *  @param   f the function to apply.
      */
     def map[U](f: T => U): Unpickled[U] = this match {
-      case UnpickleSuccess(x) => UnpickleSuccess(f(x))
-      case f: UnpickleFailure => f
+      case UnpickleSuccess(x)    => UnpickleSuccess(f(x))
+      case fail: UnpickleFailure => fail
     }
     /** Transforms success values to successes or failures using given function,
      *  leaves failures alone.
      *  @param   f the function to apply.
      */
     def flatMap[U](f: T => Unpickled[U]): Unpickled[U] = this match {
-      case UnpickleSuccess(x) => f(x)
-      case f: UnpickleFailure => f
+      case UnpickleSuccess(x)    => f(x)
+      case fail: UnpickleFailure => fail
     }
     /** Tries alternate expression if current result is a failure
      *  @param alt  the alternate expression to be tried in case of failure
      */
     def orElse[U >: T](alt: => Unpickled[U]): Unpickled[U] = this match {
       case UnpickleSuccess(x) => this
-      case f: UnpickleFailure => alt
+      case _: UnpickleFailure => alt
     }
 
     /** Transforms failures into thrown `MalformedInput` exceptions.
-     *  @throws  MalformedInput   if current result is a failure
+     *  @throws  Lexer.MalformedInput   if current result is a failure
      */
     def requireSuccess: UnpickleSuccess[T] = this match {
-      case s @ UnpickleSuccess(x) => s
+      case s @ UnpickleSuccess(_) => s
       case f: UnpickleFailure =>
-        throw new MalformedInput(f.rd, "Unrecoverable unpickle failure:\n"+f.errMsg)
+        throw new MalformedInput(f.rd, s"Unrecoverable unpickle failure:\n${f.errMsg}")
     }
   }
 
@@ -133,7 +146,7 @@ object Pickler {
    *  @param rd       the lexer unpickled values were read from (can be used to get
    *                  error position, for instance).
    */
-  class UnpickleFailure(msg: => String, val rd: Lexer) extends Unpickled[Nothing] {
+  final class UnpickleFailure(msg: => String, val rd: Lexer) extends Unpickled[Nothing] {
     def errMsg = msg
     override def toString = "Failure at "+rd.tokenPos+":\n"+msg
   }
@@ -199,7 +212,7 @@ object Pickler {
 
   /** Same as `p ~ q`
    */
-  def seqPickler[T, U](p: Pickler[T], q: => Pickler[U]) = new Pickler[T ~ U] {
+  def seqPickler[T, U](p: Pickler[T], q: => Pickler[U]): Pickler[T ~ U] = new Pickler[T ~ U] {
     lazy val qq = q
     def pickle(wr: Writer, x: T ~ U) = {
       p.pickle(wr, x.fst)
@@ -213,7 +226,7 @@ object Pickler {
 
   /** Same as `p | q`
    */
-  def eitherPickler[T, U <: T, V <: T](p: CondPickler[U], q: => CondPickler[V]) =
+  def eitherPickler[T, U <: T, V <: T](p: CondPickler[U], q: => CondPickler[V]): CondPickler[T] =
     new CondPickler[T](x => p.canPickle(x) || q.canPickle(x)) {
       lazy val qq = q
       override def tryPickle(wr: Writer, x: Any): Boolean =
@@ -235,13 +248,13 @@ object Pickler {
       .cond (x eq _.asInstanceOf[AnyRef])
 
   /** A pickler the handles instances of classes that have an empty constructor.
-   *  It represents than as `$new ( <name of class> )`.
+   *  It represents than as `\$new ( <name of class> )`.
    *  When unpickling, a new instance of the class is created using the empty
-   *  constructor of the class via `Class.forName(<name of class>).newInstance()`.
+   *  constructor of the class via `Class.forName(<name of class>).getConstructor().newInstance()`.
    */
   def javaInstancePickler[T <: AnyRef]: Pickler[T] =
     (stringPickler labelled "$new")
-      .wrapped { name => Class.forName(name).newInstance().asInstanceOf[T] } { _.getClass.getName }
+      .wrapped { name => Class.forName(name).getConstructor().newInstance().asInstanceOf[T] } { _.getClass.getName }
 
   /** A picklers that handles iterators. It pickles all values
    *  returned by an iterator separated by commas.
@@ -265,7 +278,7 @@ object Pickler {
         p.pickle(wr, x)
       }
     }
-    def unpickle(rd: Lexer): Unpickled[Iterator[T]] = UnpickleSuccess(new Iterator[T] {
+    def unpickle(rd: Lexer): Unpickled[Iterator[T]] = UnpickleSuccess(new AbstractIterator[T] {
       var first = true
       def hasNext = {
         val t = rd.token

@@ -1,11 +1,18 @@
-/* NEST (New Scala Test)
- * Copyright 2007-2013 LAMP/EPFL
- * @author Grzegorz Kossakowski
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.partest.instrumented
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 case class MethodCallTrace(className: String, methodName: String, methodDescriptor: String) {
   override def toString(): String = className + "." + methodName + methodDescriptor
@@ -71,9 +78,13 @@ object Instrumentation {
     res
   }
 
+  private val ignoredClasses = Set("scala/Console$", "scala/io/AnsiColor")
+
+  // Accommodate Console.println(stuff) but not Predef.println in instrumented code.
+  // That allows println(true), to avoid warning on true: Any for example.
   val standardFilter: MethodCallTrace => Boolean = t => {
-    // ignore all calls to Console trigger by printing
-    t.className != "scala/Console$" &&
+    // ignore all calls to classes triggered by Console.println
+    !ignoredClasses.contains(t.className) &&
     // console accesses DynamicVariable, let's discard it too
     !t.className.startsWith("scala/util/DynamicVariable")
   }

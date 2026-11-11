@@ -1,3 +1,6 @@
+//> using javaOpt -Xmx1g
+// Own JVM: allocates 8 GB in 2 MB arrays, hundreds of which can be live at once
+
 //package scala.concurrent
 import scala.concurrent._
 import duration._
@@ -18,7 +21,7 @@ object Test {
     val numFutures = 4000
 
     val rng = new Random()
-    val longStandingPromise = Promise[Nothing]
+    val longStandingPromise = Promise[Nothing]()
 
     val futures = List.tabulate(numFutures) { i =>
       val arr = new Array[Int](arrSz)

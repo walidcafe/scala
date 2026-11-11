@@ -1,3 +1,6 @@
+//> using options -Xlint:deprecation
+//
+
 trait Linked {
   type File <: FileImpl;
   trait FileImpl {

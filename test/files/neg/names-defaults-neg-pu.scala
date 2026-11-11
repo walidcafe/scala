@@ -1,3 +1,5 @@
+//> using options -deprecation
+//
 object Test extends App {
   // TESTS
 
@@ -87,12 +89,12 @@ object Test extends App {
   }
 
   // deprecated names
-  def deprNam1(x: Int, @deprecatedName('x) y: String) = 0
-  def deprNam2(a: String)(@deprecatedName('a) b: Int) = 1
-  def deprNam3(@deprecatedName('x) a: Int, @deprecatedName('y) b: Int) = a + b
+  def deprNam1(x: Int, @deprecatedName("x") y: String) = 0
+  def deprNam2(a: String)(@deprecatedName("a") b: Int) = 1
+  def deprNam3(@deprecatedName("x") a: Int, @deprecatedName("y") b: Int) = a + b
   deprNam3(y = 10, b = 2)
 
-  def deprNam4(@deprecatedName('deprNam4Arg) deprNam4Arg: String) = 0
+  def deprNam4(@deprecatedName("deprNam4Arg") deprNam4Arg: String) = 0
   deprNam4(deprNam4Arg = null)
   def deprNam5(@deprecatedName deprNam5Arg: String) = 0
   deprNam5(deprNam5Arg = null)
@@ -185,4 +187,8 @@ object t3685 {
   class u19 { def x: Int = u.f(x = "32") }
   class u20 { val x: Int = u.f(x = "32") }
   class u21 { var x: Int = u.f(x = "32") }
+}
+class A3[T](x: T = null) // scala/bug#4727 cf A2
+class t4727 {
+  def f = new A3[Int]()
 }

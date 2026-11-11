@@ -1,25 +1,20 @@
 package scala.collection.convert
 
-import java.util.{concurrent => juc}
-import java.{lang => jl, util => ju}
+import java.{lang => jl}
 
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.junit.runners.JUnit4
+import org.junit.Assert.assertNull
 
-import scala.collection.JavaConverters._
-import scala.collection.convert.ImplicitConversions._
 import scala.collection.{concurrent, mutable}
+import scala.jdk.CollectionConverters._
 
-// scala/bug#9113: tests to insure that wrappers return null instead of wrapping it as a collection
-
-@RunWith(classOf[JUnit4])
+// scala/bug#9113: tests to ensure that wrappers return null instead of wrapping it as a collection
 class NullSafetyToJavaTest {
   @Test def testIterableWrapping(): Unit = {
     val nullIterable: Iterable[AnyRef] = null
-    val iterable: jl.Iterable[AnyRef] = asJavaIterable(nullIterable)
+    val iterable: jl.Iterable[AnyRef] = nullIterable.asJava
 
-    assert(iterable == null)
+    assertNull(iterable)
   }
 
   // Implicit conversion to ju.Properties is not available
@@ -27,55 +22,55 @@ class NullSafetyToJavaTest {
   @Test def testIteratorDecoration(): Unit = {
     val nullIterator: Iterator[AnyRef] = null
 
-    assert(nullIterator.asJava == null)
+    assertNull(nullIterator.asJava)
   }
 
   @Test def testEnumerationDecoration(): Unit = {
     val nullEnumeration: Iterator[AnyRef] = null
 
-    assert(nullEnumeration.asJavaEnumeration == null)
+    assertNull(nullEnumeration.asJavaEnumeration)
   }
 
   @Test def testIterableDecoration(): Unit = {
     val nullIterable: Iterable[AnyRef] = null
 
-    assert(nullIterable.asJava == null)
+    assertNull(nullIterable.asJava)
   }
 
   @Test def testCollectionDecoration(): Unit = {
     val nullCollection: Iterable[AnyRef] = null
 
-    assert(nullCollection.asJavaCollection == null)
+    assertNull(nullCollection.asJavaCollection)
   }
 
   @Test def testBufferDecoration(): Unit = {
     val nullBuffer: mutable.Buffer[AnyRef] = null
 
-    assert(nullBuffer.asJava == null)
+    assertNull(nullBuffer.asJava)
   }
 
   @Test def testSetDecoration(): Unit = {
     val nullSet: Set[AnyRef] = null
 
-    assert(nullSet.asJava == null)
+    assertNull(nullSet.asJava)
   }
 
   @Test def testMapDecoration(): Unit = {
     val nullMap: mutable.Map[AnyRef, AnyRef] = null
 
-    assert(nullMap.asJava == null)
+    assertNull(nullMap.asJava)
   }
 
   @Test def testConcurrentMapDecoration(): Unit = {
     val nullConMap: concurrent.Map[AnyRef, AnyRef] = null
 
-    assert(nullConMap.asJava == null)
+    assertNull(nullConMap.asJava)
   }
 
   @Test def testDictionaryDecoration(): Unit = {
     val nullDict: mutable.Map[AnyRef, AnyRef] = null
 
-    assert(nullDict.asJavaDictionary == null)
+    assertNull(nullDict.asJavaDictionary)
   }
 
   // Decorator conversion to ju.Properties is not available

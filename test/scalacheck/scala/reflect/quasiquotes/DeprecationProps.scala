@@ -1,8 +1,8 @@
 package scala.reflect.quasiquotes
 
-import org.scalacheck._, Prop._, Gen._, Arbitrary._
 import scala.reflect.runtime.universe._
 
+@annotation.nowarn("cat=deprecation")
 object DeprecationProps extends QuasiquoteProperties("deprecation") {
   val tname = TypeName("Foo")
   val tpt = tq"Foo"

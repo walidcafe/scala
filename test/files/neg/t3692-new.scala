@@ -1,3 +1,5 @@
+//> using options -Werror
+//
 import scala.reflect.{ClassTag, classTag}
 import java.lang.Integer
 
@@ -5,6 +7,7 @@ object Tester {
   def main(args: Array[String]) = {
     val map = Map("John" -> 1, "Josh" -> 2)
     new Tester().toJavaMap(map)
+    ()
   }
 }
 

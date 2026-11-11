@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc.interpreter
@@ -8,6 +15,7 @@ package scala.tools.nsc.interpreter
 import scala.language.implicitConversions
 
 import scala.collection.mutable
+import scala.reflect.internal.Precedence
 
 trait MemberHandlers {
   val intp: IMain
@@ -15,19 +23,19 @@ trait MemberHandlers {
   // show identity hashcode of objects in vals
   final val showObjIds = false
 
-  import intp.{ Request, global, naming }
+  import intp.{ Request, global, naming, nameToCode, typeToCode }
   import global._
   import naming._
 
-  import ReplStrings.{string2codeQuoted, string2code, any2stringOf}
+  import ReplStrings.{string2codeQuoted, string2code, any2stringOf, quotedString}
 
   private def codegenln(leadingPlus: Boolean, xs: String*): String = codegen(leadingPlus, (xs ++ Array("\n")): _*)
-  private def codegenln(xs: String*): String = codegenln(true, xs: _*)
+  private def codegenln(xs: String*): String = codegenln(leadingPlus = true, xs: _*)
   private def codegen(leadingPlus: Boolean, xs: String*): String = {
     val front = if (leadingPlus) "+ " else ""
     front + (xs map string2codeQuoted mkString " + ")
   }
-  private implicit def name2string(name: Name) = name.toString
+  private implicit def name2string(name: Name): String = name.toString
 
   /** A traverser that finds all mentioned identifiers, i.e. things
    *  that need to be imported.  It might return extra names.
@@ -70,7 +78,9 @@ trait MemberHandlers {
     case member: ModuleDef                     => new ModuleHandler(member)
     case member: ClassDef                      => new ClassHandler(member)
     case member: TypeDef                       => new TypeAliasHandler(member)
-    case member: Assign                        => new AssignHandler(member)
+    case member: Assign                        => AssignHandler(member)
+    case member @ Apply(Select(_, op), _)
+    if Precedence(op.decoded).level == 0       => AssignHandler(member)
     case member: Import                        => new ImportHandler(member.duplicate) // duplicate because the same tree will be type checked (which loses info)
     case DocDef(_, documented)                 => chooseHandler(documented)
     case member                                => new GenericHandler(member)
@@ -96,6 +106,7 @@ trait MemberHandlers {
     def path            = intp.originalPath(symbol)
     def symbol          = if (member.symbol eq null) NoSymbol else member.symbol
     def definesImplicit = false
+    def definesValueClass = false
     def definesValue    = false
 
     def definesTerm     = Option.empty[TermName]
@@ -126,23 +137,32 @@ trait MemberHandlers {
       else {
         // if this is a lazy val we avoid evaluating it here
         val resultString =
-          if (mods.isLazy) codegenln(false, "<lazy>")
-          else any2stringOf(path, maxStringElements)
+          if (mods.isLazy) quotedString(" // unevaluated")
+          else quotedString(" = ") + " + " + any2stringOf(path, maxStringElements)
 
-        val nameString = string2code(prettyName) + (if (showObjIds) s"""" + f"@$${System.identityHashCode($path)}%8x" + """" else "")
-        val typeString = string2code(req typeOf name)
-        s""" + "$nameString: $typeString = " + $resultString"""
+        val varOrValOrLzy =
+          if (mods.isMutable) "var"
+          else if (mods.isLazy) "lazy val"
+          else "val"
+
+        val nameString = {
+          nameToCode(string2code(prettyName)) + (
+            if (showObjIds) s"""" + f"@$${System.identityHashCode($path)}%8x" + """"
+            else ""
+          )
+        }
+
+        val typeString = typeToCode(string2code(req.typeOf(name)))
+
+        s""" + "$varOrValOrLzy $nameString: $typeString" + $resultString"""
       }
     }
   }
 
   class DefHandler(member: DefDef) extends MemberDefHandler(member) {
     override def definesValue = flattensToEmpty(member.vparamss) // true if 0-arity
-    override def resultExtractionCode(req: Request) = {
-      val nameString = string2code(name)
-      val typeString = string2code(req typeOf name)
-      if (mods.isPublic) s""" + "$nameString: $typeString\\n"""" else ""
-    }
+    override def resultExtractionCode(req: Request) =
+      if (mods.isPublic) codegenln(s"def ${req.defTypeOf(name)}") else ""
   }
 
   abstract class MacroHandler(member: DefDef) extends MemberDefHandler(member) {
@@ -155,36 +175,59 @@ trait MemberHandlers {
   }
 
   class TermMacroHandler(member: DefDef) extends MacroHandler(member) {
-    def notification(req: Request) = s"defined term macro $name: ${req.typeOf(name)}"
+    def notification(req: Request) = s"def ${req.defTypeOf(name)}"
   }
 
-  class AssignHandler(member: Assign) extends MemberHandler(member) {
+  class AssignHandler private (member: Tree, lhs: Tree) extends MemberHandler(member) {
     override def resultExtractionCode(req: Request) =
-      codegenln(s"mutated ${member.lhs}")
+      codegenln(s"// mutated $lhs")
+  }
+  object AssignHandler {
+    def apply(member: Assign) = new AssignHandler(member, member.lhs)
+    def apply(member: Apply) = member match {
+      case Apply(Select(qual, op), _) if Precedence(op.decoded).level == 0 => new AssignHandler(member, qual)
+      case _ => new GenericHandler(member)
+    }
   }
 
   class ModuleHandler(module: ModuleDef) extends MemberDefHandler(module) {
     override def definesTerm = Some(name.toTermName)
     override def definesValue = true
+    override def definesValueClass = {
+      var foundValueClass = false
+      new Traverser {
+        override def traverse(tree: Tree): Unit = tree match {
+          case _ if foundValueClass                 => ()
+          case cdef: ClassDef if isValueClass(cdef) => foundValueClass = true
+          case mdef: ModuleDef                      => traverseStats(mdef.impl.body, mdef.impl.symbol)
+          case _                                    => () // skip anything else
+        }
+      }.traverse(module)
+      foundValueClass
+    }
 
-    override def resultExtractionCode(req: Request) = codegenln("defined object ", name)
+    override def resultExtractionCode(req: Request) = codegenln(s"object $name")
+  }
+
+  private def isValueClass(cdef: ClassDef) = cdef.impl.parents match {
+    case Ident(tpnme.AnyVal) :: _ => true // approximating with a syntactic check
+    case _                        => false
   }
 
   class ClassHandler(member: ClassDef) extends MemberDefHandler(member) {
     override def definedSymbols = List(symbol, symbol.companionSymbol) filterNot (_ == NoSymbol)
     override def definesType = Some(name.toTypeName)
     override def definesTerm = Some(name.toTermName) filter (_ => mods.isCase)
+    override def definesValueClass = isValueClass(member)
 
-    override def resultExtractionCode(req: Request) =
-      codegenln("defined %s %s".format(keyword, name))
+    override def resultExtractionCode(req: Request) = codegenln(s"$keyword $name")
   }
 
   class TypeAliasHandler(member: TypeDef) extends MemberDefHandler(member) {
     private def isAlias = mods.isPublic && treeInfo.isAliasTypeDef(member)
     override def definesType = Some(name.toTypeName) filter (_ => isAlias)
 
-    override def resultExtractionCode(req: Request) =
-      codegenln("defined type alias ", name) + "\n"
+    override def resultExtractionCode(req: Request) = codegenln(s"type $name")
   }
 
   class ImportHandler(imp: Import) extends MemberHandler(imp) {
@@ -204,16 +247,20 @@ trait MemberHandlers {
       importableMembers(exitingTyper(targetType)).filterNot(isFlattenedSymbol).toList
 
     // non-wildcard imports
-    private def individualSelectors = selectors filter analyzer.isIndividualImport
+    private def individualSelectors = selectors.filter(_.isSpecific)
 
     /** Whether this import includes a wildcard import */
-    val importsWildcard = selectors exists analyzer.isWildcardImport
+    val importsWildcard = selectors.exists(_.isWildcard)
 
     def implicitSymbols = importedSymbols filter (_.isImplicit)
     def importedSymbols = individualSymbols ++ wildcardSymbols
 
     lazy val importableSymbolsWithRenames = {
-      val selectorRenameMap = individualSelectors.flatMap(x => x.name.bothNames zip x.rename.bothNames).toMap
+      val selectorRenameMap: mutable.HashMap[Name, Name] = mutable.HashMap.empty[Name, Name]
+      individualSelectors foreach { x =>
+        selectorRenameMap.put(x.name.toTermName, x.rename.toTermName)
+        selectorRenameMap.put(x.name.toTypeName, x.rename.toTypeName)
+      }
       importableTargetMembers flatMap (m => selectorRenameMap.get(m.name) map (m -> _))
     }
 

@@ -1,3 +1,5 @@
+//> using options -Werror -Xlint
+//
 
 import java.io._
 import java.util.zip._

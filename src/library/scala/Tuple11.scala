@@ -1,10 +1,15 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2002-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 // GENERATED CODE: DO NOT EDIT. See scala.Function0 for timestamp.
 
 package scala
@@ -13,6 +18,17 @@ package scala
 /** A tuple of 11 elements; the canonical representation of a [[scala.Product11]].
  *
  *  @constructor  Create a new tuple with 11 elements. Note that it is more idiomatic to create a Tuple11 via `(t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11)`
+ *  @tparam T1 the type of the 1st element
+ *  @tparam T2 the type of the 2nd element
+ *  @tparam T3 the type of the 3rd element
+ *  @tparam T4 the type of the 4th element
+ *  @tparam T5 the type of the 5th element
+ *  @tparam T6 the type of the 6th element
+ *  @tparam T7 the type of the 7th element
+ *  @tparam T8 the type of the 8th element
+ *  @tparam T9 the type of the 9th element
+ *  @tparam T10 the type of the 10th element
+ *  @tparam T11 the type of the 11th element
  *  @param  _1   Element 1 of this Tuple11
  *  @param  _2   Element 2 of this Tuple11
  *  @param  _3   Element 3 of this Tuple11
@@ -28,6 +44,6 @@ package scala
 final case class Tuple11[+T1, +T2, +T3, +T4, +T5, +T6, +T7, +T8, +T9, +T10, +T11](_1: T1, _2: T2, _3: T3, _4: T4, _5: T5, _6: T6, _7: T7, _8: T8, _9: T9, _10: T10, _11: T11)
   extends Product11[T1, T2, T3, T4, T5, T6, T7, T8, T9, T10, T11]
 {
-  override def toString() = "(" + _1 + "," + _2 + "," + _3 + "," + _4 + "," + _5 + "," + _6 + "," + _7 + "," + _8 + "," + _9 + "," + _10 + "," + _11 + ")"
+  override def toString(): String = "(" + _1 + "," + _2 + "," + _3 + "," + _4 + "," + _5 + "," + _6 + "," + _7 + "," + _8 + "," + _9 + "," + _10 + "," + _11 + ")"
   
 }

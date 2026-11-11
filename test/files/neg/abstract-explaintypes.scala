@@ -1,3 +1,5 @@
+//> using options -explaintypes
+//
 trait A {
   type T <: A;
   def baz(): A;

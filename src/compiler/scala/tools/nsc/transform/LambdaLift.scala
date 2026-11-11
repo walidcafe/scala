@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -8,8 +15,10 @@ package transform
 
 import symtab._
 import Flags._
+import scala.annotation.tailrec
 import scala.collection.mutable
-import scala.collection.mutable.{ LinkedHashMap, LinkedHashSet }
+import scala.collection.mutable.{LinkedHashMap, LinkedHashSet}
+import scala.tools.nsc.Reporting.WarningCategory.LintPerformance
 
 abstract class LambdaLift extends InfoTransform {
   import global._
@@ -42,10 +51,10 @@ abstract class LambdaLift extends InfoTransform {
   }
 
   def transformInfo(sym: Symbol, tp: Type): Type =
-    if (sym.isCapturedVariable) capturedVariableType(sym, tpe = lifted(tp), erasedTypes = true)
+    if (sym.isCapturedVariable) capturedVariables.capturedVariableType(sym, tpe = lifted(tp), erasedTypes = true)
     else lifted(tp)
 
-  protected def newTransformer(unit: CompilationUnit): Transformer =
+  protected def newTransformer(unit: CompilationUnit): AstTransformer =
     new LambdaLifter(unit)
 
   class LambdaLifter(unit: CompilationUnit) extends explicitOuter.OuterPathTransformer(unit) {
@@ -115,6 +124,7 @@ abstract class LambdaLift extends InfoTransform {
      * `logicallyEnclosingMember` in this case to return a temporary symbol corresponding to that
      * method.
      */
+    @tailrec
     private def logicallyEnclosingMember(sym: Symbol): Symbol = {
       if (sym.isLocalDummy) {
         val enclClass = sym.enclClass
@@ -171,7 +181,8 @@ abstract class LambdaLift extends InfoTransform {
             renamable += sym
             changedFreeVars = true
             debuglog(s"$sym is free in $enclosure")
-            if (sym.isVariable) sym setFlag CAPTURED
+            if (sym.isVariable && !sym.hasStableFlag) // write-once synthetic case vars are marked STABLE
+              sym setFlag CAPTURED
           }
           !enclosure.isClass
         }
@@ -204,7 +215,7 @@ abstract class LambdaLift extends InfoTransform {
             }
           case Ident(name) =>
             if (sym == NoSymbol) {
-              assert(name == nme.WILDCARD)
+              assert(name == nme.WILDCARD, name)
             } else if (sym.isLocalToBlock) {
               val owner = logicallyEnclosingMember(currentOwner)
               if (sym.isTerm && !sym.isMethod) markFree(sym, owner)
@@ -253,9 +264,9 @@ abstract class LambdaLift extends InfoTransform {
 
         val join = nme.NAME_JOIN_STRING
         if (sym.isAnonymousFunction && sym.owner.isMethod) {
-          freshen(sym.name + join + nme.ensureNonAnon(sym.owner.name.toString) + join)
+          freshen(s"${sym.name}${nme.ensureNonAnon(join + sym.owner.name.toString)}$join")
         } else {
-          val name = freshen(sym.name + join)
+          val name = freshen(s"${sym.name}${join}")
           // scala/bug#5652 If the lifted symbol is accessed from an inner class, it will be made public. (where?)
           //         Generating a unique name, mangled with the enclosing full class name (including
           //         package - subclass might have the same name), avoids a VerifyError in the case
@@ -281,10 +292,14 @@ abstract class LambdaLift extends InfoTransform {
           proxies(owner) =
             for (fv <- freeValues.toList) yield {
               val proxyName = proxyNames.getOrElse(fv, fv.name)
-              debuglog(s"new proxy ${proxyName} in ${owner.fullLocationString}")
+              debuglog(s"new proxy $proxyName in ${owner.fullLocationString}")
               val proxy =
                 if (owner.isTrait) {
-                  val accessorFlags = newFlags.toLong | ACCESSOR | SYNTHESIZE_IMPL_IN_SUBCLASS
+                  val accessorFlags = newFlags | ACCESSOR | SYNTHESIZE_IMPL_IN_SUBCLASS
+                  // scala-dev#408: fields for locals captured in a trait are non-final (created in mixin), as they are
+                  // assigned in a trait setter. For safe publication, subclass constructors need to call releaseFence.
+                  // We need to add the attachment in lambdalift, as mixin runs after the constructors phase.
+                  owner.children.foreach(_.primaryConstructor.updateAttachment(ConstructorNeedsFence))
 
                   // TODO do we need to preserve pre-erasure info for the accessors (and a NullaryMethodType for the getter)?
                   // can't have a field in the trait, so add a setter
@@ -294,7 +309,7 @@ abstract class LambdaLift extends InfoTransform {
                   // the getter serves as the proxy -- entered below
                   owner.newMethod(proxyName.getterName, fv.pos, accessorFlags | STABLE) setInfo MethodType(Nil, fv.info)
                 } else
-                  owner.newValue(proxyName.toTermName, fv.pos, newFlags.toLong | PrivateLocal) setInfo fv.info
+                  owner.newValue(proxyName.toTermName, fv.pos, newFlags | PrivateLocal) setInfo fv.info
 
               if (owner.isClass) owner.info.decls enter proxy
               proxy
@@ -478,27 +493,23 @@ abstract class LambdaLift extends InfoTransform {
           if (sym.isLocalToBlock) liftDef(withFreeParams)
           else withFreeParams
 
-        case ValDef(mods, name, tpt, rhs) =>
-          if (sym.isCapturedVariable) {
-            val tpt1 = TypeTree(sym.tpe) setPos tpt.pos
-
-            val refTypeSym = sym.tpe.typeSymbol
-
-            val factoryCall = typer.typedPos(rhs.pos) {
-              rhs match {
-                case EmptyTree =>
-                  val zeroMSym   = refZeroMethod(refTypeSym)
-                  gen.mkMethodCall(zeroMSym, Nil)
-                case arg =>
-                  val createMSym = refCreateMethod(refTypeSym)
-                  gen.mkMethodCall(createMSym, arg :: Nil)
-              }
+        case ValDef(mods, name, tpt, rhs) if sym.isCapturedVariable =>
+          val tpt1 = TypeTree(sym.tpe) setPos tpt.pos
+          val refTypeSym = sym.tpe.typeSymbol
+          val factoryCall = typer.typedPos(rhs.pos) {
+            rhs match {
+              case EmptyTree =>
+                val zeroMSym   = refZeroMethod(refTypeSym)
+                gen.mkMethodCall(zeroMSym, Nil)
+              case arg =>
+                val createMSym = refCreateMethod(refTypeSym)
+                gen.mkMethodCall(createMSym, arg :: Nil)
             }
-
-            treeCopy.ValDef(tree, mods, name, tpt1, factoryCall)
-          } else tree
-        case Return(Block(stats, value)) =>
-          Block(stats, treeCopy.Return(tree, value)) setType tree.tpe setPos tree.pos
+          }
+          if (settings.warnCaptured)
+            runReporting.warning(tree.pos, s"Modification of variable $name within a closure causes it to be boxed.", LintPerformance, sym)
+          treeCopy.ValDef(tree, mods, name, tpt1, factoryCall)
+        case ValDef(_, _, _, _) => tree
         case Return(expr) =>
           assert(sym == currentMethod, sym)
           tree
@@ -507,7 +518,7 @@ abstract class LambdaLift extends InfoTransform {
         case Assign(Apply(TypeApply(sel @ Select(qual, _), _), List()), rhs) =>
           // eliminate casts introduced by selecting a captured variable field
           // on the lhs of an assignment.
-          assert(sel.symbol == Object_asInstanceOf)
+          assert(sel.symbol == Object_asInstanceOf, "asInstanceOf")
           treeCopy.Assign(tree, qual, rhs)
         case Ident(name) =>
           val tree1 =
@@ -526,7 +537,7 @@ abstract class LambdaLift extends InfoTransform {
             }
           else tree1
         case Block(stats, expr0) =>
-          val (lzyVals, rest) = stats partition {
+          val (lzyVals, rest) = partitionConserve(stats) {
             case stat: ValDef => stat.symbol.isLazy || stat.symbol.isModuleVar
             case _            => false
           }

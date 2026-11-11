@@ -8,7 +8,7 @@ def test[A](name: String, expect: A, actual: => A): Unit = {
 def testNoBraces = 1
 test("no braces", 1, testNoBraces)
 
-val testNoBracesR = testNoBraces _
+val testNoBracesR = () => testNoBraces
 test("no braces r", 1, testNoBracesR())
 
 def testPlain(x: String, y: String): String = x + y
@@ -29,7 +29,7 @@ test("old by name s", 3, testOldByNameS(2))
 def testRegThenByName(x: Int, y: => Int): Int = x + y
 test("reg then by name", 7, testRegThenByName(3, 2 * 2))
 
-val testRegThenByNameS: (Int, =>Int) => Int = testRegThenByName _
+val testRegThenByNameS: (Int, => Int) => Int = testRegThenByName _
 test("reg then by name s", 8, testRegThenByNameS(2, 12 / 2))
 
 def testVarargs(x: Int*) = x.reduceLeft((x: Int, y: Int) => x + y)
@@ -44,8 +44,8 @@ test("all", 5, testAll(1, 2, 22, 23))
 val testAllR = testAll _
 test("all r", 7, testAllR(2, 3, Seq(34, 35)))
 
-val testAllS: (Int, =>Int, Int*) => Int = testAll _
-test("all s", 8, testAllS(1, 5, 78, 89))
+val testAllS: (Int, =>Int, Seq[Int]) => Int = testAll _
+test("all s", 8, testAllS(1, 5, Seq(78, 89)))
 
 // test currying
 
@@ -65,10 +65,8 @@ test("cvv", 3, testCVV(1, 2)("", 8))
 val testCVVR = testCVV _
 test("cvv r", 3, testCVVR(Seq(1))("", Seq(8, 9)))
 
-val testCVVRS: (String, Int*) => Int = testCVV(2, 3)
-test("cvv rs", 4, testCVVRS("", 5, 6))
+val testCVVRS: (String, Seq[Int]) => Int = testCVV(2, 3)
+test("cvv rs", 4, testCVVRS("", Seq(5, 6)))
 
 println("$")
-
-// vim: set ts=4 sw=4 et:
 }

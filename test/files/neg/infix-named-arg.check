@@ -1,0 +1,6 @@
+infix-named-arg.scala:4: error: named argument is deprecated for infix syntax
+Scala 3 migration messages are issued as errors under -Xsource:3. Use -Wconf or @nowarn to demote them to warnings or suppress.
+Applicable -Wconf / @nowarn filters for this fatal warning: msg=<part of the message>, cat=scala3-migration
+  def f = 42 + (x = 1)
+                  ^
+1 error

@@ -1,3 +1,5 @@
+//> using options -Ydelambdafy:method
+//
 trait M[-X] {
   def m(x: X): Boolean
 }

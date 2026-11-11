@@ -1,5 +1,4 @@
 import scala.collection._
-import scala.compat.Platform.currentTime
 import scala.language.postfixOps
 
 object Test extends App {
@@ -9,9 +8,9 @@ object Test extends App {
   def sum[A](xs: Iterable[Int]) = xs.foldLeft(0)((x, y) => x + y)
 
   def time(op: => Unit): Unit = {
-    val start = currentTime
+    val start = System.currentTimeMillis()
     op
-    if (printTime) println("  time = "+(currentTime - start)+"ms")
+    if (printTime) println("  time = "+(System.currentTimeMillis() - start)+"ms")
   }
 
   def test(msg: String, s0: collection.immutable.Set[Int], iters: Int) = {
@@ -36,7 +35,7 @@ object Test extends App {
     println("***** "+msg+":")
     var s = s0
     s = s.clone() += 2
-    s = s.clone += (3, 4000, 10000)
+    s = s.clone.addAll(List(3, 4000, 10000))
     println("test1: "+sum(s))
     time {
       s = s ++ (List.range(0, iters) map (2*))
@@ -89,7 +88,7 @@ object Test extends App {
     println("***** "+msg+":")
     var s = s0
     s = s.clone() += (2 -> 2)
-    s = s.clone() += (3 -> 3, 4000 -> 4000, 10000 -> 10000)
+    s = s.clone().addAll(List(3 -> 3, 4000 -> 4000, 10000 -> 10000))
     println("test1: "+sum(s map (_._2)))
     time {
       s = s ++ (List.range(0, iters) map (x => x * 2 -> x * 2))

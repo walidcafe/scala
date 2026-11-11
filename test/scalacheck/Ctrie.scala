@@ -3,8 +3,9 @@ import Prop._
 import org.scalacheck.Gen._
 import collection._
 import collection.concurrent.TrieMap
+import scala.language.reflectiveCalls
 
-
+import annotation.unused
 
 case class Wrap(i: Int) {
   override def hashCode = i // * 0x9e3775cd
@@ -46,7 +47,7 @@ object CtrieTest extends Properties("concurrent.TrieMap") {
     threads map (_.result)
   }
 
-  def spawn[T](body: =>T): { def get: T } = {
+  def spawn[T](body: => T): { def get: T } = {
     val t = new Thread {
       setName("SpawnThread")
       private var res: T = _
@@ -102,7 +103,7 @@ object CtrieTest extends Properties("concurrent.TrieMap") {
     val ct = new TrieMap[Wrap, Int]
 
     // checker
-    val checker = spawn {
+    @unused val checker = spawn {
       def check(last: Map[Wrap, Int], iterationsLeft: Int): Boolean = {
         val current = ct.readOnlySnapshot()
         if (!hasGrown(last, current)) false
@@ -188,12 +189,12 @@ object CtrieTest extends Properties("concurrent.TrieMap") {
     val totalInserts = new java.util.concurrent.atomic.AtomicInteger
     val ct = new TrieMap[Wrap, String]
 
-    val results = inParallel(p) {
+    @unused val results = inParallel(p) {
       idx =>
       (0 until sz) foreach {
         i =>
-        val v = ct.getOrElseUpdate(Wrap(i), idx + ":" + i)
-        if (v == idx + ":" + i) totalInserts.incrementAndGet()
+        val v = ct.getOrElseUpdate(Wrap(i), s"$idx:$i")
+        if (v == s"$idx:$i") totalInserts.incrementAndGet()
       }
     }
 

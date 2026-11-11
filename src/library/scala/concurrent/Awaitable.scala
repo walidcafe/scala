@@ -1,10 +1,14 @@
-/*                     __                                               *\
-**     ________ ___   / /  ___     Scala API                            **
-**    / __/ __// _ | / /  / _ |    (c) 2003-2013, LAMP/EPFL             **
-**  __\ \/ /__/ __ |/ /__/ __ |    http://scala-lang.org/               **
-** /____/\___/_/ |_/____/_/ | |                                         **
-**                          |/                                          **
-\*                                                                      */
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
 
 package scala.concurrent
 
@@ -25,7 +29,7 @@ import scala.concurrent.duration.Duration
 trait Awaitable[+T] {
 
   /**
-   * Await the "completed" state of this `Awaitable`.
+   * Awaits the "completed" state of this `Awaitable`.
    *
    * '''''This method should not be called directly; use [[Await.ready]] instead.'''''
    *
@@ -43,7 +47,7 @@ trait Awaitable[+T] {
   def ready(atMost: Duration)(implicit permit: CanAwait): this.type
 
   /**
-   * Await and return the result (of type `T`) of this `Awaitable`.
+   * Awaits and returns the result (of type `T`) of this `Awaitable`.
    *
    * '''''This method should not be called directly; use [[Await.result]] instead.'''''
    *
@@ -56,7 +60,8 @@ trait Awaitable[+T] {
    * @throws TimeoutException         if after waiting for the specified time this `Awaitable` is still not ready
    * @throws IllegalArgumentException if `atMost` is [[scala.concurrent.duration.Duration.Undefined Duration.Undefined]]
    */
-  @throws(classOf[Exception])
+  @throws(classOf[TimeoutException])
+  @throws(classOf[InterruptedException])
   def result(atMost: Duration)(implicit permit: CanAwait): T
 }
 

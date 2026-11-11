@@ -1,3 +1,5 @@
+//> using options -nowarn
+//
 object Types {
 
   abstract sealed class Type

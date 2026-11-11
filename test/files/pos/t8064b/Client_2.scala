@@ -1,3 +1,4 @@
+//
 object Test {
   Macro {
     "".reverse

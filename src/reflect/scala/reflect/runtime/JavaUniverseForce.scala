@@ -1,11 +1,27 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 // Generated Code, validated by run/t6240-universe-code-gen.scala
 package scala.reflect
 package runtime
 
+import scala.annotation.nowarn
+
+@nowarn("cat=deprecation&origin=scala\\.reflect\\.internal\\.Internals\\.compat")
+@nowarn("cat=deprecation&origin=scala\\.reflect\\.internal\\.Trees\\.emptyValDef")
 trait JavaUniverseForce { self: runtime.JavaUniverse  =>
   def force(): Unit = {
     Literal(Constant(42)).duplicate
-    nme.flattenedName()
+    nme.flattenedName(NoSymbol, nme.NO_NAME)
     nme.raw
     WeakTypeTag
     TypeTag
@@ -33,15 +49,17 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.perRunCaches
     this.compat
     this.treeBuild
-    this.FreshNameExtractor
-    this.FixedMirrorTreeCreator
-    this.FixedMirrorTypeCreator
     this.CompoundTypeTreeOriginalAttachment
     this.SAMFunction
     this.DelambdafyTarget
     this.BackquotedIdentifierAttachment
+    this.PostfixAttachment
+    this.InfixAttachment
+    this.AutoApplicationAttachment
     this.NoWarnAttachment
+    this.PatShadowAttachment
     this.PatVarDefAttachment
+    this.MultiDefAttachment
     this.ForAttachment
     this.SyntheticUnitAttachment
     this.SubpatternsAttachment
@@ -51,9 +69,25 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.UseInvokeSpecial
     this.TypeParamVarargsAttachment
     this.KnownDirectSubclassesCalled
-    this.noPrint
-    this.typeDebug
-    this.Range
+    this.DottyEnumSingleton
+    this.ConstructorNeedsFence
+    this.MultiargInfixAttachment
+    this.NullaryOverrideAdapted
+    this.ChangeOwnerAttachment
+    this.InterpolatedString
+    this.VirtualStringContext
+    this.CaseApplyInheritAccess
+    this.RootSelection
+    this.TypedExpectingUnitAttachment
+    this.FieldTypeInferred
+    this.LookupAmbiguityWarning
+    this.PermittedSubclasses
+    this.NamePos
+    this.UnnamedArg
+    this.DiscardedValue
+    this.DiscardedExpr
+    this.BooleanParameterType
+    this.ForceMatchDesugar
     // inaccessible: this.posAssigner
     this.ConsoleWriter
     this.RefTree
@@ -109,6 +143,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.pendingSuperCall
     this.emptyValDef
     this.EmptyTreeTypeSubstituter
+    this.duplicateAndResetPos
     this.UnmappableAnnotArg
     this.LiteralAnnotArg
     this.ArrayAnnotArg
@@ -134,15 +169,11 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.Scope
     this.EmptyScope
     this.Flag
-    this.KindErrors
-    this.Kind
-    this.ProperTypeKind
-    this.TypeConKind
-    this.inferKind
     this.UnmappableTree
     this.ErrorType
     this.WildcardType
     this.BoundedWildcardType
+    this.OverloadedArgProto
     this.NoType
     this.NoPrefix
     this.ThisType
@@ -150,7 +181,6 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.SuperType
     this.TypeBounds
     this.CompoundType
-    this.baseClassesCycleMonitor
     this.RefinedType
     this.ClassInfoType
     this.ConstantType
@@ -183,11 +213,10 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     this.abstractTypesToBounds
     this.dropIllegalStarTypes
     this.wildcardExtrapolation
-    this.IsDependentCollector
+    this.SubstSymMap
     this.ApproximateDependentMap
-    this.wildcardToTypeVarMap
+    this.identityTypeMap
     this.typeVarToOriginMap
-    this.ErroneousCollector
     this.adaptToNewRunMap
     this.SubTypePair
     this.SymbolKind
@@ -207,6 +236,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.JavaLangPackageClass
     definitions.ScalaPackage
     definitions.ScalaPackageClass
+    definitions.ScalaPackageObject
     definitions.RuntimePackage
     definitions.RuntimePackageClass
     definitions.AnyClass
@@ -219,10 +249,10 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.NothingTpe
     definitions.NullTpe
     definitions.ObjectTpe
+    definitions.ObjectTpeJava
     definitions.SerializableTpe
     definitions.StringTpe
     definitions.ThrowableTpe
-    definitions.SymbolTpe
     definitions.ConstantTrue
     definitions.ConstantFalse
     definitions.ConstantNull
@@ -254,34 +284,45 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.PredefModule
     definitions.SpecializableModule
     definitions.ScalaRunTimeModule
+    definitions.MurmurHash3Module
     definitions.SymbolModule
     definitions.ScalaNumberClass
     definitions.DelayedInitClass
     definitions.TypeConstraintClass
     definitions.SingletonClass
+    definitions.ListOfSingletonClassTpe
     definitions.SerializableClass
-    definitions.JavaSerializableClass
     definitions.ComparableClass
     definitions.JavaCloneableClass
     definitions.JavaNumberClass
     definitions.JavaEnumClass
     definitions.JavaUtilMap
     definitions.JavaUtilHashMap
+    definitions.JavaRecordClass
+    definitions.JdkValueBasedAnnot
     definitions.ByNameParamClass
     definitions.JavaRepeatedParamClass
     definitions.RepeatedParamClass
+    definitions.SubTypeClass
+    definitions.SameTypeClass
+    definitions.DummyImplicitClass
     definitions.ConsClass
     definitions.IteratorClass
     definitions.IterableClass
     definitions.ListClass
     definitions.SeqClass
+    definitions.SeqFactoryClass
+    definitions.UnapplySeqWrapperClass
     definitions.JavaStringBuilderClass
     definitions.JavaStringBufferClass
     definitions.JavaCharSequenceClass
-    definitions.TraversableClass
     definitions.ListModule
+    definitions.ListModuleAlias
     definitions.NilModule
+    definitions.NilModuleAlias
     definitions.SeqModule
+    definitions.SeqModuleAlias
+    definitions.Collection_SeqModule
     definitions.ArrayModule
     definitions.ArrayModule_overloadedApply
     definitions.ArrayClass
@@ -313,6 +354,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.ClassTagClass
     definitions.TypeTagsClass
     definitions.ApiUniverseClass
+    definitions.ApiQuasiquotesClass
     definitions.JavaUniverseClass
     definitions.MirrorClass
     definitions.TypeCreatorClass
@@ -320,6 +362,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.BlackboxContextClass
     definitions.WhiteboxContextClass
     definitions.MacroImplAnnotation
+    definitions.MacroImplLocationAnnotation
     definitions.StringContextClass
     definitions.StringContextModule
     definitions.ValueOfClass
@@ -336,11 +379,19 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.SomeClass
     definitions.NoneModule
     definitions.SomeModule
+    definitions.ModuleSerializationProxyClass
     definitions.VarArityClass
     definitions.ProductClass
     definitions.TupleClass
     definitions.FunctionClass
     definitions.AbstractFunctionClass
+    definitions.TryClass
+    definitions.FailureClass
+    definitions.SuccessClass
+    definitions.FutureClass
+    definitions.PromiseClass
+    definitions.NonFatalModule
+    definitions.NonFatal_apply
     definitions.MacroContextType
     definitions.ProductRootClass
     definitions.Any_$eq$eq
@@ -363,6 +414,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.Object_asInstanceOf
     definitions.Object_synchronized
     definitions.String_$plus
+    definitions.ObjectsClass
     definitions.ObjectRefClass
     definitions.VolatileObjectRefClass
     definitions.RuntimeStaticsModule
@@ -384,6 +436,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.StaticAnnotationClass
     definitions.AnnotationRetentionAttr
     definitions.AnnotationRetentionPolicyAttr
+    definitions.AnnotationRepeatableAttr
     definitions.ElidableMethodClass
     definitions.ImplicitNotFoundClass
     definitions.ImplicitAmbiguousClass
@@ -392,11 +445,22 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.SwitchClass
     definitions.TailrecClass
     definitions.VarargsClass
+    definitions.NowarnClass
     definitions.uncheckedStableClass
     definitions.uncheckedVarianceClass
+    definitions.uncheckedOverrideClass
+    definitions.ChildAnnotationClass
+    definitions.RepeatedAnnotationClass
+    definitions.TargetNameAnnotationClass
+    definitions.StaticMethodAnnotationClass
+    definitions.PolyFunctionClass
+    definitions.ExperimentalAnnotationClass
+    definitions.AnnotationDefaultClass
+    definitions.JavaAnnotationClass
     definitions.BeanPropertyAttr
     definitions.BooleanBeanPropertyAttr
     definitions.CompileTimeOnlyAttr
+    definitions.DefaultArgAttr
     definitions.DeprecatedAttr
     definitions.DeprecatedNameAttr
     definitions.DeprecatedInheritanceAttr
@@ -407,12 +471,16 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.SerialVersionUIDAttr
     definitions.SerialVersionUIDAnnotation
     definitions.SpecializedClass
+    definitions.SuperArgAttr
+    definitions.SuperFwdArgAttr
     definitions.ThrowsClass
     definitions.TransientAttr
     definitions.UncheckedClass
     definitions.UncheckedBoundsClass
     definitions.UnspecializedClass
+    definitions.UnusedClass
     definitions.VolatileAttr
+    definitions.JavaDeprecatedAttr
     definitions.FunctionalInterfaceClass
     definitions.BeanGetterTargetClass
     definitions.BeanSetterTargetClass
@@ -427,7 +495,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.InheritedAttr
     definitions.JUnitAnnotations
     definitions.languageFeatureModule
-    definitions.metaAnnotations
+    definitions.targetAnnotations
     definitions.AnnotationDefaultAttr
     definitions.isPhantomClass
     definitions.syntheticCoreClasses
@@ -445,6 +513,7 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.lazyHolders
     definitions.LazyRefClass
     definitions.LazyUnitClass
+    definitions.RichFloatClass
     definitions.allRefClasses
     definitions.UnitClass
     definitions.ByteClass
@@ -467,14 +536,28 @@ trait JavaUniverseForce { self: runtime.JavaUniverse  =>
     definitions.ScalaNumericValueClasses
     definitions.ScalaValueClassesNoUnit
     definitions.ScalaValueClasses
+    definitions.ScalaValueClassesSet
+    definitions.ScalaNumericValueClassesSet
+    definitions.ScalaIntegralValueClasses
 
     uncurry.VarargsSymbolAttachment
     uncurry.DesugaredParameterType
     erasure.GenericArray
     erasure.scalaErasure
+    erasure.scala3Erasure
     erasure.specialScalaErasure
+    erasure.specialScala3Erasure
     erasure.javaErasure
     erasure.verifiedJavaErasure
     erasure.boxingErasure
+    erasure.boxing3Erasure
+    typeDebugging.noPrint
+    typeDebugging.typeDebug
+    kinds.KindErrors
+    kinds.Kind
+    kinds.ProperTypeKind
+    kinds.TypeConKind
+    kinds.inferKind
+    freshNames.FreshNameExtractor
   }
 }

@@ -1,9 +1,8 @@
 import scala.tools.partest._
-import java.io.{Console => _, _}
 
 object Test extends DirectTest {
 
-  override def extraSettings: String = "-usejavacp -Ydelambdafy:method -Xprint:lambdalift -d " + testOutput.path
+  override def extraSettings: String = "-usejavacp -Ydelambdafy:method -Vprint:lambdalift"
 
   override def code = """class T(classParam: String) {
                         |  val field: String = ""
@@ -13,9 +12,5 @@ object Test extends DirectTest {
                         |}
                         |""".stripMargin.trim
 
-  override def show(): Unit = {
-    Console.withErr(System.out) {
-      compile()
-    }
-  }
+  override def show(): Unit = compile()
 }

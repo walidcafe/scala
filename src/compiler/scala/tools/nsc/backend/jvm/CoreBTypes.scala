@@ -1,3 +1,15 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc
 package backend.jvm
 
@@ -163,7 +175,7 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
   private[this] lazy val _jlCloneableRef            : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(JavaCloneableClass))        // java/lang/Cloneable
 
   def                     jiSerializableRef         : ClassBType = _jiSerializableRef.get
-  private[this] lazy val _jiSerializableRef         : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(JavaSerializableClass))     // java/io/Serializable
+  private[this] lazy val _jiSerializableRef         : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(SerializableClass))     // java/io/Serializable
 
   def                     jlClassCastExceptionRef   : ClassBType = _jlClassCastExceptionRef.get
   private[this] lazy val _jlClassCastExceptionRef   : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(ClassCastExceptionClass))   // java/lang/ClassCastException
@@ -198,6 +210,9 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
   def                     jliLambdaMetafactoryRef   : ClassBType = _jliLambdaMetafactoryRef.get
   private[this] lazy val _jliLambdaMetafactoryRef   : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(requiredClass[java.lang.invoke.LambdaMetafactory]))
 
+  def                     jliStringConcatFactoryRef : ClassBType = _jliStringConcatFactoryRef.get
+  private[this] lazy val _jliStringConcatFactoryRef : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(getRequiredClass("java.lang.invoke.StringConcatFactory")))
+
   def                     srBoxesRunTimeRef         : ClassBType = _srBoxesRunTimeRef.get
   private[this] lazy val _srBoxesRunTimeRef         : LazyVar[ClassBType] = runLazy(classBTypeFromSymbol(requiredClass[scala.runtime.BoxesRunTime]))
 
@@ -230,11 +245,11 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
 
   // Z -> MethodNameAndType(boxToBoolean,(Z)Ljava/lang/Boolean;)
   def srBoxesRuntimeBoxToMethods: Map[BType, MethodNameAndType] = _srBoxesRuntimeBoxToMethods.get
-  private[this] lazy val _srBoxesRuntimeBoxToMethods: LazyVar[Map[BType, MethodNameAndType]] = runLazy(srBoxesRuntimeMethods((primitive, boxed) => "boxTo" + boxed))
+  private[this] lazy val _srBoxesRuntimeBoxToMethods: LazyVar[Map[BType, MethodNameAndType]] = runLazy(srBoxesRuntimeMethods((_, boxed) => "boxTo" + boxed))
 
   // Z -> MethodNameAndType(unboxToBoolean,(Ljava/lang/Object;)Z)
   def srBoxesRuntimeUnboxToMethods: Map[BType, MethodNameAndType] = _srBoxesRuntimeUnboxToMethods.get
-  private[this] lazy val _srBoxesRuntimeUnboxToMethods: LazyVar[Map[BType, MethodNameAndType]] = runLazy(srBoxesRuntimeMethods((primitive, boxed) => "unboxTo" + primitive))
+  private[this] lazy val _srBoxesRuntimeUnboxToMethods: LazyVar[Map[BType, MethodNameAndType]] = runLazy(srBoxesRuntimeMethods((primitive, _) => "unboxTo" + primitive))
 
   private def singleParamOfClass(cls: Symbol) = (s: Symbol) => s.paramss match {
     case List(List(param)) => param.info.typeSymbol == cls
@@ -357,17 +372,12 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
     })
   }
 
-  def SSymbol_apply: Symbol = _SSymbol_apply.get
-  private[this] lazy val _SSymbol_apply: LazyVar[Symbol] = runLazy {
-    getMember(SymbolModule, nme.apply)
-  }
-
   def lambdaMetaFactoryMetafactoryHandle: Handle = _lambdaMetaFactoryMetafactoryHandle.get
   private[this] lazy val _lambdaMetaFactoryMetafactoryHandle: LazyVar[Handle] = runLazy {
     new Handle(Opcodes.H_INVOKESTATIC,
       coreBTypes.jliLambdaMetafactoryRef.internalName, sn.Metafactory.toString,
       MethodBType(
-        List(
+        Array(
           coreBTypes.jliMethodHandlesLookupRef,
           coreBTypes.StringRef,
           coreBTypes.jliMethodTypeRef,
@@ -384,7 +394,7 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
     new Handle(Opcodes.H_INVOKESTATIC,
       coreBTypes.jliLambdaMetafactoryRef.internalName, sn.AltMetafactory.toString,
       MethodBType(
-        List(
+        Array(
           coreBTypes.jliMethodHandlesLookupRef,
           coreBTypes.StringRef,
           coreBTypes.jliMethodTypeRef,
@@ -399,7 +409,7 @@ abstract class CoreBTypesFromSymbols[G <: Global] extends CoreBTypes {
     new Handle(Opcodes.H_INVOKESTATIC,
       coreBTypes.srLambdaDeserialize.internalName, sn.Bootstrap.toString,
       MethodBType(
-        List(
+        Array(
           coreBTypes.jliMethodHandlesLookupRef,
           coreBTypes.StringRef,
           coreBTypes.jliMethodTypeRef,

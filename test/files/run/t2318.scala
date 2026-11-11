@@ -1,10 +1,19 @@
+//> using options -Xlint:deprecation
+//> using javaOpt -Ddummy=fresh_jvm_needed_to_test_security_manager
+//> using filter WARNING.*
+// for now, ignore warnings due to reflective invocation
 import java.security._
 
-import scala.language.{ reflectiveCalls }
+import scala.annotation.nowarn
+import scala.language.reflectiveCalls
+import scala.util.Properties.isJavaAtLeast
+
+// SecurityManager is deprecated on JDK 17, so we sprinkle `@nowarn` around
 
 object Test {
-  trait Bar { def bar: Unit }
+  trait Bar { def bar(): Unit }
 
+  @nowarn("cat=deprecation")
   object Mgr extends SecurityManager {
     def allowedProperty(name: String) =
       name == "sun.net.inetaddr.ttl" ||
@@ -21,19 +30,25 @@ object Test {
   }
 
   def t1() = {
+    @nowarn("cat=deprecation")
     val p = Runtime.getRuntime().exec("ls");
     type Destroyable = { def destroy() : Unit }
     def doDestroy( obj : Destroyable ) : Unit = obj.destroy();
     doDestroy( p );
   }
-  def t2() = {
+
+  @nowarn("cat=deprecation")
+  def t2() = if (!isJavaAtLeast(18)) {
     System.setSecurityManager(Mgr)
+    var count = 0
 
-    val b = new Bar { def bar = println("bar") }
-    b.bar
+    val b = new Bar { def bar() = count += 1 }
+    b.bar()
 
-    val structural = b.asInstanceOf[{ def bar: Unit }]
-    structural.bar
+    val structural = b.asInstanceOf[{ def bar(): Unit }]
+    structural.bar()
+
+    assert(count == 2, "Expected 2 invocations")
   }
 
   def main(args: Array[String]): Unit = {

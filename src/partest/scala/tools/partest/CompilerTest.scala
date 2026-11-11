@@ -1,14 +1,26 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author Paul Phillips
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.partest
 
+import scala.language.implicitConversions
 import scala.reflect.runtime.{universe => ru}
 import scala.tools.nsc._
 
-/** For testing compiler internals directly.
+/** A DirectTest for testing compiler internals.
+ *  The test must implement the `check` function to check
+ *  the result of compiling the `code`; the test may override
+ *  `sources` instead to check multiple sources.
+ *
  *  Each source code string in "sources" will be compiled, and
  *  the check function will be called with the source code and the
  *  resulting CompilationUnit.  The check implementation should
@@ -19,13 +31,12 @@ abstract class CompilerTest extends DirectTest {
   def check(source: String, unit: global.CompilationUnit): Unit
 
   lazy val global: Global = newCompiler()
-  lazy val units: List[global.CompilationUnit] = compilationUnits(global)(sources: _ *)
+  lazy val computedSources = sources
+  lazy val units: List[global.CompilationUnit] = compilationUnits(global)(computedSources: _ *)
   import global._
-  import definitions.{ compilerTypeFromTag }
+  import definitions.compilerTypeFromTag
 
-  override def extraSettings = "-usejavacp -d " + testOutput.path
-
-  def show() = (sources, units).zipped foreach check
+  def show() = computedSources.lazyZip(units).foreach(check)
 
   // Override at least one of these...
   def code = ""
@@ -37,7 +48,7 @@ abstract class CompilerTest extends DirectTest {
       if (sym eq NoSymbol) NoType
       else appliedType(sym, compilerTypeFromTag(t))
   }
-  implicit def mkMkType(sym: Symbol) = new MkType(sym)
+  implicit def mkMkType(sym: Symbol): MkType = new MkType(sym)
 
   def allMembers(root: Symbol): List[Symbol] = {
     def loop(seen: Set[Symbol], roots: List[Symbol]): List[Symbol] = {
@@ -49,12 +60,12 @@ abstract class CompilerTest extends DirectTest {
   }
 
   class SymsInPackage(pkgName: String) {
-    def pkg     = rootMirror.getPackage(TermName(pkgName))
+    def pkg     = rootMirror.getPackage(pkgName)
     def classes = allMembers(pkg) filter (_.isClass)
     def modules = allMembers(pkg) filter (_.isModule)
     def symbols = classes ++ terms filterNot (_ eq NoSymbol)
     def terms   = allMembers(pkg) filter (s => s.isTerm && !s.isConstructor)
     def tparams = classes flatMap (_.info.typeParams)
-    def tpes    = symbols map (_.tpe) distinct
+    def tpes    = symbols.map(_.tpe).distinct
   }
 }

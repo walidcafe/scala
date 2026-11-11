@@ -25,11 +25,11 @@ class ScalaRunTimeTest {
     assertEquals("""Array(1, 2, 3)""", stringOf(Array(1, 2, 3)))
     assertEquals("""Array(a, "", " c", null)""", stringOf(Array("a", "", " c", null)))
     assertEquals("""Array(Array("", 1, Array(5)), Array(1))""",
-        stringOf(Array(Array("", 1, Array(5)), Array(1))))
+        stringOf(Array[Any](Array[Any]("", 1, Array(5)), Array(1))))
 
     val map = Map(1->"", 2->"a", 3->" a", 4->null)
-    assertEquals(s"""Map.Map4(1 -> "", 2 -> a, 3 -> " a", 4 -> null)""", stringOf(map))
-    assertEquals(s"""Map.Map4(1 -> "", 2 -> a)""", stringOf(map, 2))
+    assertEquals(s"""Map(1 -> "", 2 -> a, 3 -> " a", 4 -> null)""", stringOf(map))
+    assertEquals(s"""Map(1 -> "", 2 -> a)""", stringOf(map, 2))
 
     val iterable = Iterable("a", "", " c", null)
     assertEquals(s"""List(a, "", " c", null)""", stringOf(iterable))
@@ -61,5 +61,10 @@ class ScalaRunTimeTest {
     }
     assertEquals(null, stringOf(tpolecat))
     assertEquals("null toString", replStringOf(tpolecat, 100))
+  }
+
+  @Test def scala3ticket24204(): Unit = {
+    assertEquals(null, ScalaRunTime.wrapRefArray(null: Array[String]))
+    assertEquals(null, ScalaRunTime.genericWrapArray(null: Array[String]))
   }
 }

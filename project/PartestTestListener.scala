@@ -1,10 +1,10 @@
 package scala.build
 
 import java.io.{File, PrintWriter, StringWriter}
-import java.util.concurrent.TimeUnit
 
 import sbt.testing.{SuiteSelector, TestSelector}
 import sbt.{JUnitXmlTestsListener, TestEvent, TestResult, TestsListener, _}
+import sbt.internal.util.EscHelpers.removeEscapeSequences
 
 // The default JUnitXMLListener doesn't play well with partest: we end up clobbering the one-and-only partest.xml
 // file on group of tests run by `testAll`, and the test names in the XML file don't seem to show the path to the
@@ -21,9 +21,9 @@ class PartestTestListener(target: File) extends TestsListener {
   val skipStatus = EnumSet.of(TStatus.Skipped, TStatus.Ignored)
 
   override def doInit(): Unit = ()
-  override def doComplete(finalResult: TestResult.Value): Unit = ()
+  override def doComplete(finalResult: TestResult): Unit = ()
   override def endGroup(name: String, t: Throwable): Unit = ()
-  override def endGroup(name: String, result: TestResult.Value): Unit = ()
+  override def endGroup(name: String, result: TestResult): Unit = ()
   override def testEvent(event: TestEvent): Unit = {
     // E.g "test.files.pos" or "test.scaladoc.run"
     def groupOf(e: sbt.testing.Event) = {
@@ -46,7 +46,7 @@ class PartestTestListener(target: File) extends TestsListener {
         e.fullyQualifiedName()
     }
 
-    for ((group, events) <- event.detail.groupBy(groupOf(_))) {
+    for ((group, events) <- event.detail.groupBy(groupOf)) {
       val statii = events.map(_.status())
       val errorCount = statii.count(errorStatus.contains)
       val failCount = statii.count(failStatus.contains)
@@ -62,7 +62,7 @@ class PartestTestListener(target: File) extends TestsListener {
             val writer = new PrintWriter(stringWriter)
             e.throwable.get.printStackTrace(writer)
             writer.flush()
-            ConsoleLogger.removeEscapeSequences(stringWriter.toString)
+            removeEscapeSequences(stringWriter.toString)
           } else {
             ""
           }
@@ -70,13 +70,13 @@ class PartestTestListener(target: File) extends TestsListener {
           <testcase classname={group} name={testOf(e)} time={(1.0 * e.duration() / 1000).toString}>
             {e.status match {
             case TStatus.Error if e.throwable.isDefined =>
-              <error message={ConsoleLogger.removeEscapeSequences(e.throwable.get.getMessage)} type={e.throwable.get.getClass.getName}>
+              <error message={removeEscapeSequences(e.throwable.get.getMessage)} type={e.throwable.get.getClass.getName}>
                 {trace}
               </error>
             case TStatus.Error =>
                 <error message={"No Exception or message provided"}/>
             case TStatus.Failure if e.throwable.isDefined =>
-              <failure message={ConsoleLogger.removeEscapeSequences(e.throwable.get.getMessage)} type={e.throwable.get.getClass.getName}>
+              <failure message={removeEscapeSequences(e.throwable.get.getMessage)} type={e.throwable.get.getClass.getName}>
                 {trace}
               </failure>
             case TStatus.Failure =>
@@ -94,7 +94,7 @@ class PartestTestListener(target: File) extends TestsListener {
         }}
       </testsuite>
       val partestTestReports = target / "test-reports" / "partest"
-      val xmlFile = (partestTestReports / (group + ".xml"))
+      val xmlFile = partestTestReports / (group + ".xml")
       xmlFile.getParentFile.mkdirs()
       scala.xml.XML.save(xmlFile.getAbsolutePath, xml, "UTF-8", true, null)
     }

@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings -Ypatmat-exhaust-depth off
+//
 sealed trait CL3Literal
 case object IntLit extends CL3Literal
 case object CharLit extends CL3Literal

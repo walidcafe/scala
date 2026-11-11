@@ -1,6 +1,13 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
@@ -8,7 +15,6 @@ package ast
 
 import java.lang.System.{lineSeparator => EOL}
 import symtab.Flags._
-import scala.language.postfixOps
 import scala.reflect.internal.util.ListOfNil
 
 /** The object `nodePrinter` converts the internal tree
@@ -33,7 +39,7 @@ abstract class NodePrinters {
   }
 
   trait DefaultPrintAST extends PrintAST {
-    val printPos = settings.Xprintpos || settings.Yposdebug
+    val printPos = settings.Xprintpos.value || settings.Yposdebug.value
 
     def showNameAndPos(tree: NameTree) = showPosition(tree) + showName(tree.name)
     def showDefTreeName(tree: DefTree) = showName(tree.name)
@@ -60,8 +66,8 @@ abstract class NodePrinters {
     def showAttributes(tree: Tree): String = {
       if (infolevel == InfoLevel.Quiet) ""
       else {
-        try   { List(showSymbol(tree), showType(tree)) filterNot (_ == "") mkString ", " trim }
-        catch { case ex: Throwable => "sym= <error> " + ex.getMessage }
+        try List(showSymbol(tree), showType(tree)).filterNot(_ == "").mkString(", ").trim
+        catch { case ex: Throwable => s"sym= <error> ${ex.getMessage}" }
       }
     }
   }
@@ -83,7 +89,7 @@ abstract class NodePrinters {
       tree match {
         case SelectFromTypeTree(qual, name) => showRefTreeName(qual) + "#" + showName(name)
         case Select(qual, name)             => showRefTreeName(qual) + "." + showName(name)
-        case id @ Ident(name)               => showNameAndPos(id)
+        case id: Ident                      => showNameAndPos(id)
         case _                              => "" + tree
       }
     }
@@ -101,8 +107,8 @@ abstract class NodePrinters {
 
     def stringify(tree: Tree): String = {
       buf.clear()
-      if (settings.XshowtreesStringified) buf.append(tree.toString + EOL)
-      if (settings.XshowtreesCompact) {
+      if (settings.XshowtreesStringified.value) buf.append(tree.toString + EOL)
+      if (settings.XshowtreesCompact.value) {
         buf.append(showRaw(tree, printIds = settings.uniqid, printTypes = settings.printtypes))
       } else {
         level = 0
@@ -118,6 +124,7 @@ abstract class NodePrinters {
       }
     }
     def println(s: String) = printLine(s, "")
+    def print(s: String) = buf.append(s)
 
     def printLine(value: String, comment: String): Unit = {
       buf append "  " * level
@@ -198,7 +205,7 @@ abstract class NodePrinters {
       else if (trees.tail.isEmpty)
         traverse(trees.head)
       else {
-        printLine("", trees.length + " " + what + "s")
+        printLine("", "" + trees.length + " " + what + "s")
         trees foreach traverse
       }
     }
@@ -208,7 +215,7 @@ abstract class NodePrinters {
     }
 
     def traverse(tree: Tree): Unit = {
-      showPosition(tree)
+      print(showPosition(tree))
 
       tree match {
         case ApplyDynamic(fun, args)      => applyCommon(tree, fun, args)
@@ -228,7 +235,6 @@ abstract class NodePrinters {
 
         case ld @ LabelDef(name, params, rhs) =>
           printMultiline(tree) {
-            showNameAndPos(ld)
             traverseList("()", "params")(params)
             traverse(rhs)
           }
@@ -288,7 +294,7 @@ abstract class NodePrinters {
                 printLine("", "1 parameter list")
                 ps foreach traverse
               case pss        =>
-                printLine("", pss.length + " parameter lists")
+                printLine("", "" + pss.length + " parameter lists")
                 pss foreach (ps => traverseList("()", "parameter")(ps))
             }
             traverse(tpt)
@@ -352,7 +358,7 @@ abstract class NodePrinters {
           tree match {
             case t: RefTree               => println(showRefTree(t))
             case t if t.productArity == 0 => println(treePrefix(t))
-            case t                        => printMultiline(tree)(tree.productIterator foreach traverseAny)
+            case _                        => printMultiline(tree)(tree.productIterator foreach traverseAny)
           }
       }
     }

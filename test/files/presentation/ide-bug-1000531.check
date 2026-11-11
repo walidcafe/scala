@@ -1,9 +1,13 @@
 reload: CrashOnLoad.scala, TestIterable.java
 
-askTypeCompletion at CrashOnLoad.scala(6,11)
+askTypeCompletion at CrashOnLoad.scala(9,11)
 ================================================================================
-[response] askTypeCompletion at (6,11)
-retrieved 30 members
+[response] askTypeCompletion at (9,11)
+retrieved 34 members
+[inaccessible] private[this] val self: other.TestIterator[Nothing]
+[inaccessible] private[this] val self: other.TestIterator[Nothing]
+[inaccessible] private[this] val self: other.TestIterator[Nothing]
+[inaccessible] private[this] val self: other.TestIterator[Nothing]
 [inaccessible] protected[package lang] def clone(): Object
 [inaccessible] protected[package lang] def finalize(): Unit
 def +(other: String): String
@@ -12,7 +16,7 @@ def ensuring(cond: Boolean): other.TestIterator[Nothing]
 def ensuring(cond: Boolean, msg: => Any): other.TestIterator[Nothing]
 def ensuring(cond: other.TestIterator[Nothing] => Boolean): other.TestIterator[Nothing]
 def ensuring(cond: other.TestIterator[Nothing] => Boolean, msg: => Any): other.TestIterator[Nothing]
-def equals(x$1: Any): Boolean
+def equals(x$1: Object): Boolean
 def formatted(fmtstr: String): String
 def hasNext: Boolean
 def hashCode(): Int
@@ -20,7 +24,7 @@ def next: T
 def toString(): String
 def →[B](y: B): (other.TestIterator[Nothing], B)
 final def !=(x$1: Any): Boolean
-final def ##(): Int
+final def ## : Int
 final def ==(x$1: Any): Boolean
 final def asInstanceOf[T0]: T0
 final def eq(x$1: AnyRef): Boolean

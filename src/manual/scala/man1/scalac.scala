@@ -13,7 +13,7 @@ object scalac extends Command {
   val name = Section("NAME",
 
     MBold(command) & " " & NDash & " Compiler for the " &
-    Link("Scala 2", "http://scala-lang.org/") & " language")
+    Link("Scala 2", "https://scala-lang.org/") & " language")
 
   val synopsis = Section("SYNOPSIS",
 
@@ -94,7 +94,7 @@ object scalac extends Command {
             "Specify character encoding used by source files.",
             "The default value is platform-specific (Linux: " & Mono("\"UTF8\"") &
             ", Windows: " & Mono("\"Cp1252\"") & "). Executing the following " &
-            "code in the Scala interpreter will return the default value " &
+            "code in the Scala REPL will return the default value " &
             "on your system:",
             MBold("    scala> ") &
             Mono("new java.io.InputStreamReader(System.in).getEncoding"))),
@@ -139,18 +139,26 @@ object scalac extends Command {
           CmdOption("nowarn"),
           "Generate no warnings"),
         Definition(
-          CmdOption("optimise"),
-          "Generates faster bytecode by applying optimisations to the program."),
+          CmdOptionBound("opt:", Argument("optimization")),
+          SeqPara(
+            "Enable optimizations.",
+            Mono("\"local\"") & " enables method-local optimizations,",
+            Mono("\"inline:\"") & Argument("pattern") & " also enables inlining from classes matching the pattern,",
+            Mono("\"help\"") & " lists all choices.")),
         Definition(
           CmdOption("print"),
           "Print program with all Scala-specific features removed."),
         Definition(
+          CmdOptionBound("release:", Argument("version")),
+          "Compile against the API of the given Java release and target its class file version, for example " & Mono("\"17\"") & "."),
+        Definition(
           CmdOption("sourcepath", Argument("path")),
           "Specify location(s) of source files."),
         Definition(
-          CmdOptionBound("target:", "{jvm-1.8}"),
+          CmdOptionBound("target:", Argument("version")),
           SeqPara(
-            Mono("\"jvm-1.8\"") & " target JVM 1.8 (default)")),
+            "Target class file version, from " & Mono("\"8\"") & " (the default) up to the version of the running JVM.",
+            "The legacy forms " & Mono("\"jvm-1.8\"") & " and " & Mono("\"1.8\"") & " are also accepted.")),
         Definition(
           CmdOption("toolcp", Argument("path")),
           "Add to the runner classpath."),
@@ -203,13 +211,7 @@ object scalac extends Command {
           CmdOption("Xfatal-warnings"),
           "Fail the compilation if there are any warnings."),
         Definition(
-          CmdOption("Xfull-lubs"),
-          "Retain pre 2.10 behavior of less aggressive truncation of least upper bounds."),
-        Definition(
-          CmdOption("Xfuture"),
-          "Turn on future language features."),
-        Definition(
-          CmdOption("Xgenerate-phase-graph", Argument("file")),
+          CmdOption("Vphase-graph", Argument("file")),
           "Generate the phase graphs (outputs .dot files) to fileX.dot."),
         Definition(
           CmdOption("Xlint"),
@@ -224,9 +226,6 @@ object scalac extends Command {
           CmdOption("Xlog-implicit-conversions"),
           "Print a message whenever an implicit conversion is inserted."),
         Definition(
-          CmdOption("Xlog-implicits"),
-          "Show more detail on why some implicits are not applicable."),
-        Definition(
           CmdOption("Xlog-reflective-calls"),
           "Print a message when a reflective method call is generated."),
         Definition(
@@ -235,9 +234,6 @@ object scalac extends Command {
         Definition(
           CmdOption("Xmain-class", Argument("path")),
           "Class for manifest's Main-Class entry (only useful with -d <jar>)."),
-        Definition(
-          CmdOption("Xmax-classfile-name", Argument("n")),
-          "Maximum filename length for generated classes."),
         Definition(
           CmdOptionBound("Xmigration:", Argument("version")),
           "Warn about constructs whose behavior may have changed since" & Argument("version") & "."),
@@ -248,11 +244,8 @@ object scalac extends Command {
           CmdOption("Xno-patmat-analysis"),
           "Don't perform exhaustivity/unreachability analysis. Also, ignore " & MItalic("@switch") & " annotation."),
         Definition(
-          CmdOption("Xno-uescape"),
-          "Disable handling of " & BSlash & "u unicode escapes"),
-        Definition(
           CmdOption("Xnojline"),
-          "Do not use JLine for editing."),
+          "Do not use JLine at all for REPL input."),
         Definition(
           CmdOptionBound("Xplugin:", Argument("paths")),
           "Load a plugin from each classpath."),
@@ -269,16 +262,13 @@ object scalac extends Command {
           CmdOption("Xpluginsdir", Argument("path")),
           "Path to search for plugin archives."),
         Definition(
-          CmdOptionBound("Xprint:", Argument("phases")),
+          CmdOptionBound("Vprint:", Argument("phases")),
           "Print out program after " & Argument("phases") & " (see below)."),
         Definition(
-          CmdOptionBound("Xprint-icode", "[:" & Argument("phases") & "]"),
-          "Log internal icode to *.icode files after" & Argument("phases") & " (default: icode)."),
-        Definition(
-          CmdOption("Xprint-pos"),
+          CmdOption("Vprint-pos"),
           "Print tree positions, as offsets."),
         Definition(
-          CmdOption("Xprint-types"),
+          CmdOption("Vprint-types"),
           "Print tree types (debugging option)."),
         Definition(
           CmdOption("Xprompt"),
@@ -306,9 +296,6 @@ object scalac extends Command {
           CmdOption("Xsource-reader", Argument("classname")),
           "Specify a custom method for reading source files."),
         Definition(
-          CmdOption("Xstrict-inference"),
-          "Don't infer known-unsound types."),
-        Definition(
           CmdOption("Xverify"),
           "Verify generic signatures in generated bytecode (asm backend only)."),
         Definition(
@@ -335,16 +322,13 @@ object scalac extends Command {
           "load package objects"),
         Definition(
           MItalic("typer"),
-          "the meat and potatoes: type the trees"),
-        Definition(
-          MItalic("patmat"),
-          "translate match expressions"),
+          "type the trees"),
         Definition(
           MItalic("superaccessors"),
           "add super accessors in traits and nested classes"),
         Definition(
           MItalic("extmethods"),
-          "add extension methods for inline classes"),
+          "add extension methods for value classes"),
         Definition(
           MItalic("pickler"),
           "serialize symbol tables"),
@@ -352,14 +336,14 @@ object scalac extends Command {
           MItalic("refchecks"),
           "reference/override checking, translate nested objects"),
         Definition(
-          MItalic("selectiveanf"),
-          "ANF pre-transform for " & MItalic("@cps") & " (CPS plugin)"),
-        Definition(
-          MItalic("selectivecps"),
-          MItalic("@cps") & "-driven transform of selectiveanf assignments (CPS plugin)"),
+          MItalic("patmat"),
+          "translate match expressions"),
         Definition(
           MItalic("uncurry"),
-          "uncurry, translate function values to anonymous classes"),
+          "uncurry, translate by-name and vararg parameters"),
+        Definition(
+          MItalic("fields"),
+          "synthesize accessors and fields, add bitmaps for lazy vals"),
         Definition(
           MItalic("tailcalls"),
           "replace tail calls by jumps"),
@@ -368,16 +352,16 @@ object scalac extends Command {
           MItalic("@specialized") & "-driven class and method specialization"),
         Definition(
           MItalic("explicitouter"),
-          "this refs to outer pointers, translate patterns"),
+          "this refs to outer pointers"),
         Definition(
           MItalic("erasure"),
-          "erase types, add interfaces for traits"),
+          "erase types, add bridge methods"),
         Definition(
           MItalic("posterasure"),
-          "clean up erased inline classes"),
+          "clean up erased value classes"),
         Definition(
-          MItalic("fields"),
-          "synthesize accessors and fields, including bitmaps for lazy vals"),
+          MItalic("async"),
+          "transform async/await into a state machine"),
         Definition(
           MItalic("lambdalift"),
           "move nested functions to top level"),
@@ -395,31 +379,13 @@ object scalac extends Command {
           "platform-specific cleanups, generate reflective calls"),
         Definition(
           MItalic("delambdafy"),
-          "remove lambdas"),
-        Definition(
-          MItalic("icode"),
-          "generate portable intermediate code"),
-        Definition(
-          MItalic("inliner"),
-          "optimization: do inlining"),
-        Definition(
-          MItalic("inlineHandlers"),
-          "optimization: inline exception handlers"),
-        Definition(
-          MItalic("closelim"),
-          "optimization: eliminate uncalled closures"),
-        Definition(
-          MItalic("constopt"),
-          "optimization: optimize null and other constants"),
-        Definition(
-          MItalic("dce"),
-          "optimization: eliminate dead code"),
+          "translate lambdas to invokedynamic"),
         Definition(
           MItalic("jvm"),
           "generate JVM bytecode"),
         Definition(
           MItalic("terminal"),
-          "the last phase in the compiler chain"),
+          "the last phase during a compilation run"),
         Definition(
           MItalic("all"),
           "matches all phases"))))
@@ -443,9 +409,9 @@ object scalac extends Command {
           "Specify the options to be passed to the " & MBold("java") &
           " command defined by " & MBold("JAVACMD") & ".",
 
-          "With Java 1.5 (or newer) one may for example configure the " &
-          "memory usage of the JVM as follows: " &
-          Mono("JAVA_OPTS=\"-Xmx512M -Xms16M -Xss16M\"")
+          "One might for example configure the " &
+          "memory usage of the JVM with: " &
+          Mono("JAVA_OPTS=\"-Xmx2G -Xss16M\"")
         ))))
 
   val examples = Section("EXAMPLES",

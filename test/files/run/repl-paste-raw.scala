@@ -6,12 +6,13 @@ object Test extends SessionTest {
 s"""|
     |scala> :paste $pastie
     |Pasting file $pastie...
+    |// Exiting paste mode... now compiling with scalac.
     |
     |scala> val favoriteThing = brown_paper.Gift(true)
-    |favoriteThing: brown_paper.Gift = Gift(true)
+    |val favoriteThing: brown_paper.Gift = Gift(true)
     |
     |scala> favoriteThing.hasString
-    |res0: Boolean = true
+    |val res0: Boolean = true
     |
     |scala> :quit"""
   def pastie = testPath changeExtension "pastie"

@@ -1,16 +1,34 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala.tools.nsc
 package typechecker
 
-import scala.reflect.internal.util.StatisticsStatics
+import scala.collection.mutable
+import scala.reflect.internal.util.JavaClearable
 
-/** The main attribution phase.
+/** Defines the sub-components for the namer, packageobjects, and typer phases.
+ *
+ *  The typechecker reaches its analyzer through self types (`self: AbstractAnalyzer =>` in `Typers`, `Namers`,
+ *  `Contexts` ...): through `$outer` from `Typer`, `Namer` and `Context`, and through `this` in the traits'
+ *  methods. When the self type was the trait `Analyzer`, each such call was an `invokeinterface` on the last
+ *  interface in the analyzer's itable, which HotSpot's itable stubs scan linearly once a call site sees more than
+ *  two receiver classes. A compile has `Global`'s analyzer and `Erasure`'s; `SpecializeTypes` adds a third when the
+ *  sources use `@specialized`, as do Scaladoc and the presentation compiler. With a class as the self type the calls
+ *  are `invokevirtual`.
+ *
+ *  Clients should keep using [[Analyzer]], which extends this class.
  */
-trait Analyzer extends AnyRef
+abstract class AbstractAnalyzer extends AnyRef
             with Contexts
             with Namers
             with Typers
@@ -26,12 +44,13 @@ trait Analyzer extends AnyRef
             with StdAttachments
             with MacroAnnotationAttachments
             with AnalyzerPlugins
+            with ImportTracking
 {
   val global : Global
   import global._
 
   object namerFactory extends {
-    val global: Analyzer.this.global.type = Analyzer.this.global
+    val global: AbstractAnalyzer.this.global.type = AbstractAnalyzer.this.global
   } with SubComponent {
     val phaseName = "namer"
     val runsAfter = List[String]("parser")
@@ -40,15 +59,20 @@ trait Analyzer extends AnyRef
       override val checkable = false
       override def keepsTypeParams = false
 
-      def apply(unit: CompilationUnit): Unit = {
-        newNamer(rootContext(unit)).enterSym(unit.body)
-      }
+      def apply(unit: CompilationUnit): Unit = newNamer(rootContext(unit)).enterSym(unit.body)
     }
   }
 
   object packageObjects extends {
-    val global: Analyzer.this.global.type = Analyzer.this.global
+    val global: AbstractAnalyzer.this.global.type = AbstractAnalyzer.this.global
   } with SubComponent {
+    val deferredOpen: mutable.Set[Symbol] = {
+      import scala.jdk.CollectionConverters._
+      // This will throw a ConcurrentModificationException if we mutate during iteration
+      val javaSet = new java.util.LinkedHashSet[Symbol]()
+      perRunCaches.recordCache(JavaClearable.forCollection(javaSet))
+      javaSet.asScala
+    }
     val phaseName = "packageobjects"
     val runsAfter = List[String]()
     val runsRightAfter= Some("namer")
@@ -60,8 +84,11 @@ trait Analyzer extends AnyRef
       val openPackageObjectsTraverser = new InternalTraverser {
         override def traverse(tree: Tree): Unit = tree match {
           case ModuleDef(_, _, _) =>
-            if (tree.symbol.name == nme.PACKAGEkw) {
-              openPackageModule(tree.symbol, tree.symbol.owner)
+            val sym = tree.symbol
+            if (sym.name == nme.PACKAGEkw) {
+              val owner = sym.owner
+              deferredOpen.subtractOne(owner) // we've actually got a source file
+              openPackageModule(sym, owner)
             }
           case ClassDef(_, _, _, _) => () // make it fast
           case _ => tree.traverse(this)
@@ -71,50 +98,93 @@ trait Analyzer extends AnyRef
       def apply(unit: CompilationUnit): Unit = {
         openPackageObjectsTraverser(unit.body)
       }
+
+      override def run(): Unit = {
+        super.run()
+
+        // openPackageModule can remove entries from `deferredOpen`, so make a defensive copy first,
+        // and then check whether `remove` says the sym is still deferred.
+        // `force` the open because we might be called earlier if the run is bailing on an early error.
+        for (sym <- deferredOpen.toVector)
+          if (deferredOpen.remove(sym))
+            openPackageModule(sym, force = true)
+      }
     }
   }
 
   object typerFactory extends {
-    val global: Analyzer.this.global.type = Analyzer.this.global
+    val global: AbstractAnalyzer.this.global.type = AbstractAnalyzer.this.global
   } with SubComponent {
     import global.statistics
     val phaseName = "typer"
     val runsAfter = List[String]()
     val runsRightAfter = Some("packageobjects")
-    def newPhase(_prev: Phase): StdPhase = new StdPhase(_prev) {
+    def newPhase(prev: Phase): StdPhase = new TyperPhase(prev)
+    final class TyperPhase(prev: Phase) extends StdPhase(prev) {
       override def keepsTypeParams = false
+      override def shouldSkipThisPhaseForJava: Boolean = !settings.YpickleJava.value && !createJavadoc
       resetTyper()
       // the log accumulates entries over time, even though it should not (Adriaan, Martin said so).
       // Lacking a better fix, we clear it here (before the phase is created, meaning for each
       // compiler run). This is good enough for the resident compiler, which was the most affected.
       undoLog.clear()
       override def run(): Unit = {
-        val start = if (StatisticsStatics.areSomeColdStatsEnabled) statistics.startTimer(statistics.typerNanos) else null
+        val start = if (settings.areStatisticsEnabled) statistics.startTimer(statistics.typerNanos) else null
         global.echoPhaseSummary(this)
-        for (unit <- currentRun.units) {
-          applyPhase(unit)
+        val units = currentRun.units
+
+        while (units.hasNext) {
+          applyPhase(units.next())
           undoLog.clear()
         }
         finishComputeParamAlias()
         // defensive measure in case the bookkeeping in deferred macro expansion is buggy
         clearDelayed()
-        if (StatisticsStatics.areSomeColdStatsEnabled) statistics.stopTimer(statistics.typerNanos, start)
+        if (settings.areStatisticsEnabled) statistics.stopTimer(statistics.typerNanos, start)
       }
       def apply(unit: CompilationUnit): Unit = {
         try {
           val typer = newTyper(rootContext(unit))
           unit.body = typer.typed(unit.body)
-          if (global.settings.Yrangepos && !global.reporter.hasErrors) global.validatePositions(unit.body)
-          for (workItem <- unit.toCheck) workItem()
-          if (settings.warnUnusedImport)
-            warnUnusedImports(unit)
-          if (settings.warnUnused.isSetByUser)
-            new checkUnused(typer).apply(unit)
+          // interactive typed may finish by throwing a `TyperResult`
+          if (!settings.Youtline.value) {
+            while (unit.toCheck.nonEmpty) unit.toCheck.removeHead().apply()
+            if (!settings.isScaladoc && settings.warnUnusedImport)
+              warnUnusedImports(unit)
+            if (!settings.isScaladoc && settings.warnUnused.isSetByUser)
+              new checkUnused(typer).apply(unit)
+          }
         }
         finally {
-          unit.toCheck.clear()
+          runReporting.reportSuspendedMessages(unit)
+          unit.toCheck.clearAndShrink()
         }
       }
     }
   }
 }
+
+/** The analyzer, as clients see it.
+ *
+ *  A trait, as it has always been, listing the same parts, so that code compiled against it keeps linking: it
+ *  stays an interface in bytecode with the same super-interfaces. It extends [[AbstractAnalyzer]], so that
+ *  `new { val global = g } with Analyzer` still compiles: the instance's superclass is `AbstractAnalyzer`,
+ *  which satisfies the self types of the parts.
+ */
+trait Analyzer extends AbstractAnalyzer
+            with Contexts
+            with Namers
+            with Typers
+            with Infer
+            with Implicits
+            with EtaExpansion
+            with SyntheticMethods
+            with Unapplies
+            with Macros
+            with NamesDefaults
+            with TypeDiagnostics
+            with ContextErrors
+            with StdAttachments
+            with MacroAnnotationAttachments
+            with AnalyzerPlugins
+            with ImportTracking

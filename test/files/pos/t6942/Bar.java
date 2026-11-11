@@ -1,3 +1,4 @@
+//
 package foo;
 
 public enum Bar {

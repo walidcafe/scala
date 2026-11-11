@@ -1,9 +1,22 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.nsc.profile
 
 import java.util.concurrent.ThreadPoolExecutor.AbortPolicy
 import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicInteger
 
+import scala.annotation._
 import scala.tools.nsc.{Global, Phase}
 
 sealed trait ThreadPoolFactory {
@@ -32,7 +45,7 @@ object ThreadPoolFactory {
     private def childGroup(name: String) = new ThreadGroup(baseGroup, name)
 
     // Invoked when a new `Worker` is created, see `CommonThreadFactory.newThread`
-    protected def wrapWorker(worker: Runnable, shortId: String): Runnable = worker
+    protected def wrapWorker(worker: Runnable, @unused shortId: String): Runnable = worker
 
     protected final class CommonThreadFactory(
         shortId: String,
@@ -86,9 +99,9 @@ object ThreadPoolFactory {
       val data = new ThreadProfileData
       localData.set(data)
 
-      val profileStart = profiler.snapThread(0)
+      val profileStart = RealProfiler.snapThread(0)
       try worker.run finally {
-        val snap = profiler.snapThread(data.idleNs)
+        val snap = RealProfiler.snapThread(data.idleNs)
         val threadRange = ProfileRange(profileStart, snap, phase, shortId, data.taskCount, Thread.currentThread())
         profiler.completeBackground(threadRange)
       }

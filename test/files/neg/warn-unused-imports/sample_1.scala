@@ -1,3 +1,4 @@
+//> using options -Werror -Wunused:imports
 
 import language._
 

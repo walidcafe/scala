@@ -1,0 +1,50 @@
+name: Scala Merge CI
+
+on:
+  push:
+    branches: ['2.*.x']
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  build_and_test:
+    name: Test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        java: [8, 11, 17, 21, 25, 27]
+        # Windows failures are about paths and line endings rather than the JDK: test the oldest and the newest LTS
+        include:
+          - { os: windows-latest, java: 8 }
+          - { os: windows-latest, java: 25 }
+    runs-on: ${{matrix.os}}
+    steps:
+      - run: git config --global core.autocrlf false
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Java
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: zulu
+          java-version: ${{matrix.java}}
+          cache: sbt
+
+      - name: Setup SBT
+        uses: sbt/setup-sbt@ecad189dd245444b9ae0a0cd5922fd938b88906f # v1.5.12
+
+      - name: Build
+        run: |
+          sbt setupPublishCore generateBuildCharacterPropertiesFile headerCheck publishLocal
+
+      - name: Test
+        run: |
+          STARR=`cat buildcharacter.properties | grep ^maven.version.number | cut -d= -f2` && echo $STARR
+          sbt -Dstarr.version=$STARR setupValidateTest Test/compile info testAll

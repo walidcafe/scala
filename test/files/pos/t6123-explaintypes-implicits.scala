@@ -1,3 +1,5 @@
+//> using options -explaintypes
+//
 object ImplicitBugReport {
   trait Exp[+T]
   trait CanBuildExp[-Elem, +To] extends (Exp[Elem] => To)

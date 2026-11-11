@@ -1,5 +1,6 @@
+//> using options -deprecation
 import scala.tools.partest.BytecodeTest
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 package p1 {
   package p2 {

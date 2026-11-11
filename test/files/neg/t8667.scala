@@ -15,11 +15,17 @@ trait T {
 }
 
 trait X {
+  trait Upper
   def f0() = 42
   def f1(i: Int) = 42
   def f2(i: Int, j: Int) = 42
   def f6(i: Int, j: Int, k: Int, l: Int, m: Int, n: Int) = 42
   def f12(i: Int, j: Int, k: Int, l: Int, m: Int, n: Int, o: Int, p: Int, q: Int, r: Int, s: Int, t: Int) = 42
+  def max(x: Any) = 42
+  def maxi[A](x: A) = 42
+  def mini[A <: Upper](x: A) = 42
+  def moxi(x: AnyRef) = 42
+  def movi(x: Object) = 42
 
   def g() = {
     f0(1)
@@ -32,6 +38,78 @@ trait X {
     f6(1, 2, 3, 4, 5, 6, 7)
     f6(1, 2, 3, 4, 5, 6, 7, 8)
     f12(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15)
+    // confirm auto-tupling
+    max(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22)
+    maxi(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22)
+    moxi(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22)
+    movi(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22)
+    mini(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22)
+    // clarify auto-tupling failure
+    max(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24)
+    maxi(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24)
+    moxi(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24)
+    movi(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24)
+    mini(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24)
     ()
   }
+}
+
+trait Y {
+  def f[A](a: A)       = ???
+  def g(x: Any)        = ???
+  def t(t: (Int, Int)) = ???
+
+  def x = f(42, 27, 17)
+  def y = g(42, 27, 17)
+  def z = t(42, 27, 17)
+}
+
+trait Z {
+  def f(a: Int = 1, b: String = "") = b * a
+
+  def x = f(c = "hello, world")
+}
+
+object app {
+  def test(): Unit = {
+    val x = null.asInstanceOf[X]
+    x f0 ()
+    x.f0(())
+  }
+  def workaround(): Unit = {
+    import language.postfixOps
+    val x = null.asInstanceOf[X]
+    x f0
+  }
+}
+
+trait Nuance {
+  def f2(i: Int, j: Int) = ()
+  def `always report bad named arg`: Unit = {
+    f2(k = 42)
+    f2(17, k = 42)
+    f2(17, 27, k = 42)
+  }
+}
+
+trait FurtherFailures {
+  def almostTupleAdapted(t2: (Int, String)): Unit = ()
+
+  def close() = almostTupleAdapted(math.floor("not a num 1"), math.floor("not a num 2"))
+
+  def missingArgs(d: Double, s: String): Unit = ()
+
+  def missed() = missingArgs(math.floor("not a num"))
+
+  def tooManyArgs(s: String, i: Int): Unit = ()
+
+  def miscount() = tooManyArgs(math.floor("not a num"))
+
+  def nonesuch(): Unit = doesntExist(math.floor("not a num 1"), math.floor("not a num 2"))
+
+  def nonesuchical: Unit = doesntExist(i = math.floor("not a num 1"), j = math.floor("not a num 2"))
+
+  def badApplied: Unit = List(42).munge(x = 27)
+
+  def badApply: Unit = List(42).munge { x = 27 }
 }

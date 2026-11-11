@@ -1,0 +1,4 @@
+implicit-log.scala:100: error: value baa is not a member of Int
+  1.baa
+    ^
+1 error

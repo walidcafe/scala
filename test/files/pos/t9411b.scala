@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 object OhNoes {
 
   sealed trait F

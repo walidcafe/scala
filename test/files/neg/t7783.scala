@@ -1,3 +1,5 @@
+//> using options -deprecation -Xfatal-warnings
+//
 object O { class C; @deprecated("", "") type D = C; def foo: Seq[D] = Nil }
 
 object NoWarn {

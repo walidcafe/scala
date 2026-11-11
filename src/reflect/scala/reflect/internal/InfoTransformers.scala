@@ -1,14 +1,23 @@
-/* NSC -- new Scala compiler
- * Copyright 2005-2013 LAMP/EPFL
- * @author  Martin Odersky
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
  */
 
 package scala
 package reflect
 package internal
 
-trait InfoTransformers {
-  self: SymbolTable =>
+import scala.annotation.tailrec
+
+final class InfoTransformers[U <: SymbolTable with Singleton](val self: U) {
+  import self._
 
   /* Syncnote: This should not need to be protected, as reflection does not run in multiple phases.
    */
@@ -20,7 +29,8 @@ trait InfoTransformers {
     val changesBaseClasses: Boolean
     def transform(sym: Symbol, tpe: Type): Type
 
-    def insert(that: InfoTransformer): Unit = {
+    @tailrec
+    final def insert(that: InfoTransformer): Unit = {
       assert(this.pid != that.pid, this.pid)
 
       if (that.pid < this.pid) {
@@ -28,7 +38,7 @@ trait InfoTransformers {
       } else if (next.pid <= that.pid && next.pid != NoPhase.id) {
         next insert that
       } else {
-        log("Inserting info transformer %s following %s".format(phaseOf(that.pid), phaseOf(this.pid)))
+        log(s"Inserting info transformer ${phaseOf(that.pid)} following ${phaseOf(this.pid)}")
         that.next = next
         that.prev = this
         next.prev = that
@@ -40,7 +50,8 @@ trait InfoTransformers {
      *  If no such exists, the InfoTransformer with the next
      *  higher pid.
      */
-    def nextFrom(from: Phase#Id): InfoTransformer =
+    @tailrec
+    final def nextFrom(from: Phase#Id): InfoTransformer =
       if (from == this.pid) this
       else if (from < this.pid)
         if (prev.pid < from) this

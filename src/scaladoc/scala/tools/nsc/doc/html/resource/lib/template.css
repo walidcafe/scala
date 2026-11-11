@@ -32,7 +32,7 @@ input { border-width: 0px; }
 /* Page */
 body {
   overflow-x: hidden;
-  font-family: Arial, sans-serif;
+  font-family: system-ui, 'Segoe UI', 'Noto Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
   background-color: #f0f3f6;
 }
 
@@ -92,10 +92,6 @@ body {
 #definition h1 > a {
   color: #103a51 !important;
   text-decoration: none !important;
-}
-
-#template ol > li > span.permalink > a > i {
-  transform: rotate(-45deg);
 }
 
 #definition #owner {
@@ -167,9 +163,9 @@ span.symbol > a {
 
 .toggleContainer .toggle > i {
   position: absolute;
-  left: -1.5em;
-  top: 0em;
-  font-size: 1.3em;
+  left: -1.35em;
+  top: 0.15em;
+  font-size: 1em;
   transition: 0.1s;
 }
 
@@ -183,10 +179,10 @@ span.symbol > a {
 
 #memberfilter > i.arrow {
   position: absolute;
-  top: 0.45em;
-  left: -0.9em;
+  top: 0.6em;
+  left: -1em;
   color: #fff;
-  font-size: 1.3em;
+  font-size: 1em;
   opacity: 0;
   transition: 0.1s;
   cursor: pointer;
@@ -321,10 +317,6 @@ dl.attributes > dd {
   font-style: italic;
 }
 
-#inheritedMembers > div.parent > h3 * {
-  color: white;
-}
-
 #inheritedMembers > div.conversion > h3 {
   height: 2em;
   padding: 1em;
@@ -387,7 +379,7 @@ div.members > ol > li:last-child {
 }
 
 .signature {
-  font-family: "Source Code Pro", "Monaco", "Ubuntu Mono Regular", "Lucida Console", monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.8rem;
   line-height: 18px;
   clear: both;
@@ -395,7 +387,7 @@ div.members > ol > li:last-child {
 }
 
 .modifier_kind {
-  font-family: "Source Code Pro", "Monaco", "Ubuntu Mono Regular", "Lucida Console", monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 0.8rem;
   padding-right: 0.5em;
   text-align: right;
@@ -405,7 +397,7 @@ div.members > ol > li:last-child {
 }
 
 .symbol {
-  font-family: "Source Code Pro", "Monaco", "Ubuntu Mono Regular", "Lucida Console", monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 a > .symbol > .name {
@@ -531,7 +523,7 @@ div#definition > h4#signature > span.modifier_kind > i.unfold-arrow,
 
 #definition .morelinks {
   text-align: right;
-  font-family: "Source Code Pro", "Monaco", "Ubuntu Mono Regular", "Lucida Console", monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 #definition .morelinks a {
@@ -551,7 +543,6 @@ div#definition > h4#signature > span.modifier_kind > i.unfold-arrow,
 
 #definition .permalink a {
   color: #103a51;
-  transform: rotate(-45deg);
 }
 
 #definition > h1 > span > a > i {
@@ -613,7 +604,7 @@ div#definition > h4#signature > span.modifier_kind > i.unfold-arrow,
   background-color: #fff;
   margin: 5px 0;
   display: block;
-  font-family: "Source Code Pro", "Monaco", "Ubuntu Mono Regular", "Lucida Console", monospace;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   border-radius: 0.2em;
   overflow-x: auto;
 }
@@ -678,7 +669,7 @@ div#definition > h4#signature > span.modifier_kind > i.unfold-arrow,
 }
 
 .cmt code {
-  font-weight: bold;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .cmt a {
@@ -698,7 +689,6 @@ div#definition > h4#signature > span.modifier_kind > i.unfold-arrow,
 .group > div.comment {
   display: block;
   padding: 0 1.2em 1em;
-  font-family: "Open Sans";
 }
 
 p.comment {
@@ -736,7 +726,6 @@ div.fullcomment {
 #template .shortcomment {
   margin: 5px 0 0 0;
   padding: 0;
-  font-family: "Open Sans";
 }
 
 div.fullcomment .block {
@@ -744,7 +733,6 @@ div.fullcomment .block {
   border-top: 2px solid #fff;
   margin-top: 5px;
   overflow: hidden;
-  font-family: "Open Sans";
 }
 
 div.fullcommenttop .block {
@@ -774,10 +762,6 @@ div#footer {
   font-size: 0.8em;
 }
 
-#comment {
-  font-family: "Open Sans";
-}
-
 #comment > dl {
   background: transparent;
   -webkit-box-shadow: none;
@@ -800,7 +784,6 @@ div.fullcomment .block > h5 {
 }
 
 div.fullcomment .comment {
-  font-family: "Open Sans";
   margin: 5px 0 10px;
 }
 
@@ -831,6 +814,38 @@ div.fullcomment dl.paramcmts > dd {
   min-height: 15px;
 }
 
+/* Author Content Table formatting */
+
+.doctbl {
+  border-collapse: collapse;
+  margin: 1.0em 0em;
+}
+
+.doctbl-left {
+  text-align: left;
+}
+
+.doctbl-center {
+  text-align: center;
+}
+
+.doctbl-right {
+  text-align: right;
+}
+
+table.doctbl th {
+  border: 1px dotted #364550;
+  background-color: #c2d2dc;
+  padding: 5px;
+  color: #103a51;
+  font-weight: bold;
+}
+
+table.doctbl td {
+  border: 1px dotted #364550;
+  padding: 5px;
+}
+
 /* Members filter tool */
 
 #memberfilter {
@@ -856,16 +871,28 @@ div.fullcomment dl.paramcmts > dd {
   border-radius: 0.2em;
   padding: 0.5em;
   background: rgba(255, 255, 255, 0.2);
-  font-family: "Open Sans";
+}
+
+#memberfilter > .input > input::-webkit-input-placeholder {
+  color: #fff;
+  opacity: 0.6;
+}
+#memberfilter > .input > input:-ms-input-placeholder {
+  color: #fff;
+  opacity: 0.6;
+}
+#memberfilter > .input > input::placeholder  {
+  color: #fff;
+  opacity: 0.6;
 }
 
 #memberfilter > .clear {
   display: none;
   position: absolute;
-  top: 0.55em;
+  top: 0.6em;
   color: rgba(255, 255, 255, 0.4);
-  right: 0;
-  font-size: 1.2em;
+  right: 0.2em;
+  font-size: 0.9em;
 }
 
 #memberfilter > .clear:hover {
@@ -1058,7 +1085,6 @@ div.fullcomment dl.paramcmts > dd {
   -webkit-border-radius: 9px;
   -moz-border-radius: 9px;
   border-radius: 1em;
-  font-family: "Open Sans";
 }
 
 .badge-red {

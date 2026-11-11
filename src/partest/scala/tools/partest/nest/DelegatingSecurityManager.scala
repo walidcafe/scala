@@ -1,9 +1,22 @@
+/*
+ * Scala (https://www.scala-lang.org)
+ *
+ * Copyright EPFL and Lightbend, Inc. dba Akka
+ *
+ * Licensed under Apache License 2.0
+ * (http://www.apache.org/licenses/LICENSE-2.0).
+ *
+ * See the NOTICE file distributed with this work for
+ * additional information regarding copyright ownership.
+ */
+
 package scala.tools.partest.nest
 
 import java.io.FileDescriptor
 import java.net.InetAddress
 import java.security.Permission
 
+@deprecated("JDK 17 deprecates SecurityManager", since="2.13.7")
 class DelegatingSecurityManager(delegate: SecurityManager) extends SecurityManager {
   override def checkExit(status: Int): Unit = if (delegate ne null) delegate.checkExit(status)
   override def checkPermission(perm: Permission): Unit = if (delegate ne null) delegate.checkPermission(perm)

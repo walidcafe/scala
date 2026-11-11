@@ -1,3 +1,5 @@
+//> using options -Xfatal-warnings
+//
 sealed trait Option {}
 case class Choice(a: Option, b: Option) extends Option;
 case class Some(x: Boolean) extends Option;

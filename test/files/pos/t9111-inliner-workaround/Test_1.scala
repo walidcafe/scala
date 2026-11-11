@@ -1,3 +1,5 @@
+//> using options -opt:inline:** -Wopt
+//
 object Test extends App {
   println(new A_1.Inner())
 
